@@ -115,11 +115,11 @@ namespace MUD.Main
 
         private static void handleLogin(PlayerSession playerSession, string message)
         {
-            Console.WriteLine("BEGINNING LOGIN FOR: " + playerSession.TelnetClient.getRemoteAddress());
+            Console.WriteLine("BEGINNING LOGIN FOR: " + playerSession.TelnetClient.RemoteAddress);
 
             if (playerSession.SessionStatus == EPlayerSessionStatus.Guest)
             {
-                Console.WriteLine(playerSession.TelnetClient.getRemoteAddress() + ": Login: " + message);
+                Console.WriteLine(playerSession.TelnetClient.RemoteAddress + ": Login: " + message);
 
                 MongoClient dbClient = new MongoClient("mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test");
                 var database = dbClient.GetDatabase("testmud");
@@ -144,7 +144,7 @@ namespace MUD.Main
             }
             else if (playerSession.SessionStatus == EPlayerSessionStatus.Authenticating)
             {
-                Console.WriteLine(playerSession.TelnetClient.getRemoteAddress() + ": Password: " + message);
+                Console.WriteLine(playerSession.TelnetClient.RemoteAddress + ": Password: " + message);
                 if (message == playerSession.SessionPlayer.Password)
                 {
                     s.clearClientScreen(playerSession.TelnetClient);

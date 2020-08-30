@@ -9,22 +9,22 @@ namespace MUD.Telnet
         /// <summary>
         /// The client's identifier.
         /// </summary>
-        private uint id;
+        public uint Id { get; set; }
         /// <summary>
         /// The client's remote address.
         /// </summary>
-        private IPEndPoint remoteAddr;
+        public IPEndPoint RemoteAddress {get;set;}
         /// <summary>
         /// The connection datetime.
         /// </summary>
-        private DateTime connectedAt;
+        public DateTime ConnectedAt;
 
         /// <summary>
         /// The last received data from the client.
         /// </summary>
-        private string receivedData;
+        private string _receivedData;
 
-        public bool IsRemoteEcho {get;set;}
+        public bool IsRemoteEcho { get; set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Client"/> class.
@@ -33,37 +33,10 @@ namespace MUD.Telnet
         /// <param name="remoteAddress">The remote address.</param>
         public Client(uint clientId, IPEndPoint remoteAddress)
         {
-            this.id = clientId;
-            this.remoteAddr = remoteAddress;
-            this.connectedAt = DateTime.Now;
-            this.receivedData = string.Empty;
-        }
-
-        /// <summary>
-        /// Gets the client identifier.
-        /// </summary>
-        /// <returns>Client's identifier.</returns>
-        public uint getClientID()
-        {
-            return id;
-        }
-
-        /// <summary>
-        /// Gets the remote address.
-        /// </summary>
-        /// <returns>Client's remote address.</returns>
-        public IPEndPoint getRemoteAddress()
-        {
-            return remoteAddr;
-        }
-
-        /// <summary>
-        /// Gets the connection time.
-        /// </summary>
-        /// <returns>The connection time.</returns>
-        public DateTime getConnectionTime()
-        {
-            return connectedAt;
+            Id = clientId;
+            RemoteAddress = remoteAddress;
+            ConnectedAt = DateTime.Now;
+            _receivedData = string.Empty;
         }
 
         /// <summary>
@@ -72,28 +45,9 @@ namespace MUD.Telnet
         /// <returns>Client's last received data.</returns>
         public string getReceivedData()
         {
-            return receivedData;
+            return _receivedData;
         }
 
-        /// <summary>
-        /// Sets the client's last received data.
-        /// </summary>
-        /// <param name="newReceivedData">The new received data.</param>
-        public void setReceivedData(string newReceivedData)
-        {
-            this.receivedData = newReceivedData;
-        }
-
-        /// <summary>
-        /// Appends a string to the client's last
-        /// received data.
-        /// </summary>
-        /// <param name="dataToAppend">The data to append.</param>
-        public void appendReceivedData(string dataToAppend)
-        {
-            this.receivedData += dataToAppend;
-        }
-        
         /// <summary>
         /// Appends a string to the client's last
         /// received data.
@@ -101,16 +55,7 @@ namespace MUD.Telnet
         /// <param name="dataToAppend">The data to append.</param>
         public void appendReceivedData(char dataToAppend)
         {
-            this.receivedData += dataToAppend;
-        }
-
-        /// <summary>
-        /// Removes the last character from the
-        /// client's last received data.
-        /// </summary>
-        public void removeLastCharacterReceived()
-        {
-            receivedData = receivedData.Substring(0, receivedData.Length - 1);
+            this._receivedData += dataToAppend;
         }
 
         /// <summary>
@@ -118,13 +63,13 @@ namespace MUD.Telnet
         /// </summary>
         public void resetReceivedData()
         {
-            receivedData = string.Empty;
+            _receivedData = string.Empty;
         }
 
         public override string ToString()
         {
-            string ip = string.Format("{0}:{1}", remoteAddr.Address.ToString(), remoteAddr.Port);
-            string res = string.Format("Client #{0} (From: {1}, Connection time: {2})", id, ip, connectedAt);
+            string ip = string.Format("{0}:{1}", RemoteAddress.Address.ToString(), RemoteAddress.Port);
+            string res = string.Format("Client #{0} (From: {1}, Connection time: {2})", Id, ip, ConnectedAt);
             return res;
         }
     }

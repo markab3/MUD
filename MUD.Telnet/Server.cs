@@ -24,36 +24,41 @@ namespace MUD.Telnet
         /// <summary>
         /// Server's main socket.
         /// </summary>
-        private Socket serverSocket;
+        private Socket _serverSocket;
 
         /// <summary>
         /// The IP on which to listen.
         /// </summary>
-        private IPAddress ip;
+        private IPAddress _ip;
 
         /// <summary>
         /// The default data size for received data.
         /// </summary>
-        private readonly int dataSize;
+        private readonly int _dataSize;
 
         /// <summary>
         /// Contains the received data.
         /// </summary>
-        private byte[] incomingDataBuffer;
+        private byte[] _incomingDataBuffer;
 
         /// <summary>
         /// True for allowing incoming connections;
         /// false otherwise.
         /// </summary>
-        private bool acceptIncomingConnections;
+        private bool _acceptIncomingConnections { get; set; }
 
         /// <summary>
         /// Contains all connected clients indexed
         /// by their socket.
         /// </summary>
-        private Dictionary<Socket, Client> clients;
+        private Dictionary<Socket, Client> _clients;
 
         public delegate void ConnectionEventHandler(Client c);
+
+
+        public delegate void ConnectionBlockedEventHandler(IPEndPoint endPoint);
+
+        public delegate void MessageReceivedEventHandler(Client c, string message);
 
         /// <summary>
         /// Occurs when a client is connected.
@@ -65,14 +70,10 @@ namespace MUD.Telnet
         /// </summary>
         public event ConnectionEventHandler ClientDisconnected;
 
-        public delegate void ConnectionBlockedEventHandler(IPEndPoint endPoint);
-
         /// <summary>
         /// Occurs when an incoming connection is blocked.
         /// </summary>
         public event ConnectionBlockedEventHandler ConnectionBlocked;
-
-        public delegate void MessageReceivedEventHandler(Client c, string message);
 
         /// <summary>
         /// Occurs when a message is received.
@@ -86,16 +87,12 @@ namespace MUD.Telnet
         /// <param name="dataSize">Data size for received data.</param>
         public Server(IPAddress ip, int dataSize = 1024)
         {
-            this.ip = ip;
-
-            this.dataSize = dataSize;
-            this.incomingDataBuffer = new byte[dataSize];
-
-            this.clients = new Dictionary<Socket, Client>();
-
-            this.acceptIncomingConnections = true;
-
-            this.serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            _ip = ip;
+            _dataSize = dataSize;
+            _incomingDataBuffer = new byte[dataSize];
+            _clients = new Dictionary<Socket, Client>();
+            _acceptIncomingConnections = true;
+            _serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         }
 
         /// <summary>
@@ -103,9 +100,9 @@ namespace MUD.Telnet
         /// </summary>
         public void start()
         {
-            serverSocket.Bind(new IPEndPoint(ip, PORT));
-            serverSocket.Listen(0);
-            serverSocket.BeginAccept(new AsyncCallback(handleIncomingConnection), serverSocket);
+            _serverSocket.Bind(new IPEndPoint(_ip, PORT));
+            _serverSocket.Listen(0);
+            _serverSocket.BeginAccept(new AsyncCallback(handleIncomingConnection), _serverSocket);
         }
 
         /// <summary>
@@ -113,34 +110,7 @@ namespace MUD.Telnet
         /// </summary>
         public void stop()
         {
-            serverSocket.Close();
-        }
-
-        /// <summary>
-        /// Returns whether incoming connections
-        /// are allowed.
-        /// </summary>
-        /// <returns>True is connections are allowed;
-        /// false otherwise.</returns>
-        public bool incomingConnectionsAllowed()
-        {
-            return acceptIncomingConnections;
-        }
-
-        /// <summary>
-        /// Denies the incoming connections.
-        /// </summary>
-        public void denyIncomingConnections()
-        {
-            this.acceptIncomingConnections = false;
-        }
-
-        /// <summary>
-        /// Allows the incoming connections.
-        /// </summary>
-        public void allowIncomingConnections()
-        {
-            this.acceptIncomingConnections = true;
+            _serverSocket.Close();
         }
 
         /// <summary>
@@ -179,6 +149,7 @@ namespace MUD.Telnet
             sendBytesToSocket(s, data);
         }
 
+        /// TODO: Remove this function? Short functions are (arguably) a code smell.
         /// <summary>
         /// Sends bytes to the specified socket.
         /// </summary>
@@ -195,18 +166,18 @@ namespace MUD.Telnet
         /// <param name="message">The message.</param>
         public void sendMessageToAll(string message)
         {
-            foreach (Socket s in clients.Keys)
+            foreach (Socket s in _clients.Keys)
             {
                 try
                 {
-                    Client c = clients[s];
+                    Client c = _clients[s];
 
                     sendMessageToSocket(s, END_LINE + message + END_LINE + CURSOR);
                     c.resetReceivedData();
                 }
                 catch
                 {
-                    clients.Remove(s);
+                    _clients.Remove(s);
                 }
             }
         }
@@ -221,7 +192,7 @@ namespace MUD.Telnet
         {
             Client c;
 
-            if (!clients.TryGetValue(clientSocket, out c))
+            if (!_clients.TryGetValue(clientSocket, out c))
                 c = null;
 
             return c;
@@ -237,7 +208,7 @@ namespace MUD.Telnet
         {
             Socket s;
 
-            s = clients.FirstOrDefault(x => x.Value.getClientID() == client.getClientID()).Key;
+            s = _clients.FirstOrDefault(x => x.Value.Id == client.Id).Key;
 
             return s;
         }
@@ -260,7 +231,7 @@ namespace MUD.Telnet
         private void closeSocket(Socket clientSocket)
         {
             clientSocket.Close();
-            clients.Remove(clientSocket);
+            _clients.Remove(clientSocket);
         }
 
         /// <summary>
@@ -277,13 +248,13 @@ namespace MUD.Telnet
             {
                 Socket oldSocket = (Socket)result.AsyncState;
 
-                if (acceptIncomingConnections)
+                if (_acceptIncomingConnections)
                 {
                     Socket newSocket = oldSocket.EndAccept(result);
 
-                    uint clientID = (uint)clients.Count + 1;
+                    uint clientID = (uint)_clients.Count + 1;
                     Client client = new Client(clientID, (IPEndPoint)newSocket.RemoteEndPoint);
-                    clients.Add(newSocket, client);
+                    _clients.Add(newSocket, client);
 
                     sendBytesToSocket(
                         newSocket,
@@ -299,7 +270,7 @@ namespace MUD.Telnet
 
                     ClientConnected(client);
 
-                    serverSocket.BeginAccept(new AsyncCallback(handleIncomingConnection), serverSocket);
+                    _serverSocket.BeginAccept(new AsyncCallback(handleIncomingConnection), _serverSocket);
                 }
 
                 else
@@ -308,9 +279,10 @@ namespace MUD.Telnet
                 }
             }
 
-            catch (Exception ex) {
+            catch (Exception ex)
+            {
                 Console.WriteLine(ex.Message);
-             }
+            }
         }
 
         /// <summary>
@@ -324,7 +296,7 @@ namespace MUD.Telnet
 
                 clientSocket.EndSend(result);
                 // Why start receive after send? What if we send more than 1 message?
-                clientSocket.BeginReceive(incomingDataBuffer, 0, dataSize, SocketFlags.None, new AsyncCallback(receiveData), clientSocket);
+                clientSocket.BeginReceive(_incomingDataBuffer, 0, _dataSize, SocketFlags.None, new AsyncCallback(receiveData), clientSocket);
             }
 
             catch { }
@@ -347,12 +319,12 @@ namespace MUD.Telnet
                 if (bytesReceived == 0)
                 {
                     closeSocket(clientSocket);
-                    serverSocket.BeginAccept(new AsyncCallback(handleIncomingConnection), serverSocket);
+                    _serverSocket.BeginAccept(new AsyncCallback(handleIncomingConnection), _serverSocket);
                 }
 
                 // Trim null characters and copy to a new location.
                 byte[] trimmedBytes = new byte[bytesReceived];
-                Array.Copy(incomingDataBuffer, trimmedBytes, bytesReceived);
+                Array.Copy(_incomingDataBuffer, trimmedBytes, bytesReceived);
 
                 TelnetCommand currentCommand = null;
 
@@ -394,86 +366,7 @@ namespace MUD.Telnet
                     }
                 }
 
-                clientSocket.BeginReceive(incomingDataBuffer, 0, dataSize, SocketFlags.None, new AsyncCallback(receiveData), clientSocket);
-
-                // Attempt 2
-                // Read off IAC stuff
-                // while (receivedData[receivedData.Length-3] == (char) 0xFF) {
-                //     Console.WriteLine("Removing IAC: " + Convert.ToByte(receivedData[receivedData.Length-3]).ToString("x2") + Convert.ToByte(receivedData[receivedData.Length-2]).ToString("x2") + Convert.ToByte(receivedData[receivedData.Length-1]).ToString("x2"));
-                //     receivedData = receivedData.Substring(0,receivedData.Length - 3);
-                // }
-
-                // string receivedString = Encoding.Default.GetString(trimmedBytes);
-                // receivedString = receivedString.TrimEnd('\n');
-                // receivedString = receivedString.TrimEnd('\r');
-                // MessageReceived(client, receivedString);
-
-                // clientSocket.BeginReceive(incomingDataBuffer, 0, dataSize, SocketFlags.None, new AsyncCallback(receiveData), clientSocket);
-
-
-                // Original poop. Assumes one character at a time...
-                // else if (incomingDataBuffer[0] < 0xF0)
-                // {
-                //     string receivedData = Encoding.Default.GetString(incomingDataBuffer).Trim('\0');
-
-                //     MessageReceived(client, receivedData);
-                //     client.resetReceivedData();
-
-                //     // 0x2E = '.', 0x0D = carriage return, 0x0A = new line
-                //     if ((incomingDataBuffer[0] == 0x2E && incomingDataBuffer[1] == 0x0D && receivedData.Length == 0) ||
-                //         (incomingDataBuffer[0] == 0x0D && incomingDataBuffer[1] == 0x0A))
-                //     {
-                //         //sendMessageToSocket(clientSocket, "\u001B[1J\u001B[H");
-                //         MessageReceived(client, receivedData);
-                //         client.resetReceivedData();
-                //     }
-
-                //     else
-                //     {
-                //         // 0x08 => backspace character
-                //         if (incomingDataBuffer[0] == 0x08)
-                //         {
-                //             if (receivedData.Length > 0)
-                //             {
-                //                 client.removeLastCharacterReceived();
-                //                 sendBytesToSocket(clientSocket, new byte[] { 0x08, 0x20, 0x08 });
-                //             }
-
-                //             else
-                //                 clientSocket.BeginReceive(incomingDataBuffer, 0, dataSize, SocketFlags.None, new AsyncCallback(receiveData), clientSocket);
-                //         }
-
-                //         // 0x7F => delete character
-                //         else if (incomingDataBuffer[0] == 0x7F)
-                //         {
-                //             clientSocket.BeginReceive(incomingDataBuffer, 0, dataSize, SocketFlags.None, new AsyncCallback(receiveData), clientSocket);
-                //         }
-
-                //         else
-                //         {
-                //             client.appendReceivedData(Encoding.ASCII.GetString(incomingDataBuffer, 0, bytesReceived));
-
-                //             // Echo back the received character
-                //             // if client is not writing any password
-                //             if (client.getCurrentStatus() != EClientStatus.Authenticating)
-                //                 sendBytesToSocket(clientSocket, new byte[] { incomingDataBuffer[0] });
-
-                //             // Echo back asterisks if client is
-                //             // writing a password
-                //             else
-                //             {
-                //                 sendMessageToSocket(clientSocket, "*");
-                //             }
-
-                //             clientSocket.BeginReceive(incomingDataBuffer, 0, dataSize, SocketFlags.None, new AsyncCallback(receiveData), clientSocket);
-                //         }
-                //     }
-                // }
-
-                // else
-                // {
-                //     clientSocket.BeginReceive(incomingDataBuffer, 0, dataSize, SocketFlags.None, new AsyncCallback(receiveData), clientSocket);
-                // }
+                clientSocket.BeginReceive(_incomingDataBuffer, 0, _dataSize, SocketFlags.None, new AsyncCallback(receiveData), clientSocket);
             }
 
             catch (Exception ex)
@@ -484,7 +377,7 @@ namespace MUD.Telnet
 
         private void handleTelnetCommand(Client originatingClient, TelnetCommand command)
         {
-            Console.WriteLine("Client at " + originatingClient.getRemoteAddress().ToString() + " sent: " + command.Command + " " + command.Option + " " + Encoding.Default.GetString(command.NegotiationData.ToArray()));
+            Console.WriteLine("Client at " + originatingClient.RemoteAddress.ToString() + " sent: " + command.Command + " " + command.Option + " " + Encoding.Default.GetString(command.NegotiationData.ToArray()));
             // Durr do stuff.
             switch (command.Command.GetValueOrDefault())
             {
@@ -494,6 +387,7 @@ namespace MUD.Telnet
                         case OptionCode.Echo:
                             originatingClient.IsRemoteEcho = true;
                             break;
+                        // TODO: Handle other stuffs too?
                     }
                     break;
             }
