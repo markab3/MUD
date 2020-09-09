@@ -38,7 +38,6 @@ namespace MUD.Main
             s.ClientConnected += clientConnected;
             s.ClientDisconnected += clientDisconnected;
             s.ConnectionBlocked += connectionBlocked;
-            s.MessageReceived += messageReceived;
             s.start();
             Console.WriteLine("done.");
 
@@ -62,11 +61,13 @@ namespace MUD.Main
             Console.WriteLine("CONNECTED: " + c);
             activeSessions.Add(new PlayerSession(c));
 
-            s.sendMessageToClient(c, "Telnet Server" + Server.END_LINE + "Login: ");
+            c.MessageReceived += messageReceived;
+            c.SendMessageToClient("Telnet Server" + Server.END_LINE + "Login: ");
         }
 
         private static void clientDisconnected(Client c)
         {
+            c.MessageReceived -= messageReceived;
             Console.WriteLine("DISCONNECTED: " + c);
         }
 
@@ -85,31 +86,21 @@ namespace MUD.Main
             if (playerSession.SessionStatus != EPlayerSessionStatus.LoggedIn)
             {
                 handleLogin(playerSession, message);
-                c.resetReceivedData();
                 return;
             }
 
             Console.WriteLine("MESSAGE: " + message);
 
-            if (message == "quit" || message == "logout" ||
-                message == "exit")
+            if (message == "quit")
             {
                 s.kickClient(c);
-                s.sendMessageToClient(c, Server.END_LINE + Server.CURSOR);
-            }
-
-            else if (message == "clear")
-            {
-                c.resetReceivedData();
-                s.clearClientScreen(c);
-                s.sendMessageToClient(c, Server.CURSOR);
+                c.SendMessageToClient(Server.END_LINE + Server.CURSOR); // do we need to? Can we after its been kicked?
             }
 
             else
             {
                 // Send to command parser
-                c.resetReceivedData();
-                s.sendMessageToClient(c, Server.END_LINE + Server.CURSOR);
+                c.SendMessageToClient(Server.END_LINE + Server.CURSOR);
             }
         }
 
@@ -130,7 +121,7 @@ namespace MUD.Main
 
                 if (foundUser != null)
                 {
-                    s.sendMessageToClient(playerSession.TelnetClient, Server.END_LINE + "Password: ");
+                    playerSession.TelnetClient.SendMessageToClient(Server.END_LINE + "Password: ");
                     playerSession.SessionStatus = EPlayerSessionStatus.Authenticating;
                     playerSession.SessionPlayer = BsonSerializer.Deserialize<Player>(foundUser);
                     return;
@@ -148,7 +139,7 @@ namespace MUD.Main
                 if (message == playerSession.SessionPlayer.Password)
                 {
                     s.clearClientScreen(playerSession.TelnetClient);
-                    s.sendMessageToClient(playerSession.TelnetClient, Server.END_LINE + "Successfully authenticated." + Server.END_LINE + Server.CURSOR);
+                    playerSession.TelnetClient.SendMessageToClient(Server.END_LINE + "Successfully authenticated." + Server.END_LINE + Server.CURSOR);
                     playerSession.SessionStatus = EPlayerSessionStatus.LoggedIn;
                 }
                 else
