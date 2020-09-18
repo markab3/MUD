@@ -18,6 +18,7 @@ namespace MUD.Telnet
         WILL = 251,
         WONT = 252,
         DO = 253,
-        DONT = 254
+        DONT = 254,
+        IAC = 255 // Interpret as command
     }
 }

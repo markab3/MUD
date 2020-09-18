@@ -7,19 +7,17 @@ using MUD.Core;
 using System.Collections.Generic;
 using System.Linq;
 using MongoDB.Bson.Serialization;
+using System.Threading;
 
 namespace MUD.Main
 {
     class Program
     {
-        private static Server s;
+        private static Server _serverInstance;
         private static List<PlayerSession> activeSessions = new List<PlayerSession>();
 
         static void Main(string[] args)
         {
-            //Player testPlayer = new Player() { PlayerName = "holen", Password = "password", Gender = "male", Race = "hobbit", Class = "rogue" };
-            //var jsonContent = JsonConvert.SerializeObject(testPlayer);
-
             Console.Write("Checking databases...");
             MongoClient dbClient = new MongoClient("mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test");
             var database = dbClient.GetDatabase("testmud"); // This creates the database if it doesn't otherwise exist?
@@ -34,40 +32,72 @@ namespace MUD.Main
             Console.WriteLine("done.");
 
             Console.Write("Starting telnet server...");
-            s = new Server(IPAddress.Any);
-            s.ClientConnected += clientConnected;
-            s.ClientDisconnected += clientDisconnected;
-            s.ConnectionBlocked += connectionBlocked;
-            s.start();
+            _serverInstance = new Server(IPAddress.Any, 23);
+            _serverInstance.ClientConnected += clientConnected;
+            _serverInstance.ClientDisconnected += clientDisconnected;
+
+            Thread thread = new Thread(_serverInstance.Start);
+            thread.Start();
             Console.WriteLine("done.");
 
             Console.WriteLine("SERVER STARTED: " + DateTime.Now);
-
-            char read = Console.ReadKey(true).KeyChar;
+            char read2 = Console.ReadKey(true).KeyChar;
 
             do
             {
-                if (read == 'b')
+                if (read2 == 'b')
                 {
-                    s.sendMessageToAll(Console.ReadLine());
+                    _serverInstance.SendMessageToAll(Console.ReadLine());
                 }
-            } while ((read = Console.ReadKey(true).KeyChar) != 'q');
+                if (read2 == 't')
+                {
+                    //s2.SendMessageToAll(new TelnetCommand(CommandCode.DO, OptionCode.TerminalType));
+                }
+            } while ((read2 = Console.ReadKey(true).KeyChar) != 'q');
 
-            s.stop();
+            _serverInstance.Stop();
+
+            //return;
+
+            //Player testPlayer = new Player() { PlayerName = "holen", Password = "password", Gender = "male", Race = "hobbit", Class = "rogue" };
+            //var jsonContent = JsonConvert.SerializeObject(testPlayer);
+
+
+            // s = new Server(IPAddress.Any);
+            // s.ClientConnected += clientConnected;
+            // s.ClientDisconnected += clientDisconnected;
+            // s.ConnectionBlocked += connectionBlocked;
+            // s.start();
+
+            // char read = Console.ReadKey(true).KeyChar;
+
+            // do
+            // {
+            //     if (read == 'b')
+            //     {
+            //         s.sendMessageToAll(Console.ReadLine());
+            //     }
+            //     if (read == 't')
+            //     {
+            //         s.sendMessageToAll(new TelnetCommand(CommandCode.DO, OptionCode.TerminalType));
+            //     }
+            // } while ((read = Console.ReadKey(true).KeyChar) != 'q');
+
+            // s.stop();
         }
 
-        private static void clientConnected(Client c)
+        private static void clientConnected(object sender, Client c)
         {
             Console.WriteLine("CONNECTED: " + c);
             activeSessions.Add(new PlayerSession(c));
 
-            c.MessageReceived += messageReceived;
-            c.SendMessageToClient("Telnet Server" + Server.END_LINE + "Login: ");
+            c.DataReceived += messageReceived;
+            c.Send("Telnet Server" + Server.END_LINE + "Login: ");
         }
 
-        private static void clientDisconnected(Client c)
+        private static void clientDisconnected(object sender, Client c)
         {
-            c.MessageReceived -= messageReceived;
+            c.DataReceived -= messageReceived;
             Console.WriteLine("DISCONNECTED: " + c);
         }
 
@@ -76,12 +106,13 @@ namespace MUD.Main
             Console.WriteLine(string.Format("BLOCKED: {0}:{1} at {2}", ep.Address, ep.Port, DateTime.Now));
         }
 
-        private static void messageReceived(Client c, string message)
+        private static void messageReceived(object sender, string message)
         {
+            Client client = (Client) sender;
             Console.WriteLine("messageReceived: " + message.Replace("\r", "\\r").Replace("\n", "\\n"));
             message = message.TrimEnd('\n').TrimEnd('\r');
 
-            PlayerSession playerSession = activeSessions.FirstOrDefault(s=> s.TelnetClient == c);
+            PlayerSession playerSession = activeSessions.FirstOrDefault(s => s.TelnetClient == client);
 
             if (playerSession.SessionStatus != EPlayerSessionStatus.LoggedIn)
             {
@@ -93,14 +124,13 @@ namespace MUD.Main
 
             if (message == "quit")
             {
-                s.kickClient(c);
-                c.SendMessageToClient(Server.END_LINE + Server.CURSOR); // do we need to? Can we after its been kicked?
+                client.Disconnect();
             }
 
             else
             {
                 // Send to command parser
-                c.SendMessageToClient(Server.END_LINE + Server.CURSOR);
+                //c.SendMessageToClient(Server.END_LINE + Server.CURSOR);
             }
         }
 
@@ -121,7 +151,8 @@ namespace MUD.Main
 
                 if (foundUser != null)
                 {
-                    playerSession.TelnetClient.SendMessageToClient(Server.END_LINE + "Password: ");
+                    playerSession.TelnetClient.IsEchoSupressed = true;
+                    playerSession.TelnetClient.Send("Password: ");
                     playerSession.SessionStatus = EPlayerSessionStatus.Authenticating;
                     playerSession.SessionPlayer = BsonSerializer.Deserialize<Player>(foundUser);
                     return;
@@ -129,23 +160,25 @@ namespace MUD.Main
                 else
                 {
                     Console.WriteLine("User not recognized, kicking.");
-                    s.kickClient(playerSession.TelnetClient);
+                    playerSession.TelnetClient.Disconnect();
                     activeSessions.Remove(playerSession);
                 }
             }
             else if (playerSession.SessionStatus == EPlayerSessionStatus.Authenticating)
             {
+                playerSession.TelnetClient.IsEchoSupressed = false;
                 Console.WriteLine(playerSession.TelnetClient.RemoteAddress + ": Password: " + message);
                 if (message == playerSession.SessionPlayer.Password)
                 {
-                    s.clearClientScreen(playerSession.TelnetClient);
-                    playerSession.TelnetClient.SendMessageToClient(Server.END_LINE + "Successfully authenticated." + Server.END_LINE + Server.CURSOR);
+                    playerSession.TelnetClient.Send("Successfully authenticated." + Server.END_LINE);
                     playerSession.SessionStatus = EPlayerSessionStatus.LoggedIn;
+                    _serverInstance.SendMessageToAll("[" + playerSession.SessionPlayer.PlayerName + " has entered Planar Realms]"); 
+                    playerSession.TelnetClient.Send(Server.END_LINE + Server.CURSOR);
                 }
                 else
                 {
                     Console.WriteLine("Incorrect password, kicking.");
-                    s.kickClient(playerSession.TelnetClient);
+                    playerSession.TelnetClient.Disconnect();
                 }
             }
         }

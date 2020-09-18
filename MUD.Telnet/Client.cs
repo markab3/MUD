@@ -5,199 +5,168 @@ using System.Text;
 
 namespace MUD.Telnet
 {
-
     public class Client
     {
-        /// <summary>
-        /// The client's remote address.
-        /// </summary>
-        public IPEndPoint RemoteAddress { get; set; }
+        public IPEndPoint RemoteAddress { get { return (IPEndPoint)_workSocket.RemoteEndPoint; } }
+        // Size of receive buffer.  
+        public const int BufferSize = 1024;
 
-        /// <summary>
-        /// The connection datetime.
-        /// </summary>
-        private DateTime _connectedAt;
+        // Receive buffer.  
+        private byte[] _buffer = new byte[BufferSize];
 
-        private Socket _clientSocket { get; set; }
+        // Received data string.
+        private string _receivedData = String.Empty;
 
-        /// <summary>
-        /// The last received data from the client.
-        /// </summary>
-        private string _receivedData;
+        // Client socket.
+        private Socket _workSocket = null;
 
-        /// <summary>
-        /// The default data size for received data.
-        /// </summary>
-        private readonly int _dataSize;
+        private Encoding _clientEncoding = Encoding.ASCII;
 
-        /// <summary>
-        /// Contains the received data.
-        /// </summary>
-        private byte[] _incomingDataBuffer;
+        private string _lineEnding = "\r\n";
 
         public bool IsRemoteEcho { get; set; }
 
-        public delegate void MessageReceivedEventHandler(Client c, string message);
+        public bool IsEchoSupressed { get; set; }
 
-        public delegate void CloseConnectionEventHandler(Client c);
+        public event EventHandler<Client> ClientDisconnected;
 
+        public event EventHandler<String> DataReceived;
 
-        /// <summary>
-        /// Occurs when a message is received from the client.
-        /// </summary>
-        public event MessageReceivedEventHandler MessageReceived;
-
-        /// <summary>
-        /// Occurs when a client needs to request the connection be closed.
-        /// </summary>
-        public event CloseConnectionEventHandler CloseConnection;
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="Client"/> class.
-        /// </summary>
-        /// <param name="remoteAddress">The remote address.</param>
-        public Client(Socket clientSocket)
+        public Client(Socket workSocket)
         {
-            _clientSocket = clientSocket;
-            RemoteAddress = (IPEndPoint) clientSocket.RemoteEndPoint;
-            _connectedAt = DateTime.Now;
-            _receivedData = string.Empty;
-            _dataSize = 1024;
-            _incomingDataBuffer = new byte[_dataSize];
+            _workSocket = workSocket;
         }
 
-        public void CloseSocket() {
-            _clientSocket.Close();
-        }
-        
-        /// <summary>
-        /// Sends a text message to the client.
-        /// </summary>
-        /// <param name="message">The message.</param>
-        public void SendMessageToClient(string message)
+        public void Send(String data)
         {
-            Console.WriteLine("Sending: " + message + "\nTo: " + RemoteAddress.ToString());
-            byte[] data = Encoding.ASCII.GetBytes(message);
-            _clientSocket.BeginSend(data, 0, data.Length, SocketFlags.None, new AsyncCallback(sendMessageComplete), _clientSocket);
+            // Unify line endings to be consistent with the client.
+            data.Replace("\n", "\r").Replace("\r\r", "\r").Replace("\r", _lineEnding);
+
+            // Convert the string data to byte data using the client's encoding.  
+            byte[] byteData = _clientEncoding.GetBytes(data);
+
+            Send(byteData);
         }
 
-        /// <summary>
-        /// Sends raw bytes to the client.
-        /// </summary>
-        /// <param name="message">The message.</param>
-        public void SendMessageToClient(byte[] message) {
-            _clientSocket.BeginSend(message, 0, message.Length, SocketFlags.None, new AsyncCallback(sendMessageComplete), _clientSocket);
-        }
-
-        private void sendMessageComplete(IAsyncResult result)
+        public void Send(byte[] data)
         {
+
             try
             {
-                Socket clientSocket = (Socket)result.AsyncState;
-
-                clientSocket.EndSend(result);
-                // Why start receive after send? What if we send more than 1 message?
-                clientSocket.BeginReceive(_incomingDataBuffer, 0, _dataSize, SocketFlags.None, new AsyncCallback(receiveData), clientSocket);
+                // Begin sending the data to the remote device.  
+                _workSocket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(sendCallback), _workSocket);
             }
-
-            catch { }
-        }
-
-        /// <summary>
-        /// Receives and processes data from a socket.
-        /// It triggers the message received event in
-        /// case the client pressed the return key.
-        /// </summary>
-        private void receiveData(IAsyncResult result)
-        {
-            try
-            {
-                Socket clientSocket = (Socket)result.AsyncState;
-
-                int bytesReceived = clientSocket.EndReceive(result);
-
-                if (bytesReceived == 0) { CloseConnection(this); } // Unsure if this is necessary....
-
-                // Trim null characters and copy to a new location.
-                byte[] trimmedBytes = new byte[bytesReceived];
-                Array.Copy(_incomingDataBuffer, trimmedBytes, bytesReceived);
-
-                TelnetCommand currentCommand = null;
-
-                // Loop through the input characters.
-                for (int i = 0; i < bytesReceived; i++)
-                {
-                    // Command has been created - we are now parsing it.
-                    if (currentCommand != null)
-                    {
-                        // Attempt to pass the byte to the command. If it uses it, move to the next.
-                        if (currentCommand.ProccessByte(trimmedBytes[i]))
-                        {
-                            continue;
-                        }
-                        // If we get another IAC or the command is complete, handle the command and continue parsing as normal                        
-                        else
-                        {
-                            handleTelnetCommand(currentCommand);
-                            currentCommand = null;
-                        }
-                    }
-
-                    // Interpret as Command (IAC) character. Begin command.
-                    if (trimmedBytes[i] == 0xFF)
-                    {
-                        currentCommand = new TelnetCommand();
-                        continue;
-                    }
-
-                    // Normal character? Add it to the current string.
-                    _receivedData += Convert.ToChar(trimmedBytes[i]);
-
-                    // Carriage return then new line. Accept this as a message.
-                    if (i > 0 && trimmedBytes[i - 1] == 0x0D && trimmedBytes[i] == 0x0A)
-                    {
-                        if (IsRemoteEcho) { SendMessageToClient(_receivedData.TrimEnd('\n').TrimEnd('\r')); }
-                        MessageReceived(this, _receivedData);
-                        _receivedData = string.Empty;
-                    }
-                }
-
-                clientSocket.BeginReceive(_incomingDataBuffer, 0, _dataSize, SocketFlags.None, new AsyncCallback(receiveData), clientSocket);
-            }
-
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
+                Console.WriteLine(ex.ToString());
+                // Disconnect.
+                Disconnect();
             }
         }
 
-        /// <summary>
-        /// Handles an incoming telnet command. May not need this here, but 
-        /// </summary>
-        private void handleTelnetCommand(TelnetCommand command)
+        public void Read()
         {
-            Console.WriteLine("Client at " + RemoteAddress.ToString() + " sent: " + command.Command + " " + command.Option + " " + Encoding.Default.GetString(command.NegotiationData.ToArray()));
-            // Durr do stuff.
-            switch (command.Command.GetValueOrDefault())
+            try
             {
-                case CommandCode.DO:
-                    switch (command.Option.GetValueOrDefault())
-                    {
-                        case OptionCode.Echo:
-                            IsRemoteEcho = true;
-                            break;
-                        // TODO: Handle other stuffs too?
-                    }
-                    break;
+                if (_workSocket != null && _workSocket.Connected)
+                {
+                    _workSocket.BeginReceive(_buffer, 0, BufferSize, 0, new AsyncCallback(readCallback), this);
+                }
             }
-            return;
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+                Disconnect();
+            }
+
+        }
+        public void Disconnect()
+        {
+            if (_workSocket.Connected)
+            {
+                _workSocket.Shutdown(SocketShutdown.Both);
+                _workSocket.Close();
+
+                ClientDisconnected?.Invoke(this, this);
+            }
         }
 
-        public override string ToString()
+        private void sendCallback(IAsyncResult ar)
         {
-            string ip = string.Format("{0}:{1}", RemoteAddress.Address.ToString(), RemoteAddress.Port);
-            string res = string.Format("Client IP Address: {0}, Connection time: {1}", ip, _connectedAt);
-            return res;
+            try
+            {
+                // Complete sending the data to the remote device.  
+                int bytesSent = _workSocket.EndSend(ar);
+                Console.WriteLine("Sent {0} bytes to client.", bytesSent);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+                Disconnect();
+            }
+        }
+        private void readCallback(IAsyncResult ar)
+        {
+            try
+            {
+                // Read data from the client socket.
+                int bytesRead = _workSocket.EndReceive(ar);
+
+                if (bytesRead > 0)
+                {
+                    // Decode.
+                    string receivedMessage = _clientEncoding.GetString(_buffer, 0, bytesRead);
+
+                    // Get last used line ending..
+                    if (receivedMessage.Contains("\r\n"))
+                    {
+                        _lineEnding = "\r\n";
+                    }
+                    else if (receivedMessage.Contains("\r"))
+                    {
+                        _lineEnding = "\r";
+                    }
+                    else if (receivedMessage.Contains("\n"))
+                    {
+                        _lineEnding = "\n";
+                    }
+
+                    // Unify the line endings.
+                    receivedMessage = receivedMessage.Replace("\n", "\r").Replace("\r\r", "\r");
+
+                    // There might be more data, so store the data received so far.  
+                    _receivedData = _receivedData + receivedMessage;
+
+                    int newlineIndex = _receivedData.IndexOf("\r");
+
+                    string currentCommand = string.Empty;
+
+                    // Peel off each line, treating a newline as the terminator for the command.                 
+                    while (newlineIndex > -1)
+                    {
+                        // TODO: Handle TelnetCommands
+                        currentCommand = _receivedData.Substring(0, newlineIndex);
+                        _receivedData = _receivedData.Substring(newlineIndex + 1);
+
+                        DataReceived?.Invoke(this, currentCommand);
+
+                        //  Display it on the console.  
+                        Console.WriteLine("Line received: {0}\r", currentCommand);
+
+                        // Echo the data back to the client.  
+                        if (IsRemoteEcho && !IsEchoSupressed) { Send(currentCommand); }
+
+                        newlineIndex = _receivedData.IndexOf("\r");
+                    }
+
+                    Read();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+                Disconnect();
+            }
         }
     }
 }

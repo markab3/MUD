@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 
 namespace MUD.Telnet
 {
@@ -35,6 +36,8 @@ namespace MUD.Telnet
             }
 
             // If the command was SB (Begin Negotiation) and the option is set, then this is negotiation data.
+            // SB ends with IAC and SE, which would fall through here at the IAC and it would get another command going for SE.
+            // Assumption now is that the 
             if (Command.HasValue && Command == CommandCode.SB && Option.HasValue && nextByte < 0xFF)
             {
                 appendNegotiationData(nextByte);
@@ -42,6 +45,31 @@ namespace MUD.Telnet
             }
 
             return false;
+        }
+
+        public byte[] ToByteArray()
+        {
+            List<byte> commandBytes = new List<byte>();
+            commandBytes.Add((byte)CommandCode.IAC);
+            if (Command != null)
+            {
+                commandBytes.Add((byte)Command.Value);
+                if (Option != null)
+                {
+                    commandBytes.Add((byte)Option.Value);
+                }
+                if (Command == CommandCode.SB) {
+                    commandBytes.AddRange(NegotiationData);
+                    commandBytes.Add((byte)CommandCode.IAC);
+                    commandBytes.Add((byte)CommandCode.SE);
+                }
+            }
+            return commandBytes.ToArray();
+        }
+
+        public override string ToString()
+        {
+            return Command?.ToString() +" " + Option?.ToString() + " " + Encoding.ASCII.GetString(NegotiationData?.ToArray());
         }
 
         private void appendNegotiationData(byte data)

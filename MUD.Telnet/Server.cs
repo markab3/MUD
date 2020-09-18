@@ -1,27 +1,25 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
+using System.Threading;
 
 namespace MUD.Telnet
 {
     public class Server
     {
-
-        /// <summary>
-        /// End of line constant.
-        /// </summary>
+        // Thread signal.  
+        private static ManualResetEvent _allDone = new ManualResetEvent(false);
+        
         public const string END_LINE = "\r\n";
 
         public const string CURSOR = "> ";
 
         /// <summary>
-        /// Server's main socket.
+        /// True for allowing incoming connections;
+        /// false otherwise.
         /// </summary>
-        private Socket _serverSocket;
-
+        private bool _isAcceptingConnections { get; set; }
         /// <summary>
         /// The IP on which to listen.
         /// </summary>
@@ -32,157 +30,93 @@ namespace MUD.Telnet
         /// </summary>
         private int _port;
 
-        /// <summary>
-        /// True for allowing incoming connections;
-        /// false otherwise.
-        /// </summary>
-        private bool _acceptIncomingConnections { get; set; }
-
-        /// <summary>
-        /// Contains all connected clients indexed
-        /// by their socket.
-        /// </summary>
         private List<Client> _clients;
 
-        public delegate void ConnectionEventHandler(Client c);
+        public event EventHandler<Client> ClientConnected;
 
+        public event EventHandler<Client> ClientDisconnected;
 
-        public delegate void ConnectionBlockedEventHandler(IPEndPoint endPoint);
-
-        /// <summary>
-        /// Occurs when a client is connected.
-        /// </summary>
-        public event ConnectionEventHandler ClientConnected;
-
-        /// <summary>
-        /// Occurs when a client is disconnected.
-        /// </summary>
-        public event ConnectionEventHandler ClientDisconnected;
-
-        /// <summary>
-        /// Occurs when an incoming connection is blocked.
-        /// </summary>
-        public event ConnectionBlockedEventHandler ConnectionBlocked;
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="Server"/> class.
-        /// </summary>
-        /// <param name="ip">The IP on which to listen to.</param>
-        /// <param name="dataSize">Data size for received data.</param>
-        public Server(IPAddress ip, int port = 23)
+        public Server(IPAddress ipAddress, int port)
         {
-            _ip = ip;
+            _ip = ipAddress;
             _port = port;
             _clients = new List<Client>();
-            _acceptIncomingConnections = true;
-            _serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         }
 
-        /// <summary>
-        /// Starts the server.
-        /// </summary>
-        public void start()
+        public void Start()
         {
-            _serverSocket.Bind(new IPEndPoint(_ip, _port));
-            _serverSocket.Listen(0);
-            _serverSocket.BeginAccept(new AsyncCallback(handleIncomingConnection), _serverSocket);
-        }
+            _isAcceptingConnections = true;
 
-        /// <summary>
-        /// Stops the server.
-        /// </summary>
-        public void stop()
-        {
-            _serverSocket.Close();
-        }
+            IPEndPoint localEP = new IPEndPoint(_ip, _port);
 
-        /// <summary>
-        /// Clears the screen for the specified
-        /// client.
-        /// </summary>
-        /// <param name="c">The client on which
-        /// to clear the screen.</param>
-        public void clearClientScreen(Client c)
-        {
-            c.SendMessageToClient("\u001B[1J\u001B[H");
-        }
+            Console.WriteLine($"Local address and port : {localEP.ToString()}");
 
-        /// <summary>
-        /// Sends a message to all connected clients.
-        /// </summary>
-        /// <param name="message">The message.</param>
-        public void sendMessageToAll(string message)
-        {
-            foreach (Client c in _clients)
-            {
-                try
-                {
-                    c.SendMessageToClient(END_LINE + message + END_LINE + CURSOR);
-                }
-                catch
-                {
-                    _clients.Remove(c);
-                }
-            }
-        }
+            Socket listener = new Socket(localEP.Address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
-        /// <summary>
-        /// Kicks the specified client from the server.
-        /// </summary>
-        /// <param name="client">The client.</param>
-        public void kickClient(Client client)
-        {
-            client.CloseSocket();
-            _clients.Remove(client);
-            ClientDisconnected(client);
-        }
-
-        /// <summary>
-        /// Handles an incoming connection.
-        /// If incoming connections are allowed,
-        /// the client is added to the clients list
-        /// and triggers the client connected event.
-        /// Else, the connection blocked event is
-        /// triggered.
-        /// </summary>
-        private void handleIncomingConnection(IAsyncResult result)
-        {
             try
             {
-                Socket oldSocket = (Socket)result.AsyncState;
+                listener.Bind(localEP);
+                listener.Listen(10);
 
-                if (_acceptIncomingConnections)
+                while (_isAcceptingConnections)
                 {
-                    Socket newSocket = oldSocket.EndAccept(result);
+                    _allDone.Reset();
 
-                    Client client = new Client(newSocket);
-                    _clients.Add(client);
+                    Console.WriteLine("Waiting for a connection...");
+                    listener.BeginAccept(new AsyncCallback(acceptCallback), listener);
 
-                    client.SendMessageToClient(
-                        new byte[] {
-                            0xff, 0xfd, 0x01,   // Do Echo
-                            0xff, 0xfd, 0x21,   // Do Remote Flow Control
-                            0xff, 0xfb, 0x01,   // Will Echo
-                            0xff, 0xfb, 0x03    // Will Supress Go Ahead
-                        }
-                    );
-
-                    client.CloseConnection += kickClient;
-                    ClientConnected(client);
-
-                    _serverSocket.BeginAccept(new AsyncCallback(handleIncomingConnection), _serverSocket);
-                }
-
-                else
-                {
-                    ConnectionBlocked((IPEndPoint)oldSocket.RemoteEndPoint);
+                    _allDone.WaitOne();
                 }
             }
-
-            catch (Exception ex)
+            catch (Exception e)
             {
-                Console.WriteLine(ex.Message);
+                Console.WriteLine(e.ToString());
             }
+
+            Console.WriteLine("Closing the listener...");
+        }
+
+        public void Stop()
+        {
+            _isAcceptingConnections = false;
+            _allDone.Set();
+
+            foreach (Client currentClient in _clients)
+            {
+                currentClient.Send("The server is shutting down and your connection will now be closeed.\r\n");
+                currentClient.Disconnect();
+            }
+        }
+
+        public void SendMessageToAll(string message)
+        {
+            foreach (Client currentClient in _clients)
+            {
+                currentClient.Send(message);
+            }
+        }
+
+        private void acceptCallback(IAsyncResult ar)
+        {
+            _allDone.Set();
+
+            Socket listener = (Socket)ar.AsyncState;
+            Socket handler = listener.EndAccept(ar);
+
+            // Create the client connection object  
+            Client client = new Client(handler);
+            client.ClientDisconnected += handleClientDisconnect;
+            client.Read();
+
+            _clients.Add(client);
+
+            ClientConnected?.Invoke(this, client);
+        }
+
+        private void handleClientDisconnect(object sender, Client client)
+        {
+            _clients.Remove(client);
+            ClientDisconnected?.Invoke(this, client);
         }
     }
 }
