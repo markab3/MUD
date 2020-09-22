@@ -8,13 +8,23 @@ using System.Collections.Generic;
 using System.Linq;
 using MongoDB.Bson.Serialization;
 using System.Threading;
+using System.Text.RegularExpressions;
 
 namespace MUD.Main
 {
     class Program
     {
+        private static World _gameWorld;
         private static Server _serverInstance;
-        private static List<PlayerSession> activeSessions = new List<PlayerSession>();
+        private static string welcomeMessage =
+@"
+                         Welcome to Planar Realms 0.1
+--------------------------------------------------------------------------------
+    Use 'connect <username> <password>' to connect to an existing player.
+    Use 'create <username> <password>' to create a new player.
+    Use 'who' to see who is currently online.
+    Use 'quit' to disconnect.
+--------------------------------------------------------------------------------";
 
         static void Main(string[] args)
         {
@@ -29,6 +39,9 @@ namespace MUD.Main
             Console.WriteLine("done.");
 
             Console.Write("Starting world...");
+            _gameWorld = World.Instance;
+            Thread gameWorldThread = new Thread(_gameWorld.Start);
+            gameWorldThread.Start();
             Console.WriteLine("done.");
 
             Console.Write("Starting telnet server...");
@@ -36,8 +49,8 @@ namespace MUD.Main
             _serverInstance.ClientConnected += clientConnected;
             _serverInstance.ClientDisconnected += clientDisconnected;
 
-            Thread thread = new Thread(_serverInstance.Start);
-            thread.Start();
+            Thread serverThread = new Thread(_serverInstance.Start);
+            serverThread.Start();
             Console.WriteLine("done.");
 
             Console.WriteLine("SERVER STARTED: " + DateTime.Now);
@@ -55,44 +68,21 @@ namespace MUD.Main
                 }
             } while ((read2 = Console.ReadKey(true).KeyChar) != 'q');
 
+            _gameWorld.Stop();
             _serverInstance.Stop();
 
             //return;
 
             //Player testPlayer = new Player() { PlayerName = "holen", Password = "password", Gender = "male", Race = "hobbit", Class = "rogue" };
             //var jsonContent = JsonConvert.SerializeObject(testPlayer);
-
-
-            // s = new Server(IPAddress.Any);
-            // s.ClientConnected += clientConnected;
-            // s.ClientDisconnected += clientDisconnected;
-            // s.ConnectionBlocked += connectionBlocked;
-            // s.start();
-
-            // char read = Console.ReadKey(true).KeyChar;
-
-            // do
-            // {
-            //     if (read == 'b')
-            //     {
-            //         s.sendMessageToAll(Console.ReadLine());
-            //     }
-            //     if (read == 't')
-            //     {
-            //         s.sendMessageToAll(new TelnetCommand(CommandCode.DO, OptionCode.TerminalType));
-            //     }
-            // } while ((read = Console.ReadKey(true).KeyChar) != 'q');
-
-            // s.stop();
         }
 
         private static void clientConnected(object sender, Client c)
         {
             Console.WriteLine("CONNECTED: " + c);
-            activeSessions.Add(new PlayerSession(c));
 
             c.DataReceived += messageReceived;
-            c.Send("Telnet Server" + Server.END_LINE + "Login: ");
+            c.Send(welcomeMessage);
         }
 
         private static void clientDisconnected(object sender, Client c)
@@ -108,17 +98,8 @@ namespace MUD.Main
 
         private static void messageReceived(object sender, string message)
         {
-            Client client = (Client) sender;
-            Console.WriteLine("messageReceived: " + message.Replace("\r", "\\r").Replace("\n", "\\n"));
+            Client client = (Client)sender;
             message = message.TrimEnd('\n').TrimEnd('\r');
-
-            PlayerSession playerSession = activeSessions.FirstOrDefault(s => s.TelnetClient == client);
-
-            if (playerSession.SessionStatus != EPlayerSessionStatus.LoggedIn)
-            {
-                handleLogin(playerSession, message);
-                return;
-            }
 
             Console.WriteLine("MESSAGE: " + message);
 
@@ -126,60 +107,83 @@ namespace MUD.Main
             {
                 client.Disconnect();
             }
+            else if (message == "who")
+            {
+                // Show the list of logged in players
+                if (_gameWorld.Players == null || _gameWorld.Players.Count == 0)
+                {
+                    client.Send("No one is logged on.");
+                }
+                else if (_gameWorld.Players.Count == 1)
+                {
+                    client.Send(String.Format("{0} is logged on.", _gameWorld.Players.First().PlayerName));
+                }
+                else
+                {
+                    client.Send(String.Format("{0} are logged on.", String.Join(", ", _gameWorld.Players.Select(p => p.PlayerName))));
+                }
+            }
+            else if (message.StartsWith("connect "))
+            {
+                string[] args = message.Substring(8).Split(' ');
 
+                if (args.Length != 2)
+                {
+                    // bad input. 
+                    client.Send("Please provide a username and password to connect. Format: connect <username> <password>");
+                }
+
+                string username = args[0];
+                string password = args[1];
+
+                // begin login attempt.
+                var foundPlayer = Player.LoadFromUsername(username);
+                if (foundPlayer == null)
+                {
+                    // Player not found.
+                    client.Send(String.Format("Player {0} was not found.", username));
+                }
+                else
+                {
+                    // Found the player.. check the password.
+                    if (foundPlayer.CheckPassword(password))
+                    {
+                        // Ok login
+                        if (_gameWorld.Players.Contains(foundPlayer))
+                        {
+                            // Already logged on.
+                        }
+                        else
+                        {
+                            foundPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
+                            foundPlayer.Connection = client;
+                            client.DataReceived -= messageReceived;
+                            _gameWorld.AddPlayer(foundPlayer);
+                        }
+                    }
+                    else
+                    {
+                        // bad login
+                        client.Send("Incorrect password.");
+                    }
+                }
+            }
+            else if (message.StartsWith("create "))
+            {
+                string[] args = message.Substring(8).Split(' ');
+
+                if (args.Length != 2)
+                {
+                    // bad input. 
+                    client.Send("Please provide a username and password to create a new account. Format: create <username> <password>");
+                }
+
+                string username = args[0];
+                string password = args[1];
+            }
             else
             {
-                // Send to command parser
-                //c.SendMessageToClient(Server.END_LINE + Server.CURSOR);
-            }
-        }
-
-        private static void handleLogin(PlayerSession playerSession, string message)
-        {
-            Console.WriteLine("BEGINNING LOGIN FOR: " + playerSession.TelnetClient.RemoteAddress);
-
-            if (playerSession.SessionStatus == EPlayerSessionStatus.Guest)
-            {
-                Console.WriteLine(playerSession.TelnetClient.RemoteAddress + ": Login: " + message);
-
-                MongoClient dbClient = new MongoClient("mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test");
-                var database = dbClient.GetDatabase("testmud");
-                var collection = database.GetCollection<BsonDocument>("players");
-
-                var filter = Builders<BsonDocument>.Filter.Eq("PlayerName", message);
-                var foundUser = collection.Find(filter).FirstOrDefault();
-
-                if (foundUser != null)
-                {
-                    playerSession.TelnetClient.IsEchoSupressed = true;
-                    playerSession.TelnetClient.Send("Password: ");
-                    playerSession.SessionStatus = EPlayerSessionStatus.Authenticating;
-                    playerSession.SessionPlayer = BsonSerializer.Deserialize<Player>(foundUser);
-                    return;
-                }
-                else
-                {
-                    Console.WriteLine("User not recognized, kicking.");
-                    playerSession.TelnetClient.Disconnect();
-                    activeSessions.Remove(playerSession);
-                }
-            }
-            else if (playerSession.SessionStatus == EPlayerSessionStatus.Authenticating)
-            {
-                playerSession.TelnetClient.IsEchoSupressed = false;
-                Console.WriteLine(playerSession.TelnetClient.RemoteAddress + ": Password: " + message);
-                if (message == playerSession.SessionPlayer.Password)
-                {
-                    playerSession.TelnetClient.Send("Successfully authenticated." + Server.END_LINE);
-                    playerSession.SessionStatus = EPlayerSessionStatus.LoggedIn;
-                    _serverInstance.SendMessageToAll("[" + playerSession.SessionPlayer.PlayerName + " has entered Planar Realms]"); 
-                    playerSession.TelnetClient.Send(Server.END_LINE + Server.CURSOR);
-                }
-                else
-                {
-                    Console.WriteLine("Incorrect password, kicking.");
-                    playerSession.TelnetClient.Disconnect();
-                }
+                client.Send("Command {0} was not recognized.");
             }
         }
     }

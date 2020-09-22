@@ -42,6 +42,9 @@ namespace MUD.Telnet
             // Unify line endings to be consistent with the client.
             data.Replace("\n", "\r").Replace("\r\r", "\r").Replace("\r", _lineEnding);
 
+            // Ensure that it ends with line ending
+            if (!data.EndsWith(_lineEnding)) { data = data + _lineEnding; }
+
             // Convert the string data to byte data using the client's encoding.  
             byte[] byteData = _clientEncoding.GetBytes(data);
 

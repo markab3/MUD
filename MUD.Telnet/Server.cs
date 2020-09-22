@@ -10,10 +10,6 @@ namespace MUD.Telnet
     {
         // Thread signal.  
         private static ManualResetEvent _allDone = new ManualResetEvent(false);
-        
-        public const string END_LINE = "\r\n";
-
-        public const string CURSOR = "> ";
 
         /// <summary>
         /// True for allowing incoming connections;
@@ -83,7 +79,7 @@ namespace MUD.Telnet
 
             foreach (Client currentClient in _clients)
             {
-                currentClient.Send("The server is shutting down and your connection will now be closeed.\r\n");
+                currentClient.Send("The server is shutting down and your connection will now be closeed.");
                 currentClient.Disconnect();
             }
         }
