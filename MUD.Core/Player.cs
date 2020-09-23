@@ -14,15 +14,25 @@ namespace MUD.Core
     {
         private Client _connection;
 
+        private CommandLibrary _knownCommandsLibrary;
+
         [BsonId(IdGenerator = typeof(StringObjectIdGenerator))]
         [BsonRepresentation(BsonType.ObjectId)]
         public string _id { get; set; }
+
         public string PlayerName { get; set; }
+
         public string Password { get; set; }
+
         public string Gender { get; set; }
+
         public string Race { get; set; }
+
         public string Class { get; set; }
+
         public Room CurrentLocation { get; set; }
+
+        public string[] KnownCommands {get;set;}
 
         public Client Connection
         {
@@ -57,6 +67,8 @@ namespace MUD.Core
             if (foundUser != null)
             {
                 foundUser.ConnectionStatus = EPlayerConnectionStatus.Authenticating;
+
+                foundUser._knownCommandsLibrary = World.Instance.AllCommands.GetSubset(foundUser.KnownCommands);
                 return foundUser;
             }
             return null;
@@ -84,16 +96,28 @@ namespace MUD.Core
         {
             // check to see if this matches a command that the player has available.
             // if it does, add that command to the queue
-            if (ChatCommand.IsInputValid(message)) // Move this logic to something else..something to match Command classes with input.
+            ICommand matchedCommand = ResolveCommand(message);
+            if (matchedCommand != null) // Move this logic to something else..something to match Command classes with input.
             {
-                CommandQueue.Instance.AddCommand(new ChatCommand(this, message));
+                CommandQueue.Instance.AddCommand(new CommandExecution(this, message, matchedCommand));
             }
-            else if (message.Trim().ToLower() == "quit")
-            {
-                World.Instance.RemovePlayer(this);
-                Connection.Disconnect();
+            else {
+                Connection.Send("Command not recognized.");
             }
         }
+
+        /// <summary>
+        /// Checks the player, their environment, their equipment, and the global default commands to find a command that matches the provided input.
+        /// </summary>
+        public ICommand ResolveCommand(string input) {
+            
+            ICommand matchedCommand = _knownCommandsLibrary.GetCommandFromInput(input);
+            if (matchedCommand == null) {
+                matchedCommand = World.Instance.DefaultCommands.GetCommandFromInput(input);
+            }
+            return matchedCommand;
+        }
+
         private void ClientDisconnectedHandler(object sender, Client e)
         {
             // I think this is what we want for now... 

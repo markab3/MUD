@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 
 namespace MUD.Core
 {
@@ -18,25 +17,24 @@ namespace MUD.Core
         }
         private static CommandQueue _instance;
 
-        private ConcurrentQueue<Command> _internalQueue;
+        private ConcurrentQueue<CommandExecution> _internalQueue;
 
         private CommandQueue()
         {
-            _internalQueue = new ConcurrentQueue<Command>();
+            _internalQueue = new ConcurrentQueue<CommandExecution>();
         }
 
-        public void AddCommand(Command newCommand)
+        public void AddCommand(CommandExecution newCommand)
         {
             _internalQueue.Enqueue(newCommand);
         }
 
-        public bool ExecuteAllCommands()
+        public void ExecuteAllCommands()
         {
-            Command command;
+            CommandExecution command;
             while(_internalQueue.TryDequeue(out command)) {
-                return command.DoCommand();
+                command.Execute();
             }
-            return false;
         }
 
         public bool HasMoreCommands()

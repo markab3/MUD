@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
-using MUD.Telnet;
 
 namespace MUD.Core
 {
@@ -19,9 +19,13 @@ namespace MUD.Core
                 return _instance;
             }
         }
+
         private static World _instance;
 
         public List<Player> Players;
+
+        public CommandLibrary AllCommands;
+        public CommandLibrary DefaultCommands;
 
         private Timer _heartbeatTimer;
 
@@ -29,6 +33,9 @@ namespace MUD.Core
         private World()
         {
             Players = new List<Player>();
+            AllCommands = new CommandLibrary();
+            AllCommands.LoadCommandsFromAssembly(Assembly.GetExecutingAssembly());
+            DefaultCommands = new CommandLibrary(new Dictionary<string, ICommand>(AllCommands.Commands.Where(kvp => kvp.Value.IsDefault)));
         }
 
         public void Start()
