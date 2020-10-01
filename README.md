@@ -9,10 +9,12 @@ Things to do:
 * Determine best practices for serializing/deserializing and handling _id in mongo world
 * Figure out streamlined way to persist objects with arbitrary classes - include class as a string in the BSON document? Make a different table for each?
 **Telnet Stuff**
-You can connect now, but I am pretty sure not all the edge cases are getting handled or handled correctly.
-* Clean up code
-* Debug dropped connections/weird cases
-* Test multiple connections/concurrency stuff (incoming data is handled on the server?)
+~~You can connect now, but I am pretty sure not all the edge cases are getting handled or handled correctly.~~
+* ~~Clean up code~~
+* ~~Debug dropped connections/weird cases~~
+* ~~Test multiple connections/concurrency stuff (incoming data is handled on the server?)~~
+* Add more support for telnet commands and negotiation.
+* Automatically set terminal from negotiated values.
 **SignalR?**
 Maybe instead of (or along with) telnet, a signalR implementation could be set up so that people could play in a browser over a more modern connection?
 **Runtime Dependency Injection Of Creator Code**
@@ -25,17 +27,20 @@ Maybe instead of (or along with) telnet, a signalR implementation could be set u
     * Allow others to host web services and register as a "plane" that the mud server would reach out to for rooms and stuff?
 **Mud Basics**
 MUDs need to do some basic stuff...
-* Parse commands, handle available commands
-    * Some commands are givens (ex. look, search), players have commands they have learned, and objects or rooms can provide commands (use wands, interact with room items)
-    * These need to handle parsing - probably regex match first word + syntax stuffs?
-    * MUDs seem to usually have a command queue of some sort.. should look into that..
+* ~~Parse commands, handle available commands~~
+    * ~~Some commands are givens (ex. look, search), players have commands they have learned, and objects or rooms can provide commands (use wands, interact with room items)~~
+    * Need item commands still. Need items still...
+    * ~~These need to handle parsing - probably regex match first word + syntax stuffs?~~
+    * ~~MUDs seem to usually have a command queue of some sort.. should look into that..~~
+    * Revisit command queue
 * Provide methods for sending content to players
-    * I think most LPMud setups have functions like TellPlayer or TellRoom to send text to the appropriate clients
+    * ~~I think most LPMud setups have functions like TellPlayer or TellRoom to send text to the appropriate clients~~
+    * Maybe rename/refactor
 * Provide methods for matching input to items in the game
     * Need to be able to match swords to the broadsword, longsword, and katana, but not the dagger or the orc.
-    * There's actually a lot of muckity muck string stuff to do for pluralizing things and stuff
-* Create a game loop to run in the background and update things
-* Rooms, Items, etc.
+    * There's actually a lot of muckity muck string stuff to do for pluralizing things and stuff - partially complete...
+* ~~Create a game loop to run in the background and update things~~
+* ~~Rooms~~, Items, etc.
 ## Game Mechanics Ideas ##
 * Visibility/Spatial system - Traditional "rooms" work pretty well for dungeons/indoor stuff don't make as much sense when talking about wide open spaces. 
     * Maybe add the ability to see things in adjacent "rooms" to simulate this. Example: "Off in the distance to the east there appear to be about three people"
