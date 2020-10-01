@@ -3,6 +3,8 @@ namespace MUD.Core.Commands
     public class HelpCommand : ICommand
     {
         public string CommandKeyword { get => "help"; }
+        
+        public string[] CommandAliases { get  => null; }
 
         public bool IsDefault { get => true; }
 

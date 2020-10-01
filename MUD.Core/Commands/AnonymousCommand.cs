@@ -5,6 +5,8 @@ namespace MUD.Core.Commands
     public class AnonymousCommand : ICommand
     {
         public string CommandKeyword { get; set; }
+        
+        public string[] CommandAliases { get; set; }
 
         public bool IsDefault { get => true; }
 

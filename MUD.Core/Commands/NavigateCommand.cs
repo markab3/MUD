@@ -6,6 +6,8 @@ namespace MUD.Core.Commands
     {
         public string CommandKeyword { get => "navigate"; }
 
+        public string[] CommandAliases { get  => null; }
+
         public bool IsDefault { get => true; }
 
         public string HelpText { get => "Navigate to a specific room using the magic of database ObjectIds.\r\n \r\nFormat: navigate <room Id>"; }

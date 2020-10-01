@@ -6,6 +6,8 @@ namespace MUD.Core.Commands
     public class TermCommand : ICommand
     {
         public string CommandKeyword { get => "term"; }
+        
+        public string[] CommandAliases { get  => null; }
 
         public bool IsDefault { get => true; }
 

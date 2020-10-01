@@ -8,6 +8,8 @@ namespace MUD.Core.Commands
     {
         string CommandKeyword { get; }
 
+        string[] CommandAliases { get; }
+
         bool IsDefault { get; }
 
         string HelpText { get; }

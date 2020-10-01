@@ -3,6 +3,8 @@ namespace MUD.Core.Commands
     public class QuitCommand : ICommand
     {
         public string CommandKeyword { get => "quit"; }
+        
+        public string[] CommandAliases { get  => null; }
 
         public bool IsDefault { get => true; }
 

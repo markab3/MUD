@@ -3,6 +3,8 @@ namespace MUD.Core.Commands
     public class SaveCommand : ICommand
     {
         public string CommandKeyword { get => "save"; }
+        
+        public string[] CommandAliases { get  => null; }
 
         public bool IsDefault { get => true; }
 

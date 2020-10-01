@@ -6,6 +6,8 @@ namespace MUD.Core.Commands
     {
         public string CommandKeyword { get => "look"; }
 
+        public string[] CommandAliases => new string[] { "l", "examine", "exa" };
+
         public bool IsDefault { get => true; }
 
         public string HelpText { get => "Send a message to all other players.\r\n \r\nFormat: chat <message>"; }
@@ -22,7 +24,7 @@ namespace MUD.Core.Commands
 
         public void DoCommand(Player commandIssuer, object[] commandArgs)
         {
-            if (commandArgs == null || commandArgs.Length == 0 || string.IsNullOrWhiteSpace((string)commandArgs[0]) || ((string)commandArgs[0]).ToLower() == "room") 
+            if (commandArgs == null || commandArgs.Length == 0 || string.IsNullOrWhiteSpace((string)commandArgs[0]) || ((string)commandArgs[0]).ToLower() == "room")
             {
                 // Just plain old look. Return the current room.
                 if (commandIssuer.CurrentLocation != null)

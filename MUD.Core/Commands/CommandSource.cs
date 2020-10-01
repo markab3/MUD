@@ -34,7 +34,7 @@ namespace MUD.Core.Commands
         {
             foreach (var currentPair in Commands)
             {
-                if (input.ToLower().StartsWith(currentPair.Key.ToLower()))
+                if (input.ToLower().StartsWith(currentPair.Key.ToLower() + " ") || input.ToLower() == currentPair.Key.ToLower())
                 {
                     return currentPair.Value;
                 }
@@ -45,7 +45,16 @@ namespace MUD.Core.Commands
         public bool AddCommand(ICommand command)
         {
             string keyword = command.CommandKeyword;
-            return Commands.TryAdd(command.CommandKeyword, command);
+            var result = true;
+            if (Commands.TryAdd(command.CommandKeyword, command)) { result = false; }
+            if (command.CommandAliases != null && command.CommandAliases.Length > 0)
+            {
+                foreach (var currentAlias in command.CommandAliases)
+                {
+                    if (Commands.TryAdd(currentAlias, command)) { result = false; }
+                }
+            }
+            return result;
         }
 
         public void LoadCommandsFromAssembly(Assembly assemblyToLoad)
