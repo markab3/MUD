@@ -1,9 +1,11 @@
-namespace MUD.Core {
-    public class CommandExecution {
+namespace MUD.Core.Commands
+{
+    public class CommandExecution
+    {
         protected object[] _commandArgs;
 
         protected Player _commandIssuer;
-        
+
         protected string _commandText;
 
         private ICommand _commandObject;
@@ -16,7 +18,8 @@ namespace MUD.Core {
             _commandArgs = _commandObject.ParseCommand(commandText);
         }
 
-        public void Execute() {
+        public void Execute()
+        {
             _commandObject.DoCommand(_commandIssuer, _commandArgs);
         }
     }

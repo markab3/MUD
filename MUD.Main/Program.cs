@@ -62,9 +62,28 @@ namespace MUD.Main
                 {
                     _serverInstance.SendMessageToAll(Console.ReadLine());
                 }
+                if (read2 == 'c') {
+                    string colorTest = "";
+                    for (int i = 0; i < 256; i++) {
+                        colorTest += "\x1B[38;5;" + i + "m " +i.ToString("D3")+" \x1B[0m";
+                        if (i == 15 || i == 231 || ((i > 15) && (i < 232) && (((i -15) % 6) == 0))) {
+                            colorTest += "\r\n";
+                        }
+                    }
+                    _serverInstance.SendMessageToAll(colorTest);
+
+                    _serverInstance.SendMessageToAll("\x1B[32mGREEN\x1B[0m");
+                    _serverInstance.SendMessageToAll("\x1B[92mBRIGHT GREEN\x1B[0m");
+                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[32mBOLD GREEN\x1B[0m");                    
+                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[92mBOLD BRIGHT GREEN\x1B[0m");
+                    _serverInstance.SendMessageToAll("\x1B[42mGREEN BACKGROUND\x1B[0m");
+                    _serverInstance.SendMessageToAll("\x1B[102mBRIGHT GREEN BACKGROUND\x1B[0m");
+                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[42mBOLD GREEN BACKGROUND\x1B[0m");
+                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[102mBOLD BRIGHT GREEN BACKGROUND\x1B[0m");
+                }
                 if (read2 == 't')
                 {
-                    //s2.SendMessageToAll(new TelnetCommand(CommandCode.DO, OptionCode.TerminalType));
+                    _serverInstance.SendMessageToAll(new byte[] { (byte)CommandCode.IAC, (byte)CommandCode.DO, (byte)OptionCode.TerminalType });
                 }
             } while ((read2 = Console.ReadKey(true).KeyChar) != 'q');
 
@@ -131,40 +150,31 @@ namespace MUD.Main
                 {
                     // bad input. 
                     client.Send("Please provide a username and password to connect. Format: connect <username> <password>");
+                    return;
                 }
 
                 string username = args[0];
                 string password = args[1];
 
                 // begin login attempt.
-                var foundPlayer = Player.LoadFromUsername(username);
+                var foundPlayer = Player.Login(username, password, client);
                 if (foundPlayer == null)
                 {
                     // Player not found.
-                    client.Send(String.Format("Player {0} was not found.", username));
+                    client.Send(String.Format("Login failed for {0}.", username));
+                    return;
                 }
                 else
                 {
-                    // Found the player.. check the password.
-                    if (foundPlayer.CheckPassword(password))
+                    // Ok login
+                    if (_gameWorld.Players.Contains(foundPlayer))
                     {
-                        // Ok login
-                        if (_gameWorld.Players.Contains(foundPlayer))
-                        {
-                            // Already logged on.
-                        }
-                        else
-                        {
-                            foundPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
-                            foundPlayer.Connection = client;
-                            client.DataReceived -= messageReceived;
-                            _gameWorld.AddPlayer(foundPlayer);
-                        }
+                        // Already logged on.
                     }
                     else
                     {
-                        // bad login
-                        client.Send("Incorrect password.");
+                        client.DataReceived -= messageReceived;
+                        _gameWorld.AddPlayer(foundPlayer);
                     }
                 }
             }
@@ -183,7 +193,7 @@ namespace MUD.Main
             }
             else
             {
-                client.Send("Command {0} was not recognized.");
+                client.Send(string.Format("Command {0} was not recognized.", message.Substring(0, message.IndexOf(" "))));
             }
         }
     }

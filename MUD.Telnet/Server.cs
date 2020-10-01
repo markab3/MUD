@@ -84,6 +84,19 @@ namespace MUD.Telnet
             }
         }
 
+        public void SendMessageToAll(TelnetCommand telnetCommand)
+        {
+            SendMessageToAll(telnetCommand.ToByteArray());
+        }
+        
+        public void SendMessageToAll(byte[] data)
+        {
+            foreach (Client currentClient in _clients)
+            {
+                currentClient.Send(data);
+            }
+        }
+
         public void SendMessageToAll(string message)
         {
             foreach (Client currentClient in _clients)
@@ -105,6 +118,8 @@ namespace MUD.Telnet
             client.Read();
 
             _clients.Add(client);
+
+            //client.Send(new byte[] {(byte) CommandCode.IAC, (byte) CommandCode.DO, (byte) OptionCode.TerminalType});
 
             ClientConnected?.Invoke(this, client);
         }

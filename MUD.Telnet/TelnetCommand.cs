@@ -6,17 +6,30 @@ namespace MUD.Telnet
 
     public class TelnetCommand
     {
-        public CommandCode? Command { get; private set; }
-        public OptionCode? Option { get; private set; }
+        public CommandCode? Command { get; private set; } = null;
 
-        public List<byte> NegotiationData { get; private set; }
+        public OptionCode? Option { get; private set; } = null;
+        
+        public List<byte> NegotiationData { get; private set; } = new List<byte>();
+        
+        public bool IsComplete { get; private set; } = false;
 
-        public TelnetCommand(CommandCode? commandCode = null, OptionCode? optionCode = null, List<byte> negotiationData = null)
+        public TelnetCommand() {
+            Command = null;
+            Option = null;
+            NegotiationData = new List<byte>();
+            IsComplete = false;
+        }
+
+        public TelnetCommand(byte[] commandBytes)
         {
-            Command = commandCode;
-            Option = optionCode;
-            NegotiationData = negotiationData;
-            if (NegotiationData == null) { NegotiationData = new List<byte>(); }
+            if (commandBytes != null && commandBytes.Length > 1 && commandBytes[0] != (byte)CommandCode.IAC)
+            {
+                for (int i = 1; i < commandBytes.Length; i++)
+                {
+                    if (!ProccessByte(commandBytes[i])) { break; }
+                }
+            }
         }
 
         public bool ProccessByte(byte nextByte)
@@ -32,6 +45,7 @@ namespace MUD.Telnet
             if (Command.HasValue && (byte)Command.Value >= 250 && Option == null)
             {
                 Option = (OptionCode)nextByte;
+                if (Command != CommandCode.SB) { IsComplete = true; }
                 return true;
             }
 
@@ -58,7 +72,8 @@ namespace MUD.Telnet
                 {
                     commandBytes.Add((byte)Option.Value);
                 }
-                if (Command == CommandCode.SB) {
+                if (Command == CommandCode.SB)
+                {
                     commandBytes.AddRange(NegotiationData);
                     commandBytes.Add((byte)CommandCode.IAC);
                     commandBytes.Add((byte)CommandCode.SE);
@@ -69,7 +84,7 @@ namespace MUD.Telnet
 
         public override string ToString()
         {
-            return Command?.ToString() +" " + Option?.ToString() + " " + Encoding.ASCII.GetString(NegotiationData?.ToArray());
+            return Command?.ToString() + " " + Option?.ToString() + " " + Encoding.ASCII.GetString(NegotiationData?.ToArray());
         }
 
         private void appendNegotiationData(byte data)

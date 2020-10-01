@@ -1,4 +1,4 @@
-namespace MUD.Core
+namespace MUD.Core.Commands
 {
     public class ChatCommand : ICommand
     {
@@ -17,12 +17,13 @@ namespace MUD.Core
         {
             if (commandArgs == null || commandArgs.Length != 1 || string.IsNullOrWhiteSpace((string)commandArgs[0]))
             {
-                commandIssuer.Connection.Send("You must provide something to chat!");
+                commandIssuer.ReceiveMessage("You must provide something to chat!");
+                return;
             }
 
             foreach (Player currentPlayer in World.Instance.Players)
             {
-                currentPlayer.Connection.Send(string.Format("(Chat) {0}: {1}", commandIssuer.PlayerName, (string)commandArgs[0]));
+                currentPlayer.ReceiveMessage(string.Format("(Chat) {0}: {1}", commandIssuer.PlayerName, (string)commandArgs[0]));
             }
         }
     }

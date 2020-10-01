@@ -1,7 +1,7 @@
 
 namespace MUD.Core
 {
-    public enum EPlayerConnectionStatus
+    public enum EPlayerConnectionStatus // Do I need this?
     {
         /// <summary>
         /// The client has not been
@@ -19,6 +19,6 @@ namespace MUD.Core
         /// <summary>
         /// Player lost their connection.
         /// </summary>
-        NetDead = 3
+        Offline = 3
     }
 }

@@ -1,4 +1,4 @@
-namespace MUD.Core
+namespace MUD.Core.Commands
 {
     public class HelpCommand : ICommand
     {
@@ -24,13 +24,14 @@ namespace MUD.Core
         {
             if (commandArgs == null || commandArgs.Length != 1 || string.IsNullOrWhiteSpace((string)commandArgs[0]))
             {
-                commandIssuer.Connection.Send("What did you need help with?");
+                commandIssuer.ReceiveMessage("What did you need help with?");
+                return;
             }
 
             var matchedCommand = commandIssuer.ResolveCommand((string) commandArgs[0]);
 
             if (matchedCommand != null) {
-                commandIssuer.Connection.Send(string.Format(_helpTextWrapper, matchedCommand.HelpText));
+                commandIssuer.ReceiveMessage(string.Format(_helpTextWrapper, matchedCommand.HelpText));
             }
         }
     }

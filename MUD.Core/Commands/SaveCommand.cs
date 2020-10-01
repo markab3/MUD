@@ -1,12 +1,12 @@
 namespace MUD.Core.Commands
 {
-    public class QuitCommand : ICommand
+    public class SaveCommand : ICommand
     {
-        public string CommandKeyword { get => "quit"; }
+        public string CommandKeyword { get => "save"; }
 
         public bool IsDefault { get => true; }
 
-        public string HelpText { get => "Quits the game."; }
+        public string HelpText { get => "Saves your precious player information."; }
 
         public object[] ParseCommand(string input)
         {
@@ -14,8 +14,8 @@ namespace MUD.Core.Commands
         }
 
         public void DoCommand(Player commandIssuer, object[] commandArgs)
-        {                
-            commandIssuer.Quit();
+        {
+            commandIssuer.Save();
         }
     }
 }

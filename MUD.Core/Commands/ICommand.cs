@@ -2,18 +2,18 @@ using System;
 using System.Linq;
 using System.Reflection;
 
-namespace MUD.Core
+namespace MUD.Core.Commands
 {
     public interface ICommand
     {
-        public string CommandKeyword { get; }
+        string CommandKeyword { get; }
 
-        public bool IsDefault { get; }
+        bool IsDefault { get; }
 
-        public string HelpText { get; }
+        string HelpText { get; }
 
-        public object[] ParseCommand(string input);
+        object[] ParseCommand(string input);
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs);
+        void DoCommand(Player commandIssuer, object[] commandArgs);
     }
 }

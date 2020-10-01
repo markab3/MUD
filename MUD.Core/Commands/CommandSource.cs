@@ -3,26 +3,26 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
-namespace MUD.Core
+namespace MUD.Core.Commands
 {
-    public class CommandLibrary
+    public class CommandSource
     {
         public Dictionary<string, ICommand> Commands;
 
-        public CommandLibrary()
+        public CommandSource()
         {
             Commands = new Dictionary<string, ICommand>();
         }
 
-        public CommandLibrary(Dictionary<string, ICommand> commands)
+        public CommandSource(Dictionary<string, ICommand> commands)
         {
             Commands = commands;
         }
 
-        public CommandLibrary GetSubset(string[] subset)
+        public CommandSource GetSubset(string[] subset)
         {
-            if (subset == null || subset.Length == 0) { return new CommandLibrary(); }
-            return new CommandLibrary(new Dictionary<string, ICommand>(Commands.Where(c => subset.Contains(c.Key))));
+            if (subset == null || subset.Length == 0) { return new CommandSource(); }
+            return new CommandSource(new Dictionary<string, ICommand>(Commands.Where(c => subset.Contains(c.Key))));
         }
 
         public ICommand GetCommand(string commandKeyword)
@@ -53,7 +53,10 @@ namespace MUD.Core
             var commandTypes = assemblyToLoad.DefinedTypes.Where(t => t.ImplementedInterfaces.Any(i => i == typeof(ICommand)));
             foreach (TypeInfo currentType in commandTypes)
             {
-                AddCommand((ICommand)Activator.CreateInstance(currentType));
+                // Skip AnonymousCommand. It is not intended to be an actual command without being instantiated and given delegates.
+                if (currentType.Name == "AnonymousCommand") { continue; }
+                ICommand newCommand = (ICommand)Activator.CreateInstance(currentType);
+                AddCommand(newCommand);
             }
         }
     }

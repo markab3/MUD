@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace MUD.Core
+namespace MUD.Core.Commands
 {
     public class CommandQueue
     {
