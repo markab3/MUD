@@ -38,6 +38,9 @@ Maybe instead of (or along with) telnet, a signalR implementation could be set u
 **Mud Basics**
 
 MUDs need to do some basic stuff...
+* Add Items
+* Add NPCs
+* Add Inventories
 * ~~Parse commands, handle available commands~~
     * ~~Some commands are givens (ex. look, search), players have commands they have learned, and objects or rooms can provide commands (use wands, interact with room items)~~
     * Need item commands still. Need items still...

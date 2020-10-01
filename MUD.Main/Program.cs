@@ -18,7 +18,20 @@ namespace MUD.Main
         private static Server _serverInstance;
         private static string welcomeMessage =
 @"
-                         Welcome to Planar Realms 0.1
+                     Welcome to Planar Realms 0.1
+                     _____  _                         
+                    |  __ \| |                        
+                    | |__) | | __ _ _ __   __ _ _ __  
+                    |  ___/| |/ _` | '_ \ / _` | '__| 
+                    | |    | | (_| | | | | (_| | |    
+               />___|_|___ |_|\__,_|_|_|_|\__,_|_|__________    
+     [#########[]____________________________________________\
+               \>   |  __ \          | |              
+                    | |__) |___  __ _| |_ __ ___  ___ 
+                    |  _  // _ \/ _` | | '_ ` _ \/ __|
+                    | | \ \  __/ (_| | | | | | | \__ \
+                    |_|  \_\___|\__,_|_|_| |_| |_|___/
+                                                                        
 --------------------------------------------------------------------------------
     Use 'connect <username> <password>' to connect to an existing player.
     Use 'create <username> <password>' to create a new player.
