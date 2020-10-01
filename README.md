@@ -3,29 +3,40 @@
 This is a first crack/experimental mud server. I started with the telnet stuff, which turned out to have a few twists and turns. Now I'm wresting with getting the projects all structured right and some of the basics built out.
 ## Code Objectives/Ideas
 **MongoDB BackEnd**
+
 Make use of modern db software to make the back end of the MUD more flexible and reliable. Mongo chosen due to the changing nature of MUD code. Being able to edit code while you play is kinda a major component (IMO)
 Things to do:
 * Build out a data access layer project
 * Determine best practices for serializing/deserializing and handling _id in mongo world
 * Figure out streamlined way to persist objects with arbitrary classes - include class as a string in the BSON document? Make a different table for each?
+
 **Telnet Stuff**
+
 ~~You can connect now, but I am pretty sure not all the edge cases are getting handled or handled correctly.~~
 * ~~Clean up code~~
 * ~~Debug dropped connections/weird cases~~
 * ~~Test multiple connections/concurrency stuff (incoming data is handled on the server?)~~
 * Add more support for telnet commands and negotiation.
 * Automatically set terminal from negotiated values.
+
 **SignalR?**
+
 Maybe instead of (or along with) telnet, a signalR implementation could be set up so that people could play in a browser over a more modern connection?
+
 **Runtime Dependency Injection Of Creator Code**
+
 * Want to be able to add c# files to custom modules, compile that code, and load it in without rebooting the server.
 * Should be possible to dynamically load additional projects/DLLs if they are added to dependency injection registry...
+
 **Webservice Interconnect**
+
 * Would be neat if you were able to set up a separate server with separate content/worlds
     * Can't work out how to pass player data from one MUD instance to another and deal with code incompatibility or not allow someone to create a MUD that would let them just stupidly powerlevel or something
     * Maybe host a web service that serves up core MUD class information in some form? Maybe just return version information...
     * Allow others to host web services and register as a "plane" that the mud server would reach out to for rooms and stuff?
+
 **Mud Basics**
+
 MUDs need to do some basic stuff...
 * ~~Parse commands, handle available commands~~
     * ~~Some commands are givens (ex. look, search), players have commands they have learned, and objects or rooms can provide commands (use wands, interact with room items)~~
