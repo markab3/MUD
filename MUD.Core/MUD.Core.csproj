@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MUD.Telnet\MUD.Telnet.csproj" />
+    <ProjectReference Include="..\MUD.Data\MUD.Data.csproj" />
     <PackageReference Include="MongoDB.Bson" Version="2.11.0" />
     <PackageReference Include="MongoDB.Driver" Version="2.11.0" />
   </ItemGroup>

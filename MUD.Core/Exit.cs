@@ -1,11 +1,10 @@
-using System.Linq;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Bson.Serialization.IdGenerators;
-using MUD.Core.Commands;
 
 namespace MUD.Core
 {
+    // This class is super small right now, but might grow to include doors, or locked/unlocked or whatever.
     public class Exit
     {
         [BsonId(IdGenerator = typeof(StringObjectIdGenerator))]
@@ -16,18 +15,5 @@ namespace MUD.Core
 
         [BsonRepresentation(BsonType.ObjectId)]
         public string Destination_id { get; set; }
-
-        [BsonIgnore]
-        public Room Destination
-        {
-            get
-            {
-                if (string.IsNullOrWhiteSpace(Destination_id))
-                {
-                    return null;
-                }
-                return World.Instance.Rooms.FirstOrDefault(r => r._id == Destination_id);
-            }
-        }
     }
 }

@@ -6,6 +6,7 @@ using System.Threading;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
+using MUD.Core.Repositories.Interfaces;
 
 namespace MUD.Core
 {
@@ -25,9 +26,11 @@ namespace MUD.Core
 
         private static World _instance;
 
+        public static IServiceProvider ServiceProvider;
+
         public List<Player> Players;
 
-        public List<Room> Rooms;
+        // public List<Room> Rooms;
 
         public CommandSource AllCommands;
 
@@ -50,11 +53,11 @@ namespace MUD.Core
             TerminalHandlers = this.loadImplementingClasses<ITerminalHandler>();
 
             // Load stuff
-            MongoClient dbClient = new MongoClient("mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test");
-            var database = dbClient.GetDatabase("testmud"); // This creates the database if it doesn't otherwise exist?
-            if (database == null) { Console.WriteLine("Database not found!"); }
-            var roomCollection = database.GetCollection<Room>("room");
-            Rooms = roomCollection.AsQueryable().ToList<Room>(); // get all rooms?
+            // MongoClient dbClient = new MongoClient("mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test");
+            // var database = dbClient.GetDatabase("testmud"); // This creates the database if it doesn't otherwise exist?
+            // if (database == null) { Console.WriteLine("Database not found!"); }
+            // var roomCollection = database.GetCollection<Room>("room");
+            // Rooms = roomCollection.AsQueryable().ToList<Room>(); // get all rooms?
         }
 
         public void Start()
@@ -106,6 +109,24 @@ namespace MUD.Core
                     currentPlayer.ReceiveMessage(String.Format("[{0} left Planar Realms]", player.PlayerName));
                 }
             }
+        }
+
+        public Room GetRoom(string roomId)
+        {
+            if (string.IsNullOrWhiteSpace(roomId))
+            {
+                return null;
+            }
+
+            var roomRepository = (IRoomRepository)ServiceProvider.GetService(typeof(IRoomRepository));
+            var roomEntity = roomRepository.Get(roomId);
+
+            if (roomEntity == null)
+            {
+                return null;
+            }
+
+            return new Room(roomRepository, roomEntity);
         }
 
         private List<T> loadImplementingClasses<T>(Assembly assemblyToLoad = null)

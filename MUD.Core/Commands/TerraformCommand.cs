@@ -77,7 +77,7 @@ namespace MUD.Core.Commands
                     string returnName = null;
                     if (commandArgs.Length > 2) { returnName = (string)commandArgs[2]; }
 
-                    var roomToLink = World.Instance.Rooms.FirstOrDefault(r => r._id == (string)commandArgs[0]);
+                    var roomToLink = World.Instance.GetRoom((string)commandArgs[0]);
                     if (roomToLink == null)
                     {
                         commandIssuer.ReceiveMessage(string.Format("Room with id of {0} was not found.", (string)commandArgs[0]));

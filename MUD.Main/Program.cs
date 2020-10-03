@@ -4,18 +4,24 @@ using MUD.Telnet;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using MUD.Core;
-using System.Collections.Generic;
 using System.Linq;
-using MongoDB.Bson.Serialization;
 using System.Threading;
-using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection;
+using Scrutor;
+using MUD.Core.Commands;
+using MUD.Core.Repositories.Interfaces;
+using MUD.Core.Repositories;
+using Microsoft.Extensions.Configuration;
+using System.IO;
 
 namespace MUD.Main
 {
     class Program
     {
+        private static IServiceProvider _serviceProvider;
         private static World _gameWorld;
         private static Server _serverInstance;
+        private static IConfigurationRoot configuration;
         private static string welcomeMessage =
 @"
                      Welcome to Planar Realms 0.1
@@ -41,8 +47,14 @@ namespace MUD.Main
 
         static void Main(string[] args)
         {
+            // Build configuration
+            configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetParent(AppContext.BaseDirectory).FullName)
+                .AddJsonFile("appsettings.json", false)
+                .Build();
+
             Console.Write("Checking databases...");
-            MongoClient dbClient = new MongoClient("mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test");
+            MongoClient dbClient = new MongoClient(configuration.GetConnectionString("MongoDBConnection"));
             var database = dbClient.GetDatabase("testmud"); // This creates the database if it doesn't otherwise exist?
             if (database == null) { Console.WriteLine("Database not found!"); }
             var collection = database.GetCollection<BsonDocument>("players"); // Check that the collection is there. If it is not, then the collection exists in memory and is created on the actual DB when needed.
@@ -51,14 +63,42 @@ namespace MUD.Main
             //collection.InsertOne(BsonDocument.Parse(jsonContent)); // The BSON object will have _id and it will be set by the insert call.
             Console.WriteLine("done.");
 
+
+            //setup our DI
+            _serviceProvider = new ServiceCollection()
+                // Load all commands 
+                .Scan(scan => scan
+                    //.FromCallingAssembly()
+                    //                    .FromAssemblies(new System.Reflection.Assembly[] {})
+                    .FromApplicationDependencies()
+                    .AddClasses(classes => classes.AssignableTo<ICommand>())
+                    .AsImplementedInterfaces()
+                    .WithSingletonLifetime()
+                )
+                .AddSingleton<IMongoClient>(dbClient)
+                .AddSingleton<IPlayerRepository, PlayerRepository>()
+                .AddSingleton<IRoomRepository, RoomRepository>()
+                .BuildServiceProvider();
+
+            System.Collections.Generic.List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
+
             Console.Write("Starting world...");
+            World.ServiceProvider = _serviceProvider;
             _gameWorld = World.Instance;
             Thread gameWorldThread = new Thread(_gameWorld.Start);
             gameWorldThread.Start();
             Console.WriteLine("done.");
 
             Console.Write("Starting telnet server...");
-            _serverInstance = new Server(IPAddress.Any, 23);
+            IPAddress ipAddress = IPAddress.Any;
+            int port = 23;
+            if (!string.IsNullOrWhiteSpace(configuration?.GetSection("TelnetSettings")?.GetSection("IPAddress")?.Value))
+            {
+                ipAddress = IPAddress.Parse(configuration.GetSection("TelnetSettings").GetSection("IPAddress").Value);
+            }
+            if (!int.TryParse(configuration.GetSection("TelnetSettings").GetSection("Port").Value, out port)) { port = 23; }
+
+            _serverInstance = new Server(IPAddress.Any, port);
             _serverInstance.ClientConnected += clientConnected;
             _serverInstance.ClientDisconnected += clientDisconnected;
 
@@ -75,11 +115,14 @@ namespace MUD.Main
                 {
                     _serverInstance.SendMessageToAll(Console.ReadLine());
                 }
-                if (read2 == 'c') {
+                if (read2 == 'c')
+                {
                     string colorTest = "";
-                    for (int i = 0; i < 256; i++) {
-                        colorTest += "\x1B[38;5;" + i + "m " +i.ToString("D3")+" \x1B[0m";
-                        if (i == 15 || i == 231 || ((i > 15) && (i < 232) && (((i -15) % 6) == 0))) {
+                    for (int i = 0; i < 256; i++)
+                    {
+                        colorTest += "\x1B[38;5;" + i + "m " + i.ToString("D3") + " \x1B[0m";
+                        if (i == 15 || i == 231 || ((i > 15) && (i < 232) && (((i - 15) % 6) == 0)))
+                        {
                             colorTest += "\r\n";
                         }
                     }
@@ -87,7 +130,7 @@ namespace MUD.Main
 
                     _serverInstance.SendMessageToAll("\x1B[32mGREEN\x1B[0m");
                     _serverInstance.SendMessageToAll("\x1B[92mBRIGHT GREEN\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[32mBOLD GREEN\x1B[0m");                    
+                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[32mBOLD GREEN\x1B[0m");
                     _serverInstance.SendMessageToAll("\x1B[1m\x1B[92mBOLD BRIGHT GREEN\x1B[0m");
                     _serverInstance.SendMessageToAll("\x1B[42mGREEN BACKGROUND\x1B[0m");
                     _serverInstance.SendMessageToAll("\x1B[102mBRIGHT GREEN BACKGROUND\x1B[0m");
@@ -170,7 +213,8 @@ namespace MUD.Main
                 string password = args[1];
 
                 // begin login attempt.
-                var foundPlayer = Player.Login(username, password, client);
+                var foundPlayer = doLogin(username, password, client);
+
                 if (foundPlayer == null)
                 {
                     // Player not found.
@@ -208,6 +252,26 @@ namespace MUD.Main
             {
                 client.Send(string.Format("Command {0} was not recognized.", message.Substring(0, message.IndexOf(" "))));
             }
+        }
+
+        private static Player doLogin(string userName, string password, Client connectingClient)
+        {
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return null; }
+            
+            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
+            var foundUser = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+
+            if (foundUser != null)
+            {
+                if (foundUser.Password == password)
+                {
+                    Player foundPlayer = new Player(playerRepository, foundUser);
+                    foundPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
+                    foundPlayer.Connection = connectingClient;
+                    return foundPlayer;
+                }
+            }
+            return null;
         }
     }
 }

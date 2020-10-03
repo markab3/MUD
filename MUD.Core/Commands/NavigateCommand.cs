@@ -25,11 +25,7 @@ namespace MUD.Core.Commands
                 return;
             }
 
-            Room destination = World.Instance.Rooms.FirstOrDefault(r => r._id == (string)commandArgs[0]);
-            if (destination != null)
-            {
-                commandIssuer.MoveToRoom(destination);
-            }
+            commandIssuer.MoveToRoom((string)commandArgs[0]);
         }
     }
 }

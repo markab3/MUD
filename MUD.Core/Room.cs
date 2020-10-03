@@ -1,28 +1,15 @@
 using System.Collections.Generic;
 using System.Linq;
-using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
-using MongoDB.Bson.Serialization.IdGenerators;
-using MongoDB.Driver;
 using MUD.Core.Commands;
+using MUD.Core.Entities;
 using MUD.Core.Formatting;
-using MUD.Core.Interfaces;
+using MUD.Core.Repositories.Interfaces;
 
 namespace MUD.Core
 {
-    public class Room : IExaminable
+    public class Room: RoomEntity
     {
-        [BsonId(IdGenerator = typeof(StringObjectIdGenerator))]
-        [BsonRepresentation(BsonType.ObjectId)]
-        public string _id { get; set; }
-
-        public string ShortDescription { get; set; }
-
-        public string LongDescription { get; set; }
-
-        public Feature[] Features { get; set; }
-
-        public List<Exit> Exits { get; set; } = new List<Exit>();
 
         [BsonIgnore]
         public CommandSource ExitCommandSource
@@ -39,7 +26,7 @@ namespace MUD.Core
 
         private CommandSource _exitCommandSource = null;
 
-        private List<Living> _occupants;
+        private List<Player> _occupants = new List<Player>();
 
         private Dictionary<string, string[]> _exitAliases = new Dictionary<string, string[]>() {
             {"northwest", new string[] {"nw"}},
@@ -54,9 +41,11 @@ namespace MUD.Core
             {"up", new string[] {"u"}}
         };
 
-        public Room()
-        {
-            _occupants = new List<Living>();
+        private IRoomRepository _roomRepository;
+
+        public Room(IRoomRepository roomRepository, RoomEntity entity) {
+            _roomRepository = roomRepository;
+            entity.Map(this);
         }
 
         public void TellRoom(string message)
@@ -67,7 +56,7 @@ namespace MUD.Core
             }
         }
 
-        public void EnterRoom(Living newOccupant, string entranceMessage = null)
+        public void EnterRoom(Player newOccupant, string entranceMessage = null)
         {
             if (string.IsNullOrEmpty(entranceMessage))
             {
@@ -80,7 +69,7 @@ namespace MUD.Core
             _occupants.Add(newOccupant);
         }
 
-        public void ExitRoom(Living occupant, string exitMessage = null)
+        public void ExitRoom(Player occupant, string exitMessage = null)
         {
             _occupants.Remove(occupant);
             if (string.IsNullOrEmpty(exitMessage))
@@ -113,7 +102,7 @@ namespace MUD.Core
                     {
                         if (commandArgs[0] != null && commandArgs[0] is Exit)
                         {
-                            commandIssuer.MoveToRoom(((Exit)commandArgs[0]).Destination);
+                            commandIssuer.MoveToRoom(((Exit)commandArgs[0]).Destination_id);
                         }
                     })
                 });
@@ -122,12 +111,7 @@ namespace MUD.Core
 
         public bool Save()
         {
-            MongoClient dbClient = new MongoClient("mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test");
-            var database = dbClient.GetDatabase("testmud");
-            var collection = database.GetCollection<Room>("room");
-            //var filter = Builders<Player>.Filter.Eq(p => p._id == _id);
-            var result = collection.ReplaceOne<Room>((p => p._id == _id), this);
-            if (result != null && result.IsModifiedCountAvailable && result.ModifiedCount == 1)
+            if (_roomRepository.Update(this))
             {
                 return true;
             }

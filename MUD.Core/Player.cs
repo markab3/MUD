@@ -1,50 +1,24 @@
 using System;
 using System.Linq;
-using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
-using MongoDB.Bson.Serialization.IdGenerators;
 using MongoDB.Driver;
 using MUD.Core.Commands;
+using MUD.Core.Entities;
 using MUD.Core.Formatting;
 using MUD.Core.Interfaces;
+using MUD.Core.Repositories;
+using MUD.Core.Repositories.Interfaces;
 using MUD.Telnet;
 
 namespace MUD.Core
 {
-    public class Player : Living, IUpdatable, IExaminable
+    public class Player : PlayerEntity, IUpdatable, IExaminable
     {
+        private IPlayerRepository _playerRepository;  // TODO: How inject?
+
         private Client _connection;
 
-        private CommandSource _knownCommandsLibrary;
-
-        private DateTime _lastSave;
-
-        private string _selectedTerm;
-
-        private ITerminalHandler _selectedTerminalHandler;
-
-        [BsonId(IdGenerator = typeof(StringObjectIdGenerator))]
-        [BsonRepresentation(BsonType.ObjectId)]
-        public string _id { get; set; }
-
-        public string PlayerName { get; set; }
-
-        public string Password { get; set; }
-
-        public string Class { get; set; }
-
-        public string[] KnownCommands { get; set; }
-
-        public string SelectedTerm
-        {
-            get { return _selectedTerm; }
-
-            set
-            {
-                _selectedTerm = value;
-                _selectedTerminalHandler = World.Instance.TerminalHandlers.FirstOrDefault(th => th.TerminalName == _selectedTerm || (th.Aliases != null && th.Aliases.Contains(_selectedTerm)));
-            }
-        }
+        private Room _currentLocation;
 
         [BsonIgnore]
         public Client Connection
@@ -70,40 +44,30 @@ namespace MUD.Core
         [BsonIgnore]
         public EPlayerConnectionStatus ConnectionStatus { get; set; }
 
-        public static Player Login(string userName, string password, Client connectingClient)
+        [BsonIgnore]
+        public Room CurrentLocation
         {
-            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return null; }
-
-            MongoClient dbClient = new MongoClient("mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test");
-            var database = dbClient.GetDatabase("testmud");
-            var collection = database.GetCollection<Player>("players");
-
-            var foundUser = collection.AsQueryable().Where(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
-
-            if (foundUser != null)
+            get
             {
-                if (foundUser.Password == password)
+                if (_currentLocation == null && !string.IsNullOrWhiteSpace(CurrentLocation_id))
                 {
-                    foundUser.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
-                    foundUser.Connection = connectingClient;
-                    foundUser._lastSave = DateTime.Now;
-
-                    foundUser._knownCommandsLibrary = World.Instance.AllCommands.GetSubset(foundUser.KnownCommands);
-                    return foundUser;
+                    _currentLocation = World.Instance.GetRoom(CurrentLocation_id);
                 }
+                return _currentLocation;
             }
-            return null;
+            set { _currentLocation = value; } // Maybe make this private so we have to load via ID?
+        }
+
+        public Player(IPlayerRepository playerRepository, PlayerEntity entity)
+        {
+            _playerRepository = playerRepository;
+            entity.Map(this);
         }
 
         public bool Save()
         {
-            ReceiveMessage("\x1B[33mSaving...\x1B[0m");
-            MongoClient dbClient = new MongoClient("mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test");
-            var database = dbClient.GetDatabase("testmud");
-            var collection = database.GetCollection<Player>("players");
-            //var filter = Builders<Player>.Filter.Eq(p => p._id == _id);
-            var result = collection.ReplaceOne<Player>((p => p._id == _id), this);
-            if (result != null && result.IsModifiedCountAvailable && result.ModifiedCount == 1)
+            ReceiveMessage("^%Bold^%^%Yellow^%Saving...^%Reset^%");
+            if (_playerRepository.Update(this))
             {
                 _lastSave = DateTime.Now;
                 return true;
@@ -126,33 +90,52 @@ namespace MUD.Core
             }
         }
 
-        public override void ReceiveMessage(string message)
+        public CommandSource GetKnownCommandSource()
         {
-            if (_selectedTerminalHandler != null)
+            if (KnownCommands != null)
             {
-                message = _selectedTerminalHandler.ResolveOutput(message);
+                return World.Instance.AllCommands.GetSubset(KnownCommands);
+            }
+            return new CommandSource();
+        }
+
+        public void MoveToRoom(string roomIdToEnter)
+        {
+            var roomToEnter = World.Instance.GetRoom(roomIdToEnter);
+            if (CurrentLocation != null)
+            {
+                CurrentLocation.ExitRoom(this);
+            }
+
+            CurrentLocation = roomToEnter;
+            CurrentLocation_id = roomToEnter._id;
+
+            roomToEnter.EnterRoom(this);
+            ReceiveMessage(roomToEnter.Examine());
+        }
+
+        public void ReceiveMessage(string message)
+        {
+            var selectedTerminalHandler = World.Instance.TerminalHandlers.FirstOrDefault(th => th.TerminalName == SelectedTerm || (th.Aliases != null && th.Aliases.Contains(SelectedTerm)));
+            if (selectedTerminalHandler != null)
+            {
+                message = selectedTerminalHandler.ResolveOutput(message);
             }
             _connection.Send(message);
         }
 
-        public new string Examine()
+        public string Examine()
         {
             return string.Format("Here stands {0}, a prime example of {1} {2}.", PlayerName, Race.GetArticle(), Race);
         }
 
-        public new void Update()
+        public void Update()
         {
             if (ConnectionStatus == EPlayerConnectionStatus.LoggedIn)
             {
                 if (DateTime.Now.Subtract(_lastSave).Minutes >= 10)
                 {
-                    ReceiveMessage("\x1B[33mSaving...\x1B[0m");
-                    MongoClient dbClient = new MongoClient("mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test");
-                    var database = dbClient.GetDatabase("testmud");
-                    var collection = database.GetCollection<Player>("players");
-                    //var filter = Builders<Player>.Filter.Eq(p => p._id == _id);
-                    collection.ReplaceOne<Player>((p => p._id == _id), this);
-                    _lastSave = DateTime.Now;
+                    Save();
                 }
             }
         }
@@ -177,7 +160,6 @@ namespace MUD.Core
         /// </summary>
         public ICommand ResolveCommand(string input)
         {
-
             ICommand matchedCommand = null;
 
             if (CurrentLocation != null)
@@ -186,7 +168,7 @@ namespace MUD.Core
             }
             if (matchedCommand != null) { return matchedCommand; }
 
-            matchedCommand = _knownCommandsLibrary.GetCommandFromInput(input);
+            matchedCommand = GetKnownCommandSource().GetCommandFromInput(input);
             if (matchedCommand != null) { return matchedCommand; }
 
             matchedCommand = World.Instance.DefaultCommands.GetCommandFromInput(input);
