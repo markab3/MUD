@@ -2,9 +2,8 @@ namespace MUD.Core.Commands
 {
     public class ChatCommand : ICommand
     {
-        public string CommandKeyword { get => "chat"; }
-        
-        public string[] CommandAliases { get  => null; }
+
+        public string[] CommandKeywords { get => new string[] { "chat" }; }
 
         public bool IsDefault { get => true; }
 

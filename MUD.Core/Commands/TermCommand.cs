@@ -5,9 +5,7 @@ namespace MUD.Core.Commands
 {
     public class TermCommand : ICommand
     {
-        public string CommandKeyword { get => "term"; }
-        
-        public string[] CommandAliases { get  => null; }
+        public string[] CommandKeywords { get => new string[] { "term", "terminal" }; }
 
         public bool IsDefault { get => true; }
 
@@ -17,16 +15,29 @@ namespace MUD.Core.Commands
 
         public object[] ParseCommand(string input)
         {
-            return new object[] { input.Substring(CommandKeyword.Length).Trim() };
+            string remainingInput = null;
+
+            foreach (string currentKeyword in CommandKeywords)
+            {
+                if (input.StartsWith(currentKeyword + " ") || input == currentKeyword)
+                {
+                    remainingInput = input.Substring(currentKeyword.Length).Trim();
+                    break;
+                }
+            }
+            return new object[] { remainingInput };
         }
 
         public void DoCommand(Player commandIssuer, object[] commandArgs)
         {
-            if (_terminalTypes == null) {
+            if (_terminalTypes == null)
+            {
                 _terminalTypes = World.Instance.TerminalHandlers.Select(t => t.TerminalName).ToArray();
                 var terminalAliases = World.Instance.TerminalHandlers.Where(a => a.Aliases != null).Select(t => t.Aliases);
-                if (terminalAliases != null && terminalAliases.Count() > 0) {
-                    foreach(var currentAliasSet in terminalAliases) {
+                if (terminalAliases != null && terminalAliases.Count() > 0)
+                {
+                    foreach (var currentAliasSet in terminalAliases)
+                    {
                         _terminalTypes = _terminalTypes.Union(currentAliasSet).ToArray();
                     }
                 }
@@ -37,12 +48,15 @@ namespace MUD.Core.Commands
                 commandIssuer.ReceiveMessage(string.Format("Terminal currently set to: {0}", commandIssuer.SelectedTerm));
                 return;
             }
-            
-            string newTermValue = ((string) commandArgs[0]).Trim();
-            if (_terminalTypes.Contains(newTermValue)) {
+
+            string newTermValue = ((string)commandArgs[0]).Trim();
+            if (_terminalTypes.Contains(newTermValue))
+            {
                 commandIssuer.SelectedTerm = newTermValue;
                 commandIssuer.ReceiveMessage(string.Format("Terminal type set to {0}.", newTermValue));
-            } else {
+            }
+            else
+            {
                 commandIssuer.ReceiveMessage(string.Format("Terminal type {0} not recognized. Current types include: {1}", newTermValue, _terminalTypes.GetListText()));
             }
         }

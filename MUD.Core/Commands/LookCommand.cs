@@ -1,12 +1,10 @@
 using MUD.Core.Interfaces;
-
+using System.Linq;
 namespace MUD.Core.Commands
 {
     public class LookCommand : ICommand
     {
-        public string CommandKeyword { get => "look"; }
-
-        public string[] CommandAliases => new string[] { "l", "examine", "exa" };
+        public string[] CommandKeywords => new string[] { "look", "l", "examine", "exa" };
 
         public bool IsDefault { get => true; }
 
@@ -14,7 +12,17 @@ namespace MUD.Core.Commands
 
         public object[] ParseCommand(string input)
         {
-            string remainingInput = input.Substring(CommandKeyword.Length).Trim();
+            string remainingInput = null;
+
+            foreach (string currentKeyword in CommandKeywords)
+            {
+                if (input.StartsWith(currentKeyword + " ") || input == currentKeyword)
+                {
+                    remainingInput = input.Substring(currentKeyword.Length).Trim();
+                    break;
+                }
+            }
+
             if (remainingInput.ToLower().StartsWith("at "))
             {
                 remainingInput = remainingInput.Substring(3);

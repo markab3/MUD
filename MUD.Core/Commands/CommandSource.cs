@@ -44,15 +44,11 @@ namespace MUD.Core.Commands
 
         public bool AddCommand(ICommand command)
         {
-            string keyword = command.CommandKeyword;
             var result = true;
-            if (Commands.TryAdd(command.CommandKeyword, command)) { result = false; }
-            if (command.CommandAliases != null && command.CommandAliases.Length > 0)
+
+            foreach (var currentKeyword in command.CommandKeywords)
             {
-                foreach (var currentAlias in command.CommandAliases)
-                {
-                    if (Commands.TryAdd(currentAlias, command)) { result = false; }
-                }
+                if (Commands.TryAdd(currentKeyword, command)) { result = false; }
             }
             return result;
         }

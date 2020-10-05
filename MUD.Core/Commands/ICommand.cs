@@ -6,9 +6,7 @@ namespace MUD.Core.Commands
 {
     public interface ICommand
     {
-        string CommandKeyword { get; }
-
-        string[] CommandAliases { get; }
+        string[] CommandKeywords { get; }
 
         bool IsDefault { get; }
 

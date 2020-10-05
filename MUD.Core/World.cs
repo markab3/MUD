@@ -87,7 +87,7 @@ namespace MUD.Core
             Players.Add(newPlayer);
             foreach (var currentPlayer in Players)
             {
-                currentPlayer.ReceiveMessage(String.Format("[\x1B[32m{0} enters Planar Realms\x1B[0m]", newPlayer.PlayerName));
+                currentPlayer.ReceiveMessage(String.Format("[%^Green%^{0} enters Planar Realms%^Reset%^]", newPlayer.PlayerName));
             }
             if (newPlayer.CurrentLocation != null)
             {
@@ -106,7 +106,7 @@ namespace MUD.Core
                 }
                 foreach (var currentPlayer in Players)
                 {
-                    currentPlayer.ReceiveMessage(String.Format("[{0} left Planar Realms]", player.PlayerName));
+                    currentPlayer.ReceiveMessage(String.Format("[%^Green%^{0} left Planar Realms%^Reset%^]", player.PlayerName));
                 }
             }
         }

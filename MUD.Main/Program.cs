@@ -13,6 +13,7 @@ using MUD.Core.Repositories.Interfaces;
 using MUD.Core.Repositories;
 using Microsoft.Extensions.Configuration;
 using System.IO;
+using MUD.Core.Entities;
 
 namespace MUD.Main
 {
@@ -237,7 +238,7 @@ namespace MUD.Main
             }
             else if (message.StartsWith("create "))
             {
-                string[] args = message.Substring(8).Split(' ');
+                string[] args = message.Substring(7).Split(' ');
 
                 if (args.Length != 2)
                 {
@@ -247,6 +248,21 @@ namespace MUD.Main
 
                 string username = args[0];
                 string password = args[1];
+
+                // begin character creation attempt.
+                var newPlayer = doCreateUser(username, password, client);
+
+                if (newPlayer == null)
+                {
+                    // Player not found.
+                    client.Send(String.Format("There is already someone by the name of {0}.", username));
+                    return;
+                }
+                else
+                {
+                    client.DataReceived -= messageReceived;
+                    _gameWorld.AddPlayer(newPlayer);
+                }
             }
             else
             {
@@ -257,7 +273,7 @@ namespace MUD.Main
         private static Player doLogin(string userName, string password, Client connectingClient)
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return null; }
-            
+
             var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
             var foundUser = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
 
@@ -272,6 +288,31 @@ namespace MUD.Main
                 }
             }
             return null;
+        }
+
+        private static Player doCreateUser(string userName, string password, Client connectingClient)
+        {
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return null; }
+
+            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
+            var foundUser = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+
+            if (foundUser == null)
+            {
+                Player newPlayer = new Player(playerRepository, new PlayerEntity())
+                {
+                    PlayerName = userName,
+                    Password = password,
+                    Race = "human",
+                    CurrentLocation_id = "5f6e27f20c1fdd24b4b18b1a",
+                    SelectedTerm = "Default", // Or just do the subnegotiation to get a value for this...
+                    ConnectionStatus = EPlayerConnectionStatus.LoggedIn,
+                    Connection = connectingClient
+                };
+                return newPlayer;
+            }
+            return null;
+
         }
     }
 }

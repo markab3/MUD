@@ -5,9 +5,7 @@ namespace MUD.Core.Commands
 {
     public class CommandsCommand : ICommand
     {
-        public string CommandKeyword { get => "commands"; }
-        
-        public string[] CommandAliases { get  => null; }
+        public string[] CommandKeywords { get => new string[] { "commands" }; }
 
         public bool IsDefault { get => true; }
 
@@ -22,10 +20,11 @@ namespace MUD.Core.Commands
         {
             string returnString = string.Empty;
             var knownCommandList = commandIssuer.KnownCommands.GetListText();
-            if (!string.IsNullOrWhiteSpace(knownCommandList)) {
+            if (!string.IsNullOrWhiteSpace(knownCommandList))
+            {
                 returnString += string.Format("Known Commands:\r\n\r\n{0}\r\n\r\n", knownCommandList);
             }
-            var defaultCommandList = World.Instance.DefaultCommands.Commands.Select(c => c.Value.CommandKeyword).ToArray().GetListText();
+            var defaultCommandList = World.Instance.DefaultCommands.Commands.Select(c => c.Value.CommandKeywords[0]).ToArray().GetListText();
             commandIssuer.ReceiveMessage(string.Format("Default Commands:\r\n\r\n{0}", defaultCommandList));
         }
     }

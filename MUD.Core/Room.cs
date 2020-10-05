@@ -8,7 +8,7 @@ using MUD.Core.Repositories.Interfaces;
 
 namespace MUD.Core
 {
-    public class Room: RoomEntity
+    public class Room : RoomEntity
     {
 
         [BsonIgnore]
@@ -28,22 +28,23 @@ namespace MUD.Core
 
         private List<Player> _occupants = new List<Player>();
 
-        private Dictionary<string, string[]> _exitAliases = new Dictionary<string, string[]>() {
-            {"northwest", new string[] {"nw"}},
-            {"north", new string[] {"n"}},
-            {"northeast", new string[] {"ne"}},
-            {"west", new string[] {"w"}},
-            {"east", new string[] {"e"}},
-            {"southwest", new string[] {"sw"}},
-            {"south", new string[] {"s"}},
-            {"southeast", new string[] {"se"}},
-            {"down", new string[] {"d"}},
-            {"up", new string[] {"u"}}
+        private List<string[]> _exitAliases = new List<string[]>() {
+            {new string[] {"northwest", "nw"}},
+            {new string[] {"north", "n"}},
+            {new string[] {"northeast", "ne"}},
+            {new string[] {"west", "w"}},
+            {new string[] {"east", "e"}},
+            {new string[] {"southwest", "sw"}},
+            {new string[] {"south", "s"}},
+            {new string[] {"southeast", "se"}},
+            {new string[] {"down", "d"}},
+            {new string[] {"up", "u"}}
         };
 
         private IRoomRepository _roomRepository;
 
-        public Room(IRoomRepository roomRepository, RoomEntity entity) {
+        public Room(IRoomRepository roomRepository, RoomEntity entity)
+        {
             _roomRepository = roomRepository;
             entity.Map(this);
         }
@@ -88,12 +89,16 @@ namespace MUD.Core
             string[] aliases;
             foreach (Exit currentExit in Exits)
             {
-                aliases = null;
-                if (_exitAliases[currentExit.Name.ToLower()] != null) { aliases = _exitAliases[currentExit.Name.ToLower()]; }
+                var keywords = new string[] { currentExit.Name };
+                aliases = _exitAliases.FirstOrDefault(s => s.Contains(currentExit.Name.ToLower()));
+                if (aliases != null)
+                {
+                    keywords = aliases;
+                }
+
                 _exitCommandSource.AddCommand(new AnonymousCommand()
                 {
-                    CommandKeyword = currentExit.Name,
-                    CommandAliases = aliases,
+                    CommandKeywords = keywords,
                     ParseCommandHandler = ((string input) =>
                         {
                             return new object[] { currentExit };

@@ -6,7 +6,7 @@ namespace MUD.Data
 {
     public interface IRepository<TModel> where TModel : Entity
     {
-        string Insert(TModel model);
+        void Insert(TModel model);
 
         bool Update(TModel model);
 

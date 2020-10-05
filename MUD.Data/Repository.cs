@@ -11,7 +11,7 @@ namespace MUD.Data
     {
         private IMongoCollection<TModel> _collection;
 
-        private List<TModel> _modelCache;
+        private List<TModel> _modelCache; // This is helpful for anything other than searches.. womp womp.
 
         public Repository(IMongoClient dbClient, string databaseName, string collectionName)
         {
@@ -20,9 +20,14 @@ namespace MUD.Data
             _modelCache = new List<TModel>();
         }
 
-        public string Insert(TModel model)
+        public void Insert(TModel model)
         {
-            throw new NotImplementedException();
+            var matchedCacheItem = _modelCache.FirstOrDefault(m => m._id == model._id);
+            if (matchedCacheItem == null)
+            {
+                _modelCache.Add(model);
+            }
+            _collection.InsertOne(model);
         }
 
         public bool Update(TModel model)

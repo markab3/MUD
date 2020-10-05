@@ -66,11 +66,20 @@ namespace MUD.Core
 
         public bool Save()
         {
-            ReceiveMessage("^%Bold^%^%Yellow^%Saving...^%Reset^%");
-            if (_playerRepository.Update(this))
+            ReceiveMessage("%^Bold%^%^Yellow%^Saving...%^Reset%^");
+            if (string.IsNullOrWhiteSpace(_id))
             {
+                _playerRepository.Insert(this);
                 _lastSave = DateTime.Now;
                 return true;
+            }
+            else
+            {
+                if (_playerRepository.Update(this))
+                {
+                    _lastSave = DateTime.Now;
+                    return true;
+                }
             }
             return false;
         }

@@ -7,10 +7,6 @@ namespace MUD.Core
     // This class is super small right now, but might grow to include doors, or locked/unlocked or whatever.
     public class Exit
     {
-        [BsonId(IdGenerator = typeof(StringObjectIdGenerator))]
-        [BsonRepresentation(BsonType.ObjectId)]
-        public string _id { get; set; }
-
         public string Name { get; set; }
 
         [BsonRepresentation(BsonType.ObjectId)]

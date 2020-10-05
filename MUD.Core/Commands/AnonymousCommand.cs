@@ -4,9 +4,7 @@ namespace MUD.Core.Commands
 {
     public class AnonymousCommand : ICommand
     {
-        public string CommandKeyword { get; set; }
-        
-        public string[] CommandAliases { get; set; }
+        public string[] CommandKeywords { get; set; }
 
         public bool IsDefault { get => true; }
 
@@ -20,7 +18,7 @@ namespace MUD.Core.Commands
 
         public DoCommandDelegate DoCommandHandler;
 
-        public AnonymousCommand() {}
+        public AnonymousCommand() { }
 
         public object[] ParseCommand(string input)
         {

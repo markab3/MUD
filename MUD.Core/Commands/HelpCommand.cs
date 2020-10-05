@@ -2,15 +2,13 @@ namespace MUD.Core.Commands
 {
     public class HelpCommand : ICommand
     {
-        public string CommandKeyword { get => "help"; }
-        
-        public string[] CommandAliases { get  => null; }
+        public string[] CommandKeywords { get => new string[] { "help" }; }
 
         public bool IsDefault { get => true; }
 
         public string HelpText { get => "Displays information about the usage of a command.\r\n \r\nFormat: help <command>"; }
 
-        private string _helpTextWrapper = 
+        private string _helpTextWrapper =
 @"
 
 -------------------------------- Help System -----------------------------------
@@ -30,9 +28,10 @@ namespace MUD.Core.Commands
                 return;
             }
 
-            var matchedCommand = commandIssuer.ResolveCommand((string) commandArgs[0]);
+            var matchedCommand = commandIssuer.ResolveCommand((string)commandArgs[0]);
 
-            if (matchedCommand != null) {
+            if (matchedCommand != null)
+            {
                 commandIssuer.ReceiveMessage(string.Format(_helpTextWrapper, matchedCommand.HelpText));
             }
         }

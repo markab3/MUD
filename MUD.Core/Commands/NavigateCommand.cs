@@ -4,9 +4,7 @@ namespace MUD.Core.Commands
 {
     public class NavigateCommand : ICommand
     {
-        public string CommandKeyword { get => "navigate"; }
-
-        public string[] CommandAliases { get  => null; }
+        public string[] CommandKeywords { get => new string[] { "navigate" }; }
 
         public bool IsDefault { get => true; }
 
@@ -14,7 +12,7 @@ namespace MUD.Core.Commands
 
         public object[] ParseCommand(string input)
         {
-            return new object[] { input.Substring(CommandKeyword.Length).Trim() };
+            return new object[] { input.Substring(CommandKeywords[0].Length).Trim() };
         }
 
         public void DoCommand(Player commandIssuer, object[] commandArgs)

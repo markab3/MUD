@@ -2,9 +2,8 @@ namespace MUD.Core.Commands
 {
     public class QuitCommand : ICommand
     {
-        public string CommandKeyword { get => "quit"; }
-        
-        public string[] CommandAliases { get  => null; }
+
+        public string[] CommandKeywords { get => new string[] { "quit" }; }
 
         public bool IsDefault { get => true; }
 
@@ -16,7 +15,7 @@ namespace MUD.Core.Commands
         }
 
         public void DoCommand(Player commandIssuer, object[] commandArgs)
-        {                
+        {
             commandIssuer.Quit();
         }
     }

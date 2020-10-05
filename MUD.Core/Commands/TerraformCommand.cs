@@ -6,9 +6,7 @@ namespace MUD.Core.Commands
 {
     public class TerraformCommand : ICommand
     {
-        public string CommandKeyword { get => "terraform"; }
-
-        public string[] CommandAliases { get => null; }
+        public string[] CommandKeywords { get => new string[] { "terraform" }; }
 
         public bool IsDefault { get => true; }
 
@@ -27,7 +25,7 @@ namespace MUD.Core.Commands
 
         public object[] ParseCommand(string input)
         {
-            input = input.Replace(CommandKeyword, "").Trim();
+            input = input.Replace(CommandKeywords[0], "").Trim();
 
             string[] inputArgs = input.Split(" ");
 
@@ -135,10 +133,12 @@ namespace MUD.Core.Commands
 
                     string exitArg = (string)commandArgs[0];
                     Exit exitToRemove = currentLocation.Exits.FirstOrDefault(e => e.Name.ToLower() == exitArg.ToLower());
-                    if (exitToRemove == null) {
+                    if (exitToRemove == null)
+                    {
                         exitToRemove = currentLocation.Exits.FirstOrDefault(e => e.Destination_id.ToLower() == exitArg.ToLower());
                     }
-                    if (exitToRemove == null) {
+                    if (exitToRemove == null)
+                    {
                         commandIssuer.ReceiveMessage(string.Format("Did not find an exit here for {0}.", exitArg));
                         return;
                     }
