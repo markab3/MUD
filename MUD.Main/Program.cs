@@ -6,20 +6,14 @@ using MongoDB.Driver;
 using MUD.Core;
 using System.Linq;
 using System.Threading;
-using Microsoft.Extensions.DependencyInjection;
-using Scrutor;
-using MUD.Core.Commands;
-using MUD.Core.Repositories.Interfaces;
-using MUD.Core.Repositories;
 using Microsoft.Extensions.Configuration;
 using System.IO;
-using MUD.Core.Entities;
+using MUD.Core.Formatting;
 
 namespace MUD.Main
 {
     class Program
     {
-        private static IServiceProvider _serviceProvider;
         private static World _gameWorld;
         private static Server _serverInstance;
         private static IConfigurationRoot configuration;
@@ -128,18 +122,20 @@ namespace MUD.Main
             _serverInstance.Stop();
         }
 
-        private static void clientConnected(object sender, Client c)
+        private static void clientConnected(object sender, Client client)
         {
-            Console.WriteLine("CONNECTED: " + c);
+            Console.WriteLine("CONNECTED: " + client);
 
-            c.DataReceived += messageReceived;
-            c.Send(welcomeMessage);
+            client.DataReceived += messageReceived;
+            client.Send(welcomeMessage);
+            messageReceived(client, "who");
+            client.Send("");
         }
 
-        private static void clientDisconnected(object sender, Client c)
+        private static void clientDisconnected(object sender, Client client)
         {
-            c.DataReceived -= messageReceived;
-            Console.WriteLine("DISCONNECTED: " + c);
+            client.DataReceived -= messageReceived;
+            Console.WriteLine("DISCONNECTED: " + client);
         }
 
         private static void connectionBlocked(IPEndPoint ep)
@@ -171,7 +167,7 @@ namespace MUD.Main
                 }
                 else
                 {
-                    client.Send(String.Format("{0} are logged on.", String.Join(", ", _gameWorld.Players.Select(p => p.PlayerName))));
+                    client.Send(String.Format("{0} are logged on.", _gameWorld.Players.Select(p => p.PlayerName).GetListText()));
                 }
             }
             else if (message == "connect" || message.StartsWith("connect "))
