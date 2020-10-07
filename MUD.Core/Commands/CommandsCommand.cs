@@ -11,7 +11,14 @@ namespace MUD.Core.Commands
 
         public string HelpText { get => "Returns available commands."; }
 
-        public object[] ParseCommand(string input)
+        private World _world;
+
+        public CommandsCommand(World world)
+        {
+            _world = world;
+        }
+
+        public object[] ParseCommand(Player commandIssuer, string input)
         {
             return null;
         }
@@ -24,7 +31,7 @@ namespace MUD.Core.Commands
             {
                 returnString += string.Format("Known Commands:\r\n\r\n{0}\r\n\r\n", knownCommandList);
             }
-            var defaultCommandList = World.Instance.DefaultCommands.Commands.Select(c => c.Value.CommandKeywords[0]).ToArray().GetListText();
+            var defaultCommandList = _world.DefaultCommands.Commands.Select(c => c.Value.CommandKeywords[0]).ToArray().GetListText();
             commandIssuer.ReceiveMessage(string.Format("Default Commands:\r\n\r\n{0}", defaultCommandList));
         }
     }

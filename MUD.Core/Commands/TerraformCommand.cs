@@ -23,9 +23,16 @@ namespace MUD.Core.Commands
 
         private TerraformOption? _terraformOption = null;
 
-        public object[] ParseCommand(string input)
+        private World _world;
+
+        public TerraformCommand(World world)
         {
-            input = input.Replace(CommandKeywords[0], "").Trim();
+            _world = world;
+        }
+
+        public object[] ParseCommand(Player commandIssuer, string input)
+        {
+            input = this.StripKeyword(input);
 
             string[] inputArgs = input.Split(" ");
 
@@ -75,7 +82,7 @@ namespace MUD.Core.Commands
                     string returnName = null;
                     if (commandArgs.Length > 2) { returnName = (string)commandArgs[2]; }
 
-                    var roomToLink = World.Instance.GetRoom((string)commandArgs[0]);
+                    var roomToLink = _world.GetRoom((string)commandArgs[0]);
                     if (roomToLink == null)
                     {
                         commandIssuer.ReceiveMessage(string.Format("Room with id of {0} was not found.", (string)commandArgs[0]));

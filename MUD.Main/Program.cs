@@ -64,28 +64,8 @@ namespace MUD.Main
             //collection.InsertOne(BsonDocument.Parse(jsonContent)); // The BSON object will have _id and it will be set by the insert call.
             Console.WriteLine("done.");
 
-
-            //setup our DI
-            _serviceProvider = new ServiceCollection()
-                // Load all commands 
-                .Scan(scan => scan
-                    //.FromCallingAssembly()
-                    //                    .FromAssemblies(new System.Reflection.Assembly[] {})
-                    .FromApplicationDependencies()
-                    .AddClasses(classes => classes.AssignableTo<ICommand>())
-                    .AsImplementedInterfaces()
-                    .WithSingletonLifetime()
-                )
-                .AddSingleton<IMongoClient>(dbClient)
-                .AddSingleton<IPlayerRepository, PlayerRepository>()
-                .AddSingleton<IRoomRepository, RoomRepository>()
-                .BuildServiceProvider();
-
-            System.Collections.Generic.List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
-
             Console.Write("Starting world...");
-            World.ServiceProvider = _serviceProvider;
-            _gameWorld = World.Instance;
+            _gameWorld = new World(dbClient);
             Thread gameWorldThread = new Thread(_gameWorld.Start);
             gameWorldThread.Start();
             Console.WriteLine("done.");
@@ -146,11 +126,6 @@ namespace MUD.Main
 
             _gameWorld.Stop();
             _serverInstance.Stop();
-
-            //return;
-
-            //Player testPlayer = new Player() { PlayerName = "holen", Password = "password", Gender = "male", Race = "hobbit", Class = "rogue" };
-            //var jsonContent = JsonConvert.SerializeObject(testPlayer);
         }
 
         private static void clientConnected(object sender, Client c)
@@ -179,11 +154,11 @@ namespace MUD.Main
 
             Console.WriteLine("MESSAGE: " + message);
 
-            if (message == "quit")
+            if (message == "quit"|| message.StartsWith("quit "))
             {
                 client.Disconnect();
             }
-            else if (message == "who")
+            else if (message == "who" || message.StartsWith("who "))
             {
                 // Show the list of logged in players
                 if (_gameWorld.Players == null || _gameWorld.Players.Count == 0)
@@ -199,11 +174,11 @@ namespace MUD.Main
                     client.Send(String.Format("{0} are logged on.", String.Join(", ", _gameWorld.Players.Select(p => p.PlayerName))));
                 }
             }
-            else if (message.StartsWith("connect "))
+            else if (message == "connect" || message.StartsWith("connect "))
             {
                 string[] args = message.Substring(8).Split(' ');
 
-                if (args.Length != 2)
+                if (args.Length != 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
                 {
                     // bad input. 
                     client.Send("Please provide a username and password to connect. Format: connect <username> <password>");
@@ -214,105 +189,47 @@ namespace MUD.Main
                 string password = args[1];
 
                 // begin login attempt.
-                var foundPlayer = doLogin(username, password, client);
-
-                if (foundPlayer == null)
+                if (_gameWorld.DoLogin(username, password, client))
+                {
+                    client.DataReceived -= messageReceived;
+                }
+                else
                 {
                     // Player not found.
                     client.Send(String.Format("Login failed for {0}.", username));
                     return;
                 }
-                else
-                {
-                    // Ok login
-                    if (_gameWorld.Players.Contains(foundPlayer))
-                    {
-                        // Already logged on.
-                    }
-                    else
-                    {
-                        client.DataReceived -= messageReceived;
-                        _gameWorld.AddPlayer(foundPlayer);
-                    }
-                }
             }
-            else if (message.StartsWith("create "))
+            else if (message == "create" || message.StartsWith("create "))
             {
                 string[] args = message.Substring(7).Split(' ');
 
-                if (args.Length != 2)
+                if (args.Length != 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
                 {
                     // bad input. 
                     client.Send("Please provide a username and password to create a new account. Format: create <username> <password>");
+                    return;
                 }
 
                 string username = args[0];
                 string password = args[1];
 
                 // begin character creation attempt.
-                var newPlayer = doCreateUser(username, password, client);
-
-                if (newPlayer == null)
+                if (_gameWorld.DoCreateUser(username, password, client))
+                {
+                    client.DataReceived -= messageReceived;
+                }
+                else
                 {
                     // Player not found.
                     client.Send(String.Format("There is already someone by the name of {0}.", username));
                     return;
-                }
-                else
-                {
-                    client.DataReceived -= messageReceived;
-                    _gameWorld.AddPlayer(newPlayer);
                 }
             }
             else
             {
                 client.Send(string.Format("Command {0} was not recognized.", message.Substring(0, message.IndexOf(" "))));
             }
-        }
-
-        private static Player doLogin(string userName, string password, Client connectingClient)
-        {
-            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return null; }
-
-            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
-            var foundUser = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
-
-            if (foundUser != null)
-            {
-                if (foundUser.Password == password)
-                {
-                    Player foundPlayer = new Player(playerRepository, foundUser);
-                    foundPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
-                    foundPlayer.Connection = connectingClient;
-                    return foundPlayer;
-                }
-            }
-            return null;
-        }
-
-        private static Player doCreateUser(string userName, string password, Client connectingClient)
-        {
-            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return null; }
-
-            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
-            var foundUser = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
-
-            if (foundUser == null)
-            {
-                Player newPlayer = new Player(playerRepository, new PlayerEntity())
-                {
-                    PlayerName = userName,
-                    Password = password,
-                    Race = "human",
-                    CurrentLocation_id = "5f6e27f20c1fdd24b4b18b1a",
-                    SelectedTerm = "Default", // Or just do the subnegotiation to get a value for this...
-                    ConnectionStatus = EPlayerConnectionStatus.LoggedIn,
-                    Connection = connectingClient
-                };
-                return newPlayer;
-            }
-            return null;
-
         }
     }
 }

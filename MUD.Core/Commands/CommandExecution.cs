@@ -1,3 +1,5 @@
+using System;
+
 namespace MUD.Core.Commands
 {
     public class CommandExecution
@@ -15,12 +17,18 @@ namespace MUD.Core.Commands
             _commandIssuer = commandIssuer;
             _commandText = commandText;
             _commandObject = commandObject;
-            _commandArgs = _commandObject.ParseCommand(commandText);
+            _commandArgs = _commandObject.ParseCommand(commandIssuer, commandText);
         }
 
         public void Execute()
         {
             _commandObject.DoCommand(_commandIssuer, _commandArgs);
+        }
+
+        public void NotifyException(Exception exception) {
+            if (_commandIssuer != null) {
+                _commandIssuer.ReceiveMessage(string.Format("There was an error executing your command of type {0}.\r\n{1}", _commandObject.GetType().Name, exception));
+            }
         }
     }
 }

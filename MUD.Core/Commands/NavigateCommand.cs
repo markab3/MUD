@@ -10,14 +10,14 @@ namespace MUD.Core.Commands
 
         public string HelpText { get => "Navigate to a specific room using the magic of database ObjectIds.\r\n \r\nFormat: navigate <room Id>"; }
 
-        public object[] ParseCommand(string input)
+        public object[] ParseCommand(Player commandIssuer, string input)
         {
-            return new object[] { input.Substring(CommandKeywords[0].Length).Trim() };
+            return new object[] { this.StripKeyword(input) };
         }
 
         public void DoCommand(Player commandIssuer, object[] commandArgs)
         {
-            if (commandArgs == null || commandArgs.Length != 1 || string.IsNullOrWhiteSpace((string)commandArgs[0]))
+            if (commandArgs == null || commandArgs.Length < 1 || string.IsNullOrWhiteSpace((string)commandArgs[0]))
             {
                 commandIssuer.ReceiveMessage("You have to have somewhere to go!");
                 return;

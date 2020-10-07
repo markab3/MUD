@@ -8,7 +8,7 @@ namespace MUD.Core.Commands
 
         public string HelpText { get => "Saves your precious player information."; }
 
-        public object[] ParseCommand(string input)
+        public object[] ParseCommand(Player commandIssuer, string input)
         {
             return null;
         }

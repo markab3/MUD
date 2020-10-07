@@ -6,7 +6,6 @@ using MUD.Core.Commands;
 using MUD.Core.Entities;
 using MUD.Core.Formatting;
 using MUD.Core.Interfaces;
-using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Telnet;
 
@@ -17,6 +16,10 @@ namespace MUD.Core
         private IPlayerRepository _playerRepository;  // TODO: How inject?
 
         private Client _connection;
+
+        private World _world;
+
+        private CommandQueue _commandQueue;
 
         private Room _currentLocation;
 
@@ -51,17 +54,18 @@ namespace MUD.Core
             {
                 if (_currentLocation == null && !string.IsNullOrWhiteSpace(CurrentLocation_id))
                 {
-                    _currentLocation = World.Instance.GetRoom(CurrentLocation_id);
+                    _currentLocation = _world.GetRoom(CurrentLocation_id);
                 }
                 return _currentLocation;
             }
             set { _currentLocation = value; } // Maybe make this private so we have to load via ID?
         }
 
-        public Player(IPlayerRepository playerRepository, PlayerEntity entity)
+        public Player(World world, CommandQueue commandQueue, IPlayerRepository playerRepository)
         {
+            _world = world;
+            _commandQueue = commandQueue;
             _playerRepository = playerRepository;
-            entity.Map(this);
         }
 
         public bool Save()
@@ -90,7 +94,7 @@ namespace MUD.Core
             ConnectionStatus = EPlayerConnectionStatus.Offline;
             if (Save())
             {
-                World.Instance.RemovePlayer(this);
+                _world.RemovePlayer(this);
                 Connection.Disconnect();
             }
             else
@@ -103,14 +107,14 @@ namespace MUD.Core
         {
             if (KnownCommands != null)
             {
-                return World.Instance.AllCommands.GetSubset(KnownCommands);
+                return _world.AllCommands.GetSubset(KnownCommands);
             }
             return new CommandSource();
         }
 
         public void MoveToRoom(string roomIdToEnter)
         {
-            var roomToEnter = World.Instance.GetRoom(roomIdToEnter);
+            var roomToEnter = _world.GetRoom(roomIdToEnter);
             if (CurrentLocation != null)
             {
                 CurrentLocation.ExitRoom(this);
@@ -120,12 +124,12 @@ namespace MUD.Core
             CurrentLocation_id = roomToEnter._id;
 
             roomToEnter.EnterRoom(this);
-            ReceiveMessage(roomToEnter.Examine());
+            ReceiveMessage(roomToEnter.Examine(this));
         }
 
         public void ReceiveMessage(string message)
         {
-            var selectedTerminalHandler = World.Instance.TerminalHandlers.FirstOrDefault(th => th.TerminalName == SelectedTerm || (th.Aliases != null && th.Aliases.Contains(SelectedTerm)));
+            var selectedTerminalHandler = _world.TerminalHandlers.FirstOrDefault(th => th.TerminalName == SelectedTerm || (th.Aliases != null && th.Aliases.Contains(SelectedTerm)));
             if (selectedTerminalHandler != null)
             {
                 message = selectedTerminalHandler.ResolveOutput(message);
@@ -156,7 +160,7 @@ namespace MUD.Core
             ICommand matchedCommand = ResolveCommand(message);
             if (matchedCommand != null) // Move this logic to something else..something to match Command classes with input.
             {
-                CommandQueue.Instance.AddCommand(new CommandExecution(this, message, matchedCommand));
+                _commandQueue.AddCommand(new CommandExecution(this, message, matchedCommand));
             }
             else
             {
@@ -180,7 +184,7 @@ namespace MUD.Core
             matchedCommand = GetKnownCommandSource().GetCommandFromInput(input);
             if (matchedCommand != null) { return matchedCommand; }
 
-            matchedCommand = World.Instance.DefaultCommands.GetCommandFromInput(input);
+            matchedCommand = _world.DefaultCommands.GetCommandFromInput(input);
             if (matchedCommand != null) { return matchedCommand; }
 
             return null;

@@ -75,7 +75,7 @@ namespace MUD.Data
             {
                 _modelCache.AddRange(results);
             }
-            return _collection.AsQueryable().ToEnumerable<TModel>();
+            return results;
         }
 
         public IEnumerable<TModel> Search(Expression<Func<TModel, bool>> matchExpression)

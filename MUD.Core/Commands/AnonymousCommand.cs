@@ -10,7 +10,7 @@ namespace MUD.Core.Commands
 
         public string HelpText { get; set; }
 
-        public delegate object[] ParseCommandDelegate(string input);
+        public delegate object[] ParseCommandDelegate(Player commandIssuer, string input);
 
         public delegate void DoCommandDelegate(Player commandIssuer, object[] commandArgs);
 
@@ -20,9 +20,9 @@ namespace MUD.Core.Commands
 
         public AnonymousCommand() { }
 
-        public object[] ParseCommand(string input)
+        public object[] ParseCommand(Player commandIssuer, string input)
         {
-            return ParseCommandHandler(input);
+            return ParseCommandHandler(commandIssuer, input);
         }
 
         public void DoCommand(Player commandIssuer, object[] commandArgs)

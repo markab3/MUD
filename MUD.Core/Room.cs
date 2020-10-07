@@ -43,15 +43,19 @@ namespace MUD.Core
 
         private IRoomRepository _roomRepository;
 
-        public Room(IRoomRepository roomRepository, RoomEntity entity)
+        public Room(IRoomRepository roomRepository)
         {
             _roomRepository = roomRepository;
-            entity.Map(this);
         }
 
-        public void TellRoom(string message)
+        public void TellRoom(string message, Player[] exclusionList = null)
         {
-            foreach (var currentOccupant in _occupants)
+            var recipients = _occupants;
+            if (exclusionList != null)
+            {
+                recipients = recipients.Where(p => !exclusionList.Contains(p)).ToList();
+            }
+            foreach (var currentOccupant in recipients)
             {
                 currentOccupant.ReceiveMessage(message);
             }
@@ -99,7 +103,7 @@ namespace MUD.Core
                 _exitCommandSource.AddCommand(new AnonymousCommand()
                 {
                     CommandKeywords = keywords,
-                    ParseCommandHandler = ((string input) =>
+                    ParseCommandHandler = ((Player commandIssuer, string input) =>
                         {
                             return new object[] { currentExit };
                         }),
@@ -123,7 +127,7 @@ namespace MUD.Core
             return false;
         }
 
-        public string Examine()
+        public string Examine(Player examiner)
         {
             string exitLine;
             if (Exits == null || Exits.Count == 0)
@@ -136,10 +140,22 @@ namespace MUD.Core
             }
             else
             {
-                exitLine = string.Format("There are {0} obvious exits: {1}", Exits.Count.GetExactNumberText(), Exits.Select(e => e.Name).ToArray().GetListText());
+                exitLine = string.Format("There are {0} obvious exits: {1}", Exits.Count.GetExactNumberText(), Exits.Select(e => e.Name).GetListText());
             }
             exitLine = string.Format("%^{0}%^{1}%^{2}%^", EFormatOptions.Green, exitLine, EFormatOptions.Reset);
-            return ShortDescription + " (" + _id + ")\r\n" + LongDescription + "\r\n" + exitLine + "\r\n";
+
+            string occupantsLine = null;
+            var otherOccupants = _occupants.Where(p => p != examiner).ToList();
+            if (otherOccupants.Count == 1)
+            {
+                occupantsLine = otherOccupants.Select(o => o.PlayerName).GetListText() + " is here.\r\n";
+            }
+            else if (otherOccupants.Count > 1)
+            {
+                occupantsLine = otherOccupants.Select(o => o.PlayerName).GetListText() + " are here.\r\n";
+            }
+
+            return ShortDescription + " (" + _id + ")\r\n" + LongDescription + "\r\n" + exitLine + "\r\n" + occupantsLine;
         }
     }
 

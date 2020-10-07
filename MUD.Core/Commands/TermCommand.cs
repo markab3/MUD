@@ -13,27 +13,24 @@ namespace MUD.Core.Commands
 
         private string[] _terminalTypes = null;
 
-        public object[] ParseCommand(string input)
-        {
-            string remainingInput = null;
+        private World _world;
 
-            foreach (string currentKeyword in CommandKeywords)
-            {
-                if (input.StartsWith(currentKeyword + " ") || input == currentKeyword)
-                {
-                    remainingInput = input.Substring(currentKeyword.Length).Trim();
-                    break;
-                }
-            }
-            return new object[] { remainingInput };
+        public TermCommand(World world)
+        {
+            _world = world;
+        }
+
+        public object[] ParseCommand(Player commandIssuer, string input)
+        {
+            return new object[] { this.StripKeyword(input) };
         }
 
         public void DoCommand(Player commandIssuer, object[] commandArgs)
         {
             if (_terminalTypes == null)
             {
-                _terminalTypes = World.Instance.TerminalHandlers.Select(t => t.TerminalName).ToArray();
-                var terminalAliases = World.Instance.TerminalHandlers.Where(a => a.Aliases != null).Select(t => t.Aliases);
+                _terminalTypes = _world.TerminalHandlers.Select(t => t.TerminalName).ToArray();
+                var terminalAliases = _world.TerminalHandlers.Where(a => a.Aliases != null).Select(t => t.Aliases);
                 if (terminalAliases != null && terminalAliases.Count() > 0)
                 {
                     foreach (var currentAliasSet in terminalAliases)

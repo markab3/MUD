@@ -6,28 +6,16 @@ using System.Threading;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
+using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
+using MUD.Telnet;
+using MUD.Core.Entities;
 
 namespace MUD.Core
 {
     public class World
     {
-        public static World Instance
-        {
-            get
-            {
-                if (_instance == null)
-                {
-                    _instance = new World();
-                }
-                return _instance;
-            }
-        }
-
-        private static World _instance;
-
-        public static IServiceProvider ServiceProvider;
-
         public List<Player> Players;
 
         // public List<Room> Rooms;
@@ -38,26 +26,52 @@ namespace MUD.Core
 
         public List<ITerminalHandler> TerminalHandlers;
 
+        private IServiceProvider _serviceProvider;
+
         private Timer _heartbeatTimer;
 
         private bool _isRunning;
 
-        private World()
+        private List<Room> _rooms;
+
+        private CommandQueue _commandQueue;
+
+        public World(IMongoClient dbClient)
         {
+            //setup our DI
+            _serviceProvider = new ServiceCollection()
+                // Load all commands 
+                .Scan(scan => scan
+                    //.FromCallingAssembly()
+                    //                    .FromAssemblies(new System.Reflection.Assembly[] {})
+                    .FromApplicationDependencies()
+                    .AddClasses(classes => classes.AssignableTo<ICommand>().Where(t => t.Name != "AnonymousCommand"))
+                    .AsImplementedInterfaces()
+                    .WithSingletonLifetime()
+                )
+                .Scan(scan => scan
+                    .FromApplicationDependencies()
+                    .AddClasses(classes => classes.AssignableTo<ITerminalHandler>())
+                    .AsImplementedInterfaces()
+                    .WithSingletonLifetime()
+                )
+                .AddSingleton<IMongoClient>(dbClient)
+                .AddSingleton<IPlayerRepository, PlayerRepository>()
+                .AddSingleton<IRoomRepository, RoomRepository>()
+                .AddSingleton<CommandQueue>()
+                .AddTransient<Player>()
+                .AddTransient<Room>()
+                .AddSingleton<World>(this)
+                .BuildServiceProvider();
+
+            List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
+            AllCommands = new CommandSource(loadedCommands.ToList());
+            DefaultCommands = new CommandSource(loadedCommands.Where(c => c.IsDefault).ToList());
+            TerminalHandlers = _serviceProvider.GetServices<ITerminalHandler>().ToList();
+            _commandQueue = _serviceProvider.GetService<CommandQueue>();
+
             Players = new List<Player>();
-
-            /// Hey dufus - this smells a lot like a dependency injection framework... maybe look into doing that..
-            AllCommands = new CommandSource();
-            AllCommands.LoadCommandsFromAssembly(Assembly.GetExecutingAssembly());
-            DefaultCommands = new CommandSource(new Dictionary<string, ICommand>(AllCommands.Commands.Where(kvp => kvp.Value.IsDefault)));
-            TerminalHandlers = this.loadImplementingClasses<ITerminalHandler>();
-
-            // Load stuff
-            // MongoClient dbClient = new MongoClient("mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test");
-            // var database = dbClient.GetDatabase("testmud"); // This creates the database if it doesn't otherwise exist?
-            // if (database == null) { Console.WriteLine("Database not found!"); }
-            // var roomCollection = database.GetCollection<Room>("room");
-            // Rooms = roomCollection.AsQueryable().ToList<Room>(); // get all rooms?
+            _rooms = new List<Room>();
         }
 
         public void Start()
@@ -71,7 +85,7 @@ namespace MUD.Core
 
             while (_isRunning)
             {
-                CommandQueue.Instance.ExecuteAllCommands();
+                _commandQueue.ExecuteAllCommands();
             }
         }
 
@@ -80,6 +94,8 @@ namespace MUD.Core
             _heartbeatTimer.Change(Timeout.Infinite, Timeout.Infinite);
             _isRunning = false;
         }
+
+
 
         public void AddPlayer(Player newPlayer)
         {
@@ -111,35 +127,70 @@ namespace MUD.Core
             }
         }
 
-        public Room GetRoom(string roomId)
+        public bool DoLogin(string userName, string password, Client client)
         {
-            if (string.IsNullOrWhiteSpace(roomId))
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
+
+            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
+            var foundPlayerEntity = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+
+            if (foundPlayerEntity != null)
             {
-                return null;
+                if (foundPlayerEntity.Password == password)
+                {
+                    Player foundPlayer = _serviceProvider.GetService<Player>(); // new Player(this, playerRepository, foundUser);
+                    foundPlayer.LoadEntity(foundPlayerEntity);
+                    foundPlayer.Connection = client;
+                    foundPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
+                    AddPlayer(foundPlayer);
+                    return true;
+                }
             }
-
-            var roomRepository = (IRoomRepository)ServiceProvider.GetService(typeof(IRoomRepository));
-            var roomEntity = roomRepository.Get(roomId);
-
-            if (roomEntity == null)
-            {
-                return null;
-            }
-
-            return new Room(roomRepository, roomEntity);
+            return false;
         }
 
-        private List<T> loadImplementingClasses<T>(Assembly assemblyToLoad = null)
+        public bool DoCreateUser(string userName, string password, Client connectingClient)
         {
-            if (assemblyToLoad == null) { assemblyToLoad = Assembly.GetExecutingAssembly(); }
-            var classes = new List<T>();
-            var commandTypes = assemblyToLoad.DefinedTypes.Where(t => t.ImplementedInterfaces.Any(i => i == typeof(T)));
-            foreach (TypeInfo currentType in commandTypes)
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
+
+            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
+            var foundUser = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+
+            if (foundUser == null)
             {
-                T newClass = (T)Activator.CreateInstance(currentType);
-                classes.Add(newClass);
+                Player newPlayer = _serviceProvider.GetService<Player>(); // new Player(this, playerRepository, new PlayerEntity()) // Swap out for DI instead.
+
+                newPlayer.PlayerName = userName;
+                newPlayer.Password = password;
+                newPlayer.Race = "human";
+                newPlayer.CurrentLocation_id = "5f6e27f20c1fdd24b4b18b1a";
+                newPlayer.SelectedTerm = "Default"; // Or just do the subnegotiation to get a value for this...
+                newPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
+                newPlayer.Connection = connectingClient;
+                
+                AddPlayer(newPlayer);
+                return true;
             }
-            return classes;
+            return false;
+        }
+
+        public Room GetRoom(string roomId)
+        {
+            if (string.IsNullOrWhiteSpace(roomId)) { return null; }
+
+            Room foundRoom = _rooms.FirstOrDefault(r => r._id == roomId);
+
+            if (foundRoom != null) { return foundRoom; }
+
+            var roomRepository = (IRoomRepository)_serviceProvider.GetService(typeof(IRoomRepository));
+            var roomEntity = roomRepository.Get(roomId);
+
+            if (roomEntity == null) { return null; }
+
+            foundRoom = _serviceProvider.GetService<Room>();
+            foundRoom.LoadEntity(roomEntity);
+            _rooms.Add(foundRoom);
+            return foundRoom;
         }
 
         // Might want this on the living object or whatever is needing a periodic update like this - like for HP regen, etc. Doesn't need to be centralized necessarily.

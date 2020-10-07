@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace MUD.Core.Formatting
 {
@@ -14,6 +16,14 @@ namespace MUD.Core.Formatting
         public static string GetListText(this string[] strArr)
         {
             if (strArr == null) { return string.Empty; }
+            if (strArr.Length == 1) { return strArr[0]; }
+            return string.Join(", ", strArr, 0, strArr.Length - 1) + " and " + strArr[strArr.Length - 1];
+        }
+        
+        public static string GetListText(this IEnumerable<string> strIEnum)
+        {
+            if (strIEnum == null) { return string.Empty; }
+            var strArr = strIEnum.ToArray();
             if (strArr.Length == 1) { return strArr[0]; }
             return string.Join(", ", strArr, 0, strArr.Length - 1) + " and " + strArr[strArr.Length - 1];
         }

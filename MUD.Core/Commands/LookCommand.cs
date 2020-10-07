@@ -10,23 +10,15 @@ namespace MUD.Core.Commands
 
         public string HelpText { get => "Send a message to all other players.\r\n \r\nFormat: chat <message>"; }
 
-        public object[] ParseCommand(string input)
+        public object[] ParseCommand(Player commandIssuer, string input)
         {
-            string remainingInput = null;
-
-            foreach (string currentKeyword in CommandKeywords)
-            {
-                if (input.StartsWith(currentKeyword + " ") || input == currentKeyword)
-                {
-                    remainingInput = input.Substring(currentKeyword.Length).Trim();
-                    break;
-                }
-            }
+            string remainingInput = this.StripKeyword(input);
 
             if (remainingInput.ToLower().StartsWith("at "))
             {
                 remainingInput = remainingInput.Substring(3);
             }
+            
             return new object[] { remainingInput };
         }
 
@@ -37,7 +29,7 @@ namespace MUD.Core.Commands
                 // Just plain old look. Return the current room.
                 if (commandIssuer.CurrentLocation != null)
                 {
-                    commandIssuer.ReceiveMessage(commandIssuer.CurrentLocation.Examine());
+                    commandIssuer.ReceiveMessage(commandIssuer.CurrentLocation.Examine(commandIssuer));
                 }
                 else
                 {

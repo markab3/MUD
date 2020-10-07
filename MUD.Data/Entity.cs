@@ -16,6 +16,11 @@ namespace MUD.Data
 
         protected DateTime _lastSave = DateTime.Now;
 
+        public void LoadEntity(Entity entity)
+        {
+            entity.Map(this);
+        }
+
         public void Map(Entity target)
         {
             // list of writable properties of the destination

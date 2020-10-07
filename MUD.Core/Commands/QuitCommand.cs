@@ -9,7 +9,7 @@ namespace MUD.Core.Commands
 
         public string HelpText { get => "Quits the game."; }
 
-        public object[] ParseCommand(string input)
+        public object[] ParseCommand(Player commandIssuer, string input)
         {
             return null;
         }

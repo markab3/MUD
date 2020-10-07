@@ -9,9 +9,15 @@ namespace MUD.Core.Commands
 
         public string HelpText { get => "Send a message to all other players.\r\n \r\nFormat: chat <message>"; }
 
-        public object[] ParseCommand(string input)
+        private World _world;
+
+        public ChatCommand(World world) {
+            _world = world;
+        }
+
+        public object[] ParseCommand(Player commandIssuer, string input)
         {
-            return new object[] { input.Substring(5).Trim() };
+            return new object[] { this.StripKeyword(input) };
         }
 
         public void DoCommand(Player commandIssuer, object[] commandArgs)
@@ -22,7 +28,7 @@ namespace MUD.Core.Commands
                 return;
             }
 
-            foreach (Player currentPlayer in World.Instance.Players)
+            foreach (Player currentPlayer in _world.Players)
             {
                 currentPlayer.ReceiveMessage(string.Format("(Chat) {0}: {1}", commandIssuer.PlayerName, (string)commandArgs[0]));
             }

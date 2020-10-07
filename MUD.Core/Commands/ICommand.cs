@@ -12,7 +12,7 @@ namespace MUD.Core.Commands
 
         string HelpText { get; }
 
-        object[] ParseCommand(string input);
+        object[] ParseCommand(Player commandIssuer, string input);
 
         void DoCommand(Player commandIssuer, object[] commandArgs);
     }

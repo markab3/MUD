@@ -1,25 +1,13 @@
+using System;
 using System.Collections.Concurrent;
 
 namespace MUD.Core.Commands
 {
     public class CommandQueue
     {
-        public static CommandQueue Instance
-        {
-            get
-            {
-                if (_instance == null)
-                {
-                    _instance = new CommandQueue();
-                }
-                return _instance;
-            }
-        }
-        private static CommandQueue _instance;
-
         private ConcurrentQueue<CommandExecution> _internalQueue;
 
-        private CommandQueue()
+        public CommandQueue()
         {
             _internalQueue = new ConcurrentQueue<CommandExecution>();
         }
@@ -32,8 +20,13 @@ namespace MUD.Core.Commands
         public void ExecuteAllCommands()
         {
             CommandExecution command;
-            while(_internalQueue.TryDequeue(out command)) {
-                command.Execute();
+            while (_internalQueue.TryDequeue(out command))
+            {
+                try
+                {
+                    command.Execute();
+                }
+                catch (Exception ex) { command.NotifyException(ex); }
             }
         }
 

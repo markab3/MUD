@@ -14,6 +14,15 @@ namespace MUD.Core.Commands
             Commands = new Dictionary<string, ICommand>();
         }
 
+        public CommandSource(List<ICommand> commands) {
+            Commands = new Dictionary<string, ICommand>();
+            if (commands != null) {
+                foreach (var currentCommand in commands) {
+                    AddCommand(currentCommand);
+                }
+            }
+        }
+
         public CommandSource(Dictionary<string, ICommand> commands)
         {
             Commands = commands;
