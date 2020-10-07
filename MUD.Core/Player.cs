@@ -11,7 +11,7 @@ using MUD.Telnet;
 
 namespace MUD.Core
 {
-    public class Player : PlayerEntity, IUpdatable, IExaminable
+    public class Player : PlayerEntity, ILiving, IUpdatable, IExaminable
     {
         private IPlayerRepository _playerRepository;  // TODO: How inject?
 
