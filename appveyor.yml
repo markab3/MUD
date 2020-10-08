@@ -13,8 +13,8 @@ before_build:
   - dotnet --version
   # Display minimal restore text
   - dotnet restore ./MUD.sln --verbosity m
-build:
-  - dotnet publish ./MUD.sln --self-contained -r linux-x64
+build_script:
+  - ps: .\Build.ps1
 after_build:
   # For once the build has completed
 artifacts:

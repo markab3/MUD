@@ -1,0 +1,1 @@
+dotnet publish ./MUD.sln --self-contained -r linux-x64
