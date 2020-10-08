@@ -73,7 +73,7 @@ namespace MUD.Main
             }
             if (!int.TryParse(configuration.GetSection("TelnetSettings").GetSection("Port").Value, out port)) { port = 23; }
 
-            _serverInstance = new Server(IPAddress.Any, port);
+            _serverInstance = new Server(ipAddress, port);
             _serverInstance.ClientConnected += clientConnected;
             _serverInstance.ClientDisconnected += clientDisconnected;
 
