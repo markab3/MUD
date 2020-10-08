@@ -14,15 +14,11 @@ before_build:
   # Display minimal restore text
   - dotnet restore ./MUD.sln --verbosity m
 build:
-  project: MUD.sln
-  publish_nuget: true
-  publish_aspnet_core: true
-  publish_core_console: true
-  verbosity: minimal
+  - dotnet publish ./MUD.sln --self-contained -r linux-x64
 after_build:
   # For once the build has completed
 artifacts:
- - path: '\MUD.Main\bin\Debug\netcoreapp3.1\publish'
+ - path: './MUD.Main/bin/Debug/netcoreapp3.1/linux-x64/publish'
    name: MUD
    type: Zip # maybe nuget?
 clone_depth: 1
