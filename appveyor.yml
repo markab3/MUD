@@ -14,7 +14,7 @@ before_build:
   # Display minimal restore text
   - dotnet restore ./MUD.sln --verbosity m
 build_script:
-  - ps: .\Build.ps1
+  - ps: ./build.ps1
 after_build:
   # For once the build has completed
 artifacts:
