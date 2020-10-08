@@ -13,9 +13,12 @@ before_build:
   - cmd: dotnet --version
   # Display minimal restore text
   - cmd: dotnet restore ./MUD.sln --verbosity m
-build_script:
-  # output will be in ./src/bin/debug/netcoreapp1.1/publish
-  - cmd: dotnet publish ./MUD.sln
+build:
+  project: MUD.sln
+  publish_nuget: true
+  publish_aspnet_core: true
+  publish_core_console: true
+  verbosity: minimal
 after_build:
   # For once the build has completed
 artifacts:
