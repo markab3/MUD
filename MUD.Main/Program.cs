@@ -6,8 +6,6 @@ using MongoDB.Driver;
 using MUD.Core;
 using System.Linq;
 using System.Threading;
-using Microsoft.Extensions.Configuration;
-using System.IO;
 using MUD.Core.Formatting;
 
 namespace MUD.Main
@@ -16,7 +14,6 @@ namespace MUD.Main
     {
         private static World _gameWorld;
         private static Server _serverInstance;
-        private static IConfigurationRoot configuration;
         private static string welcomeMessage =
 @"
                      Welcome to Planar Realms 0.1
@@ -40,22 +37,26 @@ namespace MUD.Main
     Use 'quit' to disconnect.
 --------------------------------------------------------------------------------";
 
-        static void Main(string[] args)
+        static void Main(string ip = null, int port = 23, string db = null)
         {
-            // Build configuration
-            configuration = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetParent(AppContext.BaseDirectory).FullName)
-                .AddJsonFile("appsettings.json", false)
-                .Build();
-
             Console.Write("Checking databases...");
-            MongoClient dbClient = new MongoClient(configuration.GetConnectionString("MongoDBConnection"));
-            var database = dbClient.GetDatabase("testmud"); // This creates the database if it doesn't otherwise exist?
-            if (database == null) { Console.WriteLine("Database not found!"); }
-            var collection = database.GetCollection<BsonDocument>("players"); // Check that the collection is there. If it is not, then the collection exists in memory and is created on the actual DB when needed.
-            if (collection == null) { database.CreateCollection("players"); }
-            collection = database.GetCollection<BsonDocument>("rooms"); // Check that the collection is there.
-            //collection.InsertOne(BsonDocument.Parse(jsonContent)); // The BSON object will have _id and it will be set by the insert call.
+            MongoClient dbClient = null;
+            try
+            {
+                dbClient = new MongoClient(db);
+                var database = dbClient.GetDatabase("testmud"); // This creates the database if it doesn't otherwise exist?
+                if (database == null) { Console.WriteLine("Database not found!"); }
+                var collection = database.GetCollection<BsonDocument>("players"); // Check that the collection is there. If it is not, then the collection exists in memory and is created on the actual DB when needed.
+                var testFind = collection.AsQueryable().FirstOrDefault();
+                // collection = database.GetCollection<BsonDocument>("rooms"); // Check that the collection is there.
+                // collection.InsertOne(BsonDocument.Parse(jsonContent)); // The BSON object will have _id and it will be set by the insert call.
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Could not connect to suitable database!");
+                Console.WriteLine(ex);
+                return;
+            }
             Console.WriteLine("done.");
 
             Console.Write("Starting world...");
@@ -65,13 +66,8 @@ namespace MUD.Main
             Console.WriteLine("done.");
 
             Console.Write("Starting telnet server...");
-            IPAddress ipAddress = IPAddress.Any;
-            int port = 23;
-            if (!string.IsNullOrWhiteSpace(configuration?.GetSection("TelnetSettings")?.GetSection("IPAddress")?.Value))
-            {
-                ipAddress = IPAddress.Parse(configuration.GetSection("TelnetSettings").GetSection("IPAddress").Value);
-            }
-            if (!int.TryParse(configuration.GetSection("TelnetSettings").GetSection("Port").Value, out port)) { port = 23; }
+            IPAddress ipAddress = null;
+            if (!IPAddress.TryParse(ip, out ipAddress)) { ipAddress = IPAddress.Any; }
 
             _serverInstance = new Server(ipAddress, port);
             _serverInstance.ClientConnected += clientConnected;
@@ -82,14 +78,17 @@ namespace MUD.Main
             Console.WriteLine("done.");
 
             Console.WriteLine("SERVER STARTED: " + DateTime.Now);
-            char read2 = Console.ReadKey(true).KeyChar;
 
-            do
+            char read2 = ' ';
+            bool isInteractive = true;
+
+            while (read2 != 'q')
             {
                 if (read2 == 'b')
                 {
                     _serverInstance.SendMessageToAll(Console.ReadLine());
                 }
+
                 if (read2 == 'c')
                 {
                     string colorTest = "";
@@ -112,11 +111,25 @@ namespace MUD.Main
                     _serverInstance.SendMessageToAll("\x1B[1m\x1B[42mBOLD GREEN BACKGROUND\x1B[0m");
                     _serverInstance.SendMessageToAll("\x1B[1m\x1B[102mBOLD BRIGHT GREEN BACKGROUND\x1B[0m");
                 }
+
                 if (read2 == 't')
                 {
                     _serverInstance.SendMessageToAll(new byte[] { (byte)CommandCode.IAC, (byte)CommandCode.DO, (byte)OptionCode.TerminalType });
                 }
-            } while ((read2 = Console.ReadKey(true).KeyChar) != 'q');
+
+                if (isInteractive)
+                {
+                    try
+                    {
+                        read2 = Console.ReadKey(true).KeyChar;
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Can't accept console input.
+                        isInteractive = false;
+                    }
+                }
+            }
 
             _gameWorld.Stop();
             _serverInstance.Stop();
@@ -150,7 +163,7 @@ namespace MUD.Main
 
             Console.WriteLine("MESSAGE: " + message);
 
-            if (message == "quit"|| message.StartsWith("quit "))
+            if (message == "quit" || message.StartsWith("quit "))
             {
                 client.Disconnect();
             }

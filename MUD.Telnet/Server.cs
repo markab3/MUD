@@ -28,6 +28,8 @@ namespace MUD.Telnet
 
         private List<Client> _clients;
 
+        public event EventHandler ServerStopped;
+
         public event EventHandler<Client> ClientConnected;
 
         public event EventHandler<Client> ClientDisconnected;
@@ -70,6 +72,7 @@ namespace MUD.Telnet
             }
 
             Console.WriteLine("Closing the listener...");
+            ServerStopped?.Invoke(this, null);
         }
 
         public void Stop()

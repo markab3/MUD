@@ -6,20 +6,21 @@
   <ItemGroup>
     <Content Include="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>  
+    </Content>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\MUD.Core\MUD.Core.csproj"/>
-    <ProjectReference Include="..\MUD.Data\MUD.Data.csproj"/>
-    <ProjectReference Include="..\MUD.Telnet\MUD.Telnet.csproj"/>
+    <ProjectReference Include="..\MUD.Core\MUD.Core.csproj" />
+    <ProjectReference Include="..\MUD.Data\MUD.Data.csproj" />
+    <ProjectReference Include="..\MUD.Telnet\MUD.Telnet.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="MongoDB.Bson" Version="2.11.0"/>
-    <PackageReference Include="MongoDB.Driver" Version="2.11.0"/>
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="3.1.8"/>
-    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="3.1.8"/>
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="3.1.8"/>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="3.1.8"/>
-    <PackageReference Include="Scrutor" Version="3.2.2"/>
+    <PackageReference Include="MongoDB.Bson" Version="2.11.0" />
+    <PackageReference Include="MongoDB.Driver" Version="2.11.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="3.1.8" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="3.1.8" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="3.1.8" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="3.1.8" />
+    <PackageReference Include="Scrutor" Version="3.2.2" />
+    <PackageReference Include="System.CommandLine.DragonFruit" Version="0.3.0-alpha.20371.2" />
   </ItemGroup>
 </Project>

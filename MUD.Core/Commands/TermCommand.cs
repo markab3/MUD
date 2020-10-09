@@ -29,7 +29,7 @@ namespace MUD.Core.Commands
         {
             if (_terminalTypes == null)
             {
-                _terminalTypes = _world.TerminalHandlers.Select(t => t.TerminalName).ToArray();
+                _terminalTypes = _world.TerminalHandlers.Select(t => t.TerminalName.ToLower()).ToArray();
                 var terminalAliases = _world.TerminalHandlers.Where(a => a.Aliases != null).Select(t => t.Aliases);
                 if (terminalAliases != null && terminalAliases.Count() > 0)
                 {
@@ -46,7 +46,7 @@ namespace MUD.Core.Commands
                 return;
             }
 
-            string newTermValue = ((string)commandArgs[0]).Trim();
+            string newTermValue = ((string)commandArgs[0]).Trim().ToLower();
             if (_terminalTypes.Contains(newTermValue))
             {
                 commandIssuer.SelectedTerm = newTermValue;

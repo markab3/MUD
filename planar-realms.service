@@ -1,0 +1,9 @@
+[Unit]
+Description=Planar Realms MUD Server
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/planar-realms/MUD.Main --ip 34.123.49.245 --port 7680 --db mongodb+srv://testuser:qVvizXD1jrUaRdz4@cluster0.9titb.gcp.mongodb.net/test
+
+[Install]
+WantedBy=multi-user.target
