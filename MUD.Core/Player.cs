@@ -177,7 +177,7 @@ namespace MUD.Core
 
             if (CurrentLocation != null)
             {
-                matchedCommand = CurrentLocation.ExitCommandSource.GetCommandFromInput(input);
+                matchedCommand = CurrentLocation.RoomCommandSource.GetCommandFromInput(input);
             }
             if (matchedCommand != null) { return matchedCommand; }
 

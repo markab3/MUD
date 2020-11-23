@@ -31,7 +31,7 @@ namespace MUD.Core.Commands
             {
                 returnString += string.Format("Known Commands:\r\n\r\n{0}\r\n\r\n", knownCommandList);
             }
-            var defaultCommandList = _world.DefaultCommands.Commands.Select(c => c.Value.CommandKeywords[0]).ToArray().GetListText();
+            var defaultCommandList = _world.DefaultCommands.Commands.Select(c => c.Value.CommandKeywords[0]).Distinct().ToArray().GetListText();
             commandIssuer.ReceiveMessage(string.Format("Default Commands:\r\n\r\n{0}", defaultCommandList));
         }
     }

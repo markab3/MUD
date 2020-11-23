@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MUD.Core", "MUD.Core\MUD.Co
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MUD.Main", "MUD.Main\MUD.Main.csproj", "{36ED325B-9FC8-43EF-90F7-A7DDE9BA6BF3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MUD.PlanarRealms", "MUD.PlanarRealms\MUD.PlanarRealms.csproj", "{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -58,5 +60,17 @@ Global
 		{36ED325B-9FC8-43EF-90F7-A7DDE9BA6BF3}.Release|x64.Build.0 = Release|Any CPU
 		{36ED325B-9FC8-43EF-90F7-A7DDE9BA6BF3}.Release|x86.ActiveCfg = Release|Any CPU
 		{36ED325B-9FC8-43EF-90F7-A7DDE9BA6BF3}.Release|x86.Build.0 = Release|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Debug|x64.Build.0 = Debug|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Debug|x86.Build.0 = Debug|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Release|x64.ActiveCfg = Release|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Release|x64.Build.0 = Release|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Release|x86.ActiveCfg = Release|Any CPU
+		{7D1C7595-4D56-4C9E-ABAC-ADC1F25D9BCF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

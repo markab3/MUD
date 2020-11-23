@@ -12,19 +12,19 @@ namespace MUD.Core
     {
 
         [BsonIgnore]
-        public CommandSource ExitCommandSource
+        public CommandSource RoomCommandSource
         {
             get
             {
-                if (_exitCommandSource == null)
+                if (_roomCommandSource == null)
                 {
                     RebuildExitCommands();
                 }
-                return _exitCommandSource;
+                return _roomCommandSource;
             }
         }
 
-        private CommandSource _exitCommandSource = null;
+        private CommandSource _roomCommandSource = null;
 
         private List<Player> _occupants = new List<Player>();
 
@@ -89,7 +89,7 @@ namespace MUD.Core
 
         public void RebuildExitCommands()
         {
-            _exitCommandSource = new CommandSource();
+            _roomCommandSource = new CommandSource();
             string[] aliases;
             foreach (Exit currentExit in Exits)
             {
@@ -100,7 +100,7 @@ namespace MUD.Core
                     keywords = aliases;
                 }
 
-                _exitCommandSource.AddCommand(new AnonymousCommand()
+                _roomCommandSource.AddCommand(new AnonymousCommand()
                 {
                     CommandKeywords = keywords,
                     ParseCommandHandler = ((Player commandIssuer, string input) =>
