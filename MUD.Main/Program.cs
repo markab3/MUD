@@ -7,6 +7,9 @@ using MUD.Core;
 using System.Linq;
 using System.Threading;
 using MUD.Core.Formatting;
+using MongoDB.Bson.Serialization;
+using Microsoft.Extensions.DependencyInjection;
+using MongoDB.Bson.Serialization.IdGenerators;
 
 namespace MUD.Main
 {
@@ -41,15 +44,107 @@ namespace MUD.Main
         {
             Console.Write("Checking databases...");
             MongoClient dbClient = null;
+
             try
             {
                 dbClient = new MongoClient(db);
+                //setup our DI
+                IServiceProvider _serviceProvider = new ServiceCollection()
+                    .AddSingleton<IMongoClient>(dbClient)
+                    .AddTransient<Item>()
+                    .AddTransient<Wand>()
+                    .AddTransient<Food>()
+                    .BuildServiceProvider();
+
+                // This poop has to be done BEFORE the client opens a connection.
+                // If we want to redo it, like if you dynamically load some stuff from a DLL, you'll have to reinitialize the connection.
+                // BsonClassMap.RegisterClassMap<Item>(cm =>
+                // {
+                //     cm.SetIsRootClass(true);
+                //     cm.AutoMap();
+                //     cm.MapIdProperty("Id").SetIdGenerator(StringObjectIdGenerator.Instance);
+                //     cm.SetCreator(() => { return _serviceProvider.GetService<Item>(); });
+                // });
+                // BsonClassMap.RegisterClassMap<Wand>(cm =>
+                // {
+                //     cm.AutoMap();
+                //     cm.SetCreator(() => { return _serviceProvider.GetService<Wand>(); });
+                // });
+                // BsonClassMap.RegisterClassMap<Food>(cm =>
+                // {
+                //     cm.AutoMap();
+                //     cm.SetCreator(() => { return _serviceProvider.GetService<Food>(); });
+                // });
+
                 var database = dbClient.GetDatabase("testmud"); // This creates the database if it doesn't otherwise exist?
                 if (database == null) { Console.WriteLine("Database not found!"); }
                 var collection = database.GetCollection<BsonDocument>("players"); // Check that the collection is there. If it is not, then the collection exists in memory and is created on the actual DB when needed.
                 var testFind = collection.AsQueryable().FirstOrDefault();
                 // collection = database.GetCollection<BsonDocument>("rooms"); // Check that the collection is there.
                 // collection.InsertOne(BsonDocument.Parse(jsonContent)); // The BSON object will have _id and it will be set by the insert call.
+
+                var itemCollection = database.GetCollection<Item>("testingstuff");
+
+                itemCollection.DeleteMany((m => true));
+
+                Item newItem = new Item(dbClient)
+                {
+                    ShortDescription = "soft cloth",
+                    LongDescription = "This is a small, soft cloth. It is suitable for polishing things or blowing one's nose, but not much else."
+                };
+                newItem.Update();
+
+                Wand newWand = new Wand(dbClient)
+                {
+                    ShortDescription = "wand of missiles",
+                    LongDescription = "This is a short, straight stick that has been polished and painted red. It has been imbued with magical power such that it will shoot magic missiles at one's foe.",
+                    CurrentCharges = 8,
+                    MaxCharges = 10
+                };
+                newWand.Update();
+
+                Food newFood = new Food(dbClient)
+                {
+                    ShortDescription = "loaf of bread",
+                    LongDescription = "A toasty, scrumptious loaf of fresh bread.",
+                    Servings = 2
+                };
+                newFood.Update();
+
+                var item = itemCollection.Find<Item>((m => m.Id == newItem.Id)).FirstOrDefault();
+                var wand = (Wand)itemCollection.Find<Item>((m => m.Id == newWand.Id)).FirstOrDefault();
+                wand.UseWand();
+                wand.Update();
+                var food = itemCollection.Find<Item>((m => m.Id == newFood.Id)).FirstOrDefault();
+
+                // Can it be done with a type we don't know til runtime?
+                BsonClassMap.RegisterClassMap(new BsonClassMap(typeof(Item))); // Yes, but not with the initializer?
+
+                // Can I then look up the class map and change it? Yes. 
+                var classMap = BsonClassMap.LookupClassMap(typeof(Item)); // This also registers the type and automaps.
+                classMap.SetCreator(() => { return _serviceProvider.GetService(typeof(Item)); });
+
+                // Create a new client and repeat?
+                dbClient = new MongoClient(db);
+
+                BsonClassMap.RegisterClassMap<Item>(cm =>
+               {
+                   cm.SetIsRootClass(true);
+                   cm.AutoMap();
+                   cm.MapIdProperty("Id").SetIdGenerator(StringObjectIdGenerator.Instance);
+                   cm.SetCreator(() => { return _serviceProvider.GetService<Item>(); });
+               });
+                BsonClassMap.RegisterClassMap<Wand>(cm =>
+                {
+                    cm.AutoMap();
+                    cm.SetCreator(() => { return _serviceProvider.GetService<Wand>(); });
+                });
+                BsonClassMap.RegisterClassMap<Food>(cm =>
+                {
+                    cm.AutoMap();
+                    cm.SetCreator(() => { return _serviceProvider.GetService<Food>(); });
+                });
+
             }
             catch (Exception ex)
             {
@@ -58,6 +153,7 @@ namespace MUD.Main
                 return;
             }
             Console.WriteLine("done.");
+
 
             Console.Write("Starting world...");
             _gameWorld = new World(dbClient);
