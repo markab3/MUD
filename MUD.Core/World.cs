@@ -6,8 +6,6 @@ using System.Threading;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
-using MUD.Core.Repositories;
-using MUD.Core.Repositories.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using MUD.Telnet;
 using MUD.Core.Entities;
@@ -49,20 +47,34 @@ namespace MUD.Core
                     .AsImplementedInterfaces()
                     .WithSingletonLifetime()
                 )
+                // Load all terminals
                 .Scan(scan => scan
                     .FromApplicationDependencies()
                     .AddClasses(classes => classes.AssignableTo<ITerminalHandler>())
                     .AsImplementedInterfaces()
                     .WithSingletonLifetime()
                 )
-                .AddSingleton<IMongoClient>(dbClient)
-                .AddSingleton<IPlayerRepository, PlayerRepository>()
-                .AddSingleton<IRoomRepository, RoomRepository>()
+                // Load up the mongo client
+                .AddSingleton<IMongoClient>(dbClient)                
+                .AddSingleton<IMongoDatabase>(dbClient.GetDatabase("testmud"))
+                // Load utility stuff?
                 .AddSingleton<CommandQueue>()
+                
+                // Load GameObject types
+                //.AddTransient<GameObject>() // No this is an abstract base class. We need to register it with mongo, but whatever.
                 .AddTransient<Player>()
                 .AddTransient<Room>()
+
+                // Load this and build.
                 .AddSingleton<World>(this)
                 .BuildServiceProvider();
+            
+            // Make sure the classMaps are properly registered.
+            var classMapManager = new MUD.Data.MongoDBClassMapManager(_serviceProvider);
+            classMapManager.ClearClassMaps();
+            classMapManager.RegisterRootClassMap(typeof(GameObject));
+            classMapManager.RegisterClassMap(typeof(Player));
+            classMapManager.RegisterClassMap(typeof(Room));
 
             List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
             AllCommands = new CommandSource(loadedCommands.ToList());
@@ -139,7 +151,7 @@ namespace MUD.Core
                 if (foundPlayerEntity.Password == password)
                 {
                     Player foundPlayer = _serviceProvider.GetService<Player>(); // new Player(this, playerRepository, foundUser);
-                    foundPlayer.LoadEntity(foundPlayerEntity);
+                    //foundPlayer.LoadEntity(foundPlayerEntity);
                     foundPlayer.Connection = client;
                     foundPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
                     AddPlayer(foundPlayer);
@@ -193,13 +205,18 @@ namespace MUD.Core
             return foundRoom;
         }
 
+        public void LoadGameObjectType(Type objectType) {
+            var classMapManager = new MUD.Data.MongoDBClassMapManager(_serviceProvider);
+            classMapManager.RegisterClassMap(objectType);
+        }
+
         // Might want this on the living object or whatever is needing a periodic update like this - like for HP regen, etc. Doesn't need to be centralized necessarily.
         private void doHeartbeat(object state)
         {
             // Do heartbeat updates.
             foreach (Player currentPlayer in Players)
             {
-                currentPlayer.Update();
+                currentPlayer.DoHeartbeat();
             }
         }
     }

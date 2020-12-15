@@ -1,13 +1,13 @@
 
 using MongoDB.Driver;
 
-namespace MUD.Main
+namespace MUD.Core
 {
-    public class Food : Item
+    public class Food : InventoryItem
     {
         public int Servings { get; set; }
 
-        public Food(IMongoClient dbClient) : base(dbClient) { }
+        public Food(IMongoDatabase db) : base(db) { }
 
         public override string Examine()
         {

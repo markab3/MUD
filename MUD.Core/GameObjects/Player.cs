@@ -1,20 +1,16 @@
 using System;
 using System.Linq;
+using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using MUD.Core.Commands;
-using MUD.Core.Entities;
 using MUD.Core.Formatting;
-using MUD.Core.Interfaces;
-using MUD.Core.Repositories.Interfaces;
 using MUD.Telnet;
 
 namespace MUD.Core
 {
-    public class Player : PlayerEntity, ILiving, IUpdatable, IExaminable
+    public class Player : GameObject
     {
-        private IPlayerRepository _playerRepository;  // TODO: How inject?
-
         private Client _connection;
 
         private World _world;
@@ -22,6 +18,23 @@ namespace MUD.Core
         private CommandQueue _commandQueue;
 
         private Room _currentLocation;
+
+        public string Gender { get; set; }
+
+        public string Race { get; set; }
+
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string CurrentLocation_id { get; set; }
+
+        public string PlayerName { get; set; }
+
+        public string Password { get; set; }
+
+        public string Class { get; set; }
+
+        public string[] KnownCommands { get; set; }
+
+        public string SelectedTerm { get; set; }
 
         [BsonIgnore]
         public Client Connection
@@ -61,31 +74,16 @@ namespace MUD.Core
             set { _currentLocation = value; } // Maybe make this private so we have to load via ID?
         }
 
-        public Player(World world, CommandQueue commandQueue, IPlayerRepository playerRepository)
+        public Player(IMongoDatabase db, World world, CommandQueue commandQueue) : base(db)
         {
             _world = world;
             _commandQueue = commandQueue;
-            _playerRepository = playerRepository;
         }
 
         public bool Save()
         {
             ReceiveMessage("%^Bold%^%^Yellow%^Saving...%^Reset%^");
-            if (string.IsNullOrWhiteSpace(_id))
-            {
-                _playerRepository.Insert(this);
-                _lastSave = DateTime.Now;
-                return true;
-            }
-            else
-            {
-                if (_playerRepository.Update(this))
-                {
-                    _lastSave = DateTime.Now;
-                    return true;
-                }
-            }
-            return false;
+            return base.Update();
         }
 
         public void Quit()
@@ -137,12 +135,12 @@ namespace MUD.Core
             _connection.Send(message);
         }
 
-        public string Examine()
+        public override string Examine()
         {
             return string.Format("Here stands {0}, a prime example of {1} {2}.", PlayerName, Race.GetArticle(), Race);
         }
 
-        public void Update()
+        public void DoHeartbeat()
         {
             if (ConnectionStatus == EPlayerConnectionStatus.LoggedIn)
             {

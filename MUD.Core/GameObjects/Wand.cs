@@ -1,14 +1,14 @@
 
 using MongoDB.Driver;
 
-namespace MUD.Main
+namespace MUD.Core
 {
-    public class Wand : Item
+    public class Wand : InventoryItem
     {
         public int CurrentCharges { get; set; }
         public int MaxCharges { get; set; }
 
-        public Wand(IMongoClient dbClient) : base(dbClient) { }
+        public Wand(IMongoDatabase db) : base(db) { }
 
         public override string Examine()
         {

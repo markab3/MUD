@@ -2,14 +2,15 @@ using System.Collections.Generic;
 using System.Linq;
 using MongoDB.Bson.Serialization.Attributes;
 using MUD.Core.Commands;
-using MUD.Core.Entities;
 using MUD.Core.Formatting;
-using MUD.Core.Repositories.Interfaces;
 
 namespace MUD.Core
 {
-    public class Room : RoomEntity
+    public class Room : GameObject
     {
+        public List<Feature> Features { get; set; } = new List<Feature>();
+
+        public List<Exit> Exits { get; set; } = new List<Exit>();
 
         [BsonIgnore]
         public CommandSource RoomCommandSource

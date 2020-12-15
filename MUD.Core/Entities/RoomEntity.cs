@@ -9,8 +9,6 @@ namespace MUD.Core.Entities
 
         public string LongDescription { get; set; }
 
-        public List<Feature> Features { get; set; } = new List<Feature>();
 
-        public List<Exit> Exits { get; set; } = new List<Exit>();
     }
 }

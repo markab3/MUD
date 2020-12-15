@@ -56,12 +56,11 @@ namespace MUD.Main
                     .AddTransient<Food>()
                     .BuildServiceProvider();
 
-                // This poop has to be done BEFORE the client opens a connection.
-                // If we want to redo it, like if you dynamically load some stuff from a DLL, you'll have to reinitialize the connection.
+                // Apparently SetIsRootClass can't be set after the ClassMap has been Frozen.
                 // BsonClassMap.RegisterClassMap<Item>(cm =>
                 // {
-                //     cm.SetIsRootClass(true);
                 //     cm.AutoMap();
+                //     cm.SetIsRootClass(true);
                 //     cm.MapIdProperty("Id").SetIdGenerator(StringObjectIdGenerator.Instance);
                 //     cm.SetCreator(() => { return _serviceProvider.GetService<Item>(); });
                 // });
@@ -82,6 +81,12 @@ namespace MUD.Main
                 var testFind = collection.AsQueryable().FirstOrDefault();
                 // collection = database.GetCollection<BsonDocument>("rooms"); // Check that the collection is there.
                 // collection.InsertOne(BsonDocument.Parse(jsonContent)); // The BSON object will have _id and it will be set by the insert call.
+
+                var helper = new Data.MongoDBClassMapManager(_serviceProvider);
+                helper.ClearClassMaps();
+                helper.RegisterRootClassMap(typeof(Item));
+                helper.RegisterClassMap(typeof(Wand));
+                helper.RegisterClassMap(typeof(Food));
 
                 var itemCollection = database.GetCollection<Item>("testingstuff");
 
@@ -118,14 +123,14 @@ namespace MUD.Main
                 var food = itemCollection.Find<Item>((m => m.Id == newFood.Id)).FirstOrDefault();
 
                 // Can it be done with a type we don't know til runtime?
-                BsonClassMap.RegisterClassMap(new BsonClassMap(typeof(Item))); // Yes, but not with the initializer?
+                //BsonClassMap.RegisterClassMap(new BsonClassMap(typeof(Item))); // Yes, but not with the initializer?
 
                 // Can I then look up the class map and change it? Yes. 
-                var classMap = BsonClassMap.LookupClassMap(typeof(Item)); // This also registers the type and automaps.
-                classMap.SetCreator(() => { return _serviceProvider.GetService(typeof(Item)); });
+                //var classMap = BsonClassMap.LookupClassMap(typeof(Item)); // This also registers the type and automaps.
+                //classMap.SetCreator(() => { return _serviceProvider.GetService(typeof(Item)); });
 
-                // Create a new client and repeat?
-                dbClient = new MongoClient(db);
+                // Try this dirty dirty reflection stuff I found? Yeah that worked.
+                helper.ClearClassMaps();
 
                 BsonClassMap.RegisterClassMap<Item>(cm =>
                {
