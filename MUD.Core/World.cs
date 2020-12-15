@@ -1,14 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using Microsoft.Extensions.DependencyInjection;
 using MUD.Telnet;
-using MUD.Core.Entities;
+using MUD.Core.Providers.Interfaces;
 
 namespace MUD.Core
 {
@@ -143,14 +142,14 @@ namespace MUD.Core
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
 
-            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
-            var foundPlayerEntity = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+            var playerProvider = _serviceProvider.GetService<IPlayerProvider>();
+            var foundPlayerEntity = playerProvider.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
 
             if (foundPlayerEntity != null)
             {
                 if (foundPlayerEntity.Password == password)
                 {
-                    Player foundPlayer = _serviceProvider.GetService<Player>(); // new Player(this, playerRepository, foundUser);
+                    Player foundPlayer = _serviceProvider.GetService<Player>(); // new Player(this, playerProvider, foundUser);
                     //foundPlayer.LoadEntity(foundPlayerEntity);
                     foundPlayer.Connection = client;
                     foundPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
@@ -165,17 +164,17 @@ namespace MUD.Core
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
 
-            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
-            var foundUser = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+            var playerProvider = _serviceProvider.GetService<IPlayerProvider>();
+            var foundUser = playerProvider.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
 
             if (foundUser == null)
             {
-                Player newPlayer = _serviceProvider.GetService<Player>(); // new Player(this, playerRepository, new PlayerEntity()) // Swap out for DI instead.
+                Player newPlayer = _serviceProvider.GetService<Player>(); // new Player(this, playerProvider, new PlayerEntity()) // Swap out for DI instead.
 
                 newPlayer.PlayerName = userName;
                 newPlayer.Password = password;
                 newPlayer.Race = "human";
-                newPlayer.CurrentLocation_id = "5f6e27f20c1fdd24b4b18b1a";
+                newPlayer.CurrentLocationId = "5f6e27f20c1fdd24b4b18b1a";
                 newPlayer.SelectedTerm = "Default"; // Or just do the subnegotiation to get a value for this...
                 newPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
                 newPlayer.Connection = connectingClient;
@@ -190,18 +189,12 @@ namespace MUD.Core
         {
             if (string.IsNullOrWhiteSpace(roomId)) { return null; }
 
-            Room foundRoom = _rooms.FirstOrDefault(r => r._id == roomId);
+            Room foundRoom = _rooms.FirstOrDefault(r => r.Id == roomId);
 
             if (foundRoom != null) { return foundRoom; }
 
-            var roomRepository = (IRoomRepository)_serviceProvider.GetService(typeof(IRoomRepository));
-            var roomEntity = roomRepository.Get(roomId);
-
-            if (roomEntity == null) { return null; }
-
-            foundRoom = _serviceProvider.GetService<Room>();
-            foundRoom.LoadEntity(roomEntity);
-            _rooms.Add(foundRoom);
+            var roomProvider = (IRoomProvider)_serviceProvider.GetService(typeof(IRoomProvider));
+            foundRoom = roomProvider.Get(roomId);
             return foundRoom;
         }
 

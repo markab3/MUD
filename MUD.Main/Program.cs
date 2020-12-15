@@ -88,18 +88,18 @@ namespace MUD.Main
                 helper.RegisterClassMap(typeof(Wand));
                 helper.RegisterClassMap(typeof(Food));
 
-                var itemCollection = database.GetCollection<Item>("testingstuff");
+                var itemCollection = database.GetCollection<InventoryItem>("testingstuff");
 
                 itemCollection.DeleteMany((m => true));
 
-                Item newItem = new Item(dbClient)
+                InventoryItem newItem = new InventoryItem(database)
                 {
                     ShortDescription = "soft cloth",
                     LongDescription = "This is a small, soft cloth. It is suitable for polishing things or blowing one's nose, but not much else."
                 };
                 newItem.Update();
 
-                Wand newWand = new Wand(dbClient)
+                Wand newWand = new Wand(database)
                 {
                     ShortDescription = "wand of missiles",
                     LongDescription = "This is a short, straight stick that has been polished and painted red. It has been imbued with magical power such that it will shoot magic missiles at one's foe.",
@@ -108,7 +108,7 @@ namespace MUD.Main
                 };
                 newWand.Update();
 
-                Food newFood = new Food(dbClient)
+                Food newFood = new Food(database)
                 {
                     ShortDescription = "loaf of bread",
                     LongDescription = "A toasty, scrumptious loaf of fresh bread.",
@@ -116,11 +116,11 @@ namespace MUD.Main
                 };
                 newFood.Update();
 
-                var item = itemCollection.Find<Item>((m => m.Id == newItem.Id)).FirstOrDefault();
-                var wand = (Wand)itemCollection.Find<Item>((m => m.Id == newWand.Id)).FirstOrDefault();
+                var item = itemCollection.Find<InventoryItem>((m => m.Id == newItem.Id)).FirstOrDefault();
+                var wand = (Wand)itemCollection.Find<InventoryItem>((m => m.Id == newWand.Id)).FirstOrDefault();
                 wand.UseWand();
                 wand.Update();
-                var food = itemCollection.Find<Item>((m => m.Id == newFood.Id)).FirstOrDefault();
+                var food = itemCollection.Find<InventoryItem>((m => m.Id == newFood.Id)).FirstOrDefault();
 
                 // Can it be done with a type we don't know til runtime?
                 //BsonClassMap.RegisterClassMap(new BsonClassMap(typeof(Item))); // Yes, but not with the initializer?

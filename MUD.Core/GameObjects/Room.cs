@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
 using MongoDB.Bson.Serialization.Attributes;
+using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
+using MUD.Core.Providers.Interfaces;
 
 namespace MUD.Core
 {
@@ -42,11 +44,11 @@ namespace MUD.Core
             {new string[] {"up", "u"}}
         };
 
-        private IRoomRepository _roomRepository;
+        private IRoomProvider _roomProvider;
 
-        public Room(IRoomRepository roomRepository)
+        public Room(IMongoDatabase db, IRoomProvider roomProvider) :base(db)
         {
-            _roomRepository = roomRepository;
+            _roomProvider = roomProvider;
         }
 
         public void TellRoom(string message, Player[] exclusionList = null)
@@ -112,7 +114,7 @@ namespace MUD.Core
                     {
                         if (commandArgs[0] != null && commandArgs[0] is Exit)
                         {
-                            commandIssuer.MoveToRoom(((Exit)commandArgs[0]).Destination_id);
+                            commandIssuer.MoveToRoom(((Exit)commandArgs[0]).DestinationId);
                         }
                     })
                 });
@@ -121,11 +123,7 @@ namespace MUD.Core
 
         public bool Save()
         {
-            if (_roomRepository.Update(this))
-            {
-                return true;
-            }
-            return false;
+            return Update();
         }
 
         public string Examine(Player examiner)
@@ -156,7 +154,7 @@ namespace MUD.Core
                 occupantsLine = otherOccupants.Select(o => o.PlayerName).GetListText() + " are here.\r\n";
             }
 
-            return ShortDescription + " (" + _id + ")\r\n" + LongDescription + "\r\n" + exitLine + "\r\n" + occupantsLine;
+            return ShortDescription + " (" + Id + ")\r\n" + LongDescription + "\r\n" + exitLine + "\r\n" + occupantsLine;
         }
     }
 

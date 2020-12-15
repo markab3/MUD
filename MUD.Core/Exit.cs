@@ -10,6 +10,6 @@ namespace MUD.Core
         public string Name { get; set; }
 
         [BsonRepresentation(BsonType.ObjectId)]
-        public string Destination_id { get; set; }
+        public string DestinationId { get; set; }
     }
 }

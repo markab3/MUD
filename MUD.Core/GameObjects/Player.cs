@@ -24,7 +24,7 @@ namespace MUD.Core
         public string Race { get; set; }
 
         [BsonRepresentation(BsonType.ObjectId)]
-        public string CurrentLocation_id { get; set; }
+        public string CurrentLocationId { get; set; }
 
         public string PlayerName { get; set; }
 
@@ -65,9 +65,9 @@ namespace MUD.Core
         {
             get
             {
-                if (_currentLocation == null && !string.IsNullOrWhiteSpace(CurrentLocation_id))
+                if (_currentLocation == null && !string.IsNullOrWhiteSpace(CurrentLocationId))
                 {
-                    _currentLocation = _world.GetRoom(CurrentLocation_id);
+                    _currentLocation = _world.GetRoom(CurrentLocationId);
                 }
                 return _currentLocation;
             }
@@ -119,7 +119,7 @@ namespace MUD.Core
             }
 
             CurrentLocation = roomToEnter;
-            CurrentLocation_id = roomToEnter._id;
+            CurrentLocationId = roomToEnter.Id;
 
             roomToEnter.EnterRoom(this);
             ReceiveMessage(roomToEnter.Examine(this));

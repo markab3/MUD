@@ -89,7 +89,7 @@ namespace MUD.Core.Commands
                         return;
                     }
 
-                    if (currentLocation.Exits != null && currentLocation.Exits.FirstOrDefault(x => x.Destination_id == newDestination) != null)
+                    if (currentLocation.Exits != null && currentLocation.Exits.FirstOrDefault(x => x.DestinationId == newDestination) != null)
                     {
                         commandIssuer.ReceiveMessage(string.Format("The room with id of {0} is already linked here.", newDestination));
                     }
@@ -99,7 +99,7 @@ namespace MUD.Core.Commands
                     }
                     else
                     {
-                        currentLocation.Exits.Add(new Exit() { Destination_id = newDestination, Name = newName });
+                        currentLocation.Exits.Add(new Exit() { DestinationId = newDestination, Name = newName });
                         currentLocation.RebuildExitCommands();
                         if (!commandIssuer.CurrentLocation.Save())
                         {
@@ -109,17 +109,17 @@ namespace MUD.Core.Commands
 
                     if (!string.IsNullOrWhiteSpace(returnName))
                     {
-                        if (roomToLink.Exits != null && roomToLink.Exits.FirstOrDefault(x => x.Destination_id == currentLocation._id) != null)
+                        if (roomToLink.Exits != null && roomToLink.Exits.FirstOrDefault(x => x.DestinationId == currentLocation.Id) != null)
                         {
                             commandIssuer.ReceiveMessage(string.Format("The room with id of {0} already has an exit that leads back here.", newDestination));
                         }
                         else if (roomToLink.Exits != null && roomToLink.Exits.FirstOrDefault(x => x.Name == newName) != null)
                         {
-                            commandIssuer.ReceiveMessage(string.Format("The room with id {0} already has {1} {2} exit.", roomToLink._id, newName.GetArticle(), newName));
+                            commandIssuer.ReceiveMessage(string.Format("The room with id {0} already has {1} {2} exit.", roomToLink.Id, newName.GetArticle(), newName));
                         }
                         else
                         {
-                            roomToLink.Exits.Add(new Exit() { Destination_id = currentLocation._id, Name = returnName });
+                            roomToLink.Exits.Add(new Exit() { DestinationId = currentLocation.Id, Name = returnName });
                             roomToLink.RebuildExitCommands();
                             if (!roomToLink.Save())
                             {
@@ -142,7 +142,7 @@ namespace MUD.Core.Commands
                     Exit exitToRemove = currentLocation.Exits.FirstOrDefault(e => e.Name.ToLower() == exitArg.ToLower());
                     if (exitToRemove == null)
                     {
-                        exitToRemove = currentLocation.Exits.FirstOrDefault(e => e.Destination_id.ToLower() == exitArg.ToLower());
+                        exitToRemove = currentLocation.Exits.FirstOrDefault(e => e.DestinationId.ToLower() == exitArg.ToLower());
                     }
                     if (exitToRemove == null)
                     {
