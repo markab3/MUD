@@ -10,6 +10,7 @@ using MUD.Core.Formatting;
 using MongoDB.Bson.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson.Serialization.IdGenerators;
+using MUD.Core.Commands;
 
 namespace MUD.Main
 {
@@ -19,7 +20,7 @@ namespace MUD.Main
         private static Server _serverInstance;
         private static string welcomeMessage =
 @"
-                     Welcome to Planar Realms 0.1
+                     Welcome to Planar Realms 0.2
                      _____  _                         
                     |  __ \| |                        
                     | |__) | | __ _ _ __   __ _ _ __  
@@ -48,13 +49,35 @@ namespace MUD.Main
             try
             {
                 dbClient = new MongoClient(db);
-                //setup our DI
-                IServiceProvider _serviceProvider = new ServiceCollection()
-                    .AddSingleton<IMongoClient>(dbClient)
-                    .AddTransient<Item>()
-                    .AddTransient<Wand>()
-                    .AddTransient<Food>()
-                    .BuildServiceProvider();
+                // //setup our DI
+                // IServiceProvider _serviceProvider = new ServiceCollection()
+                //     // Load all commands 
+                //     .Scan(scan => scan
+                //         //.FromCallingAssembly()
+                //         //                    .FromAssemblies(new System.Reflection.Assembly[] {})
+                //         .FromApplicationDependencies()
+                //         .AddClasses(classes => classes.AssignableTo<ICommand>().Where(t => t.Name != "AnonymousCommand"))
+                //         .AsImplementedInterfaces()
+                //         .WithSingletonLifetime()
+                //     )
+                //     // Load all terminals
+                //     .Scan(scan => scan
+                //         .FromApplicationDependencies()
+                //         .AddClasses(classes => classes.AssignableTo<ITerminalHandler>())
+                //         .AsImplementedInterfaces()
+                //         .WithSingletonLifetime()
+                //     )
+                //     // Load up the mongo client
+                //     .AddSingleton<IMongoClient>(dbClient)                
+                //     .AddSingleton<IMongoDatabase>(dbClient.GetDatabase("testmud"))
+                //     // Load utility stuff?
+                //     .AddSingleton<CommandQueue>()
+                //     .AddTransient<InventoryItem>()
+                //     .AddTransient<Wand>()
+                //     .AddTransient<Food>()
+                //     .AddTransient<Player>()
+                //     .AddTransient<World>()
+                //     .BuildServiceProvider();
 
                 // Apparently SetIsRootClass can't be set after the ClassMap has been Frozen.
                 // BsonClassMap.RegisterClassMap<Item>(cm =>
@@ -82,74 +105,60 @@ namespace MUD.Main
                 // collection = database.GetCollection<BsonDocument>("rooms"); // Check that the collection is there.
                 // collection.InsertOne(BsonDocument.Parse(jsonContent)); // The BSON object will have _id and it will be set by the insert call.
 
-                var helper = new Data.MongoDBClassMapManager(_serviceProvider);
-                helper.ClearClassMaps();
-                helper.RegisterRootClassMap(typeof(Item));
-                helper.RegisterClassMap(typeof(Wand));
-                helper.RegisterClassMap(typeof(Food));
+                // var helper = new Data.MongoDBClassMapManager(_serviceProvider);
+                // helper.ClearClassMaps();
+                // helper.RegisterRootClassMap(typeof(Data.Entity));
+                // helper.RegisterClassMap(typeof(GameObject));
+                // helper.RegisterClassMap(typeof(InventoryItem));
+                // helper.RegisterClassMap(typeof(Wand));
+                // helper.RegisterClassMap(typeof(Food));
+                // helper.RegisterClassMap(typeof(Player));
 
-                var itemCollection = database.GetCollection<InventoryItem>("testingstuff");
+                // var itemCollection = database.GetCollection<InventoryItem>("item");
 
-                itemCollection.DeleteMany((m => true));
+                // itemCollection.DeleteMany((m => true));
 
-                InventoryItem newItem = new InventoryItem(database)
-                {
-                    ShortDescription = "soft cloth",
-                    LongDescription = "This is a small, soft cloth. It is suitable for polishing things or blowing one's nose, but not much else."
-                };
-                newItem.Update();
+                // InventoryItem newItem = new InventoryItem(database)
+                // {
+                //     ShortDescription = "soft cloth",
+                //     LongDescription = "This is a small, soft cloth. It is suitable for polishing things or blowing one's nose, but not much else."
+                // };
+                // newItem.Update();
 
-                Wand newWand = new Wand(database)
-                {
-                    ShortDescription = "wand of missiles",
-                    LongDescription = "This is a short, straight stick that has been polished and painted red. It has been imbued with magical power such that it will shoot magic missiles at one's foe.",
-                    CurrentCharges = 8,
-                    MaxCharges = 10
-                };
-                newWand.Update();
+                // Wand newWand = new Wand(database)
+                // {
+                //     ShortDescription = "wand of missiles",
+                //     LongDescription = "This is a short, straight stick that has been polished and painted red. It has been imbued with magical power such that it will shoot magic missiles at one's foe.",
+                //     CurrentCharges = 8,
+                //     MaxCharges = 10
+                // };
+                // newWand.Update();
 
-                Food newFood = new Food(database)
-                {
-                    ShortDescription = "loaf of bread",
-                    LongDescription = "A toasty, scrumptious loaf of fresh bread.",
-                    Servings = 2
-                };
-                newFood.Update();
+                // Food newFood = new Food(database)
+                // {
+                //     ShortDescription = "loaf of bread",
+                //     LongDescription = "A toasty, scrumptious loaf of fresh bread.",
+                //     Servings = 2
+                // };
+                // newFood.Update();
 
-                var item = itemCollection.Find<InventoryItem>((m => m.Id == newItem.Id)).FirstOrDefault();
-                var wand = (Wand)itemCollection.Find<InventoryItem>((m => m.Id == newWand.Id)).FirstOrDefault();
-                wand.UseWand();
-                wand.Update();
-                var food = itemCollection.Find<InventoryItem>((m => m.Id == newFood.Id)).FirstOrDefault();
+                // var item = itemCollection.Find<InventoryItem>((m => m.Id == newItem.Id)).FirstOrDefault();
+                // var wand = (Wand)itemCollection.Find<InventoryItem>((m => m.Id == newWand.Id)).FirstOrDefault();
+                // wand.UseWand();
+                // wand.Update();
+                // var food = itemCollection.Find<InventoryItem>((m => m.Id == newFood.Id)).FirstOrDefault();
 
-                // Can it be done with a type we don't know til runtime?
-                //BsonClassMap.RegisterClassMap(new BsonClassMap(typeof(Item))); // Yes, but not with the initializer?
+                // var playerCollection = database.GetCollection<Player>("players");
 
-                // Can I then look up the class map and change it? Yes. 
-                //var classMap = BsonClassMap.LookupClassMap(typeof(Item)); // This also registers the type and automaps.
-                //classMap.SetCreator(() => { return _serviceProvider.GetService(typeof(Item)); });
+                // var newPlayer = _serviceProvider.GetService<Player>();
+                // newPlayer.PlayerName = "testplayer";
+                // newPlayer.Race = "womble";
+                // newPlayer.Class = "fighter";
+                // newPlayer.Gender = "neuter";
+                // newPlayer.Password = "password";
 
-                // Try this dirty dirty reflection stuff I found? Yeah that worked.
-                helper.ClearClassMaps();
-
-                BsonClassMap.RegisterClassMap<Item>(cm =>
-               {
-                   cm.SetIsRootClass(true);
-                   cm.AutoMap();
-                   cm.MapIdProperty("Id").SetIdGenerator(StringObjectIdGenerator.Instance);
-                   cm.SetCreator(() => { return _serviceProvider.GetService<Item>(); });
-               });
-                BsonClassMap.RegisterClassMap<Wand>(cm =>
-                {
-                    cm.AutoMap();
-                    cm.SetCreator(() => { return _serviceProvider.GetService<Wand>(); });
-                });
-                BsonClassMap.RegisterClassMap<Food>(cm =>
-                {
-                    cm.AutoMap();
-                    cm.SetCreator(() => { return _serviceProvider.GetService<Food>(); });
-                });
-
+                // var foundPlayer = playerCollection.Find<Player>((m => m.PlayerName == "Holen")).FirstOrDefault();
+                // foundPlayer.Update();
             }
             catch (Exception ex)
             {

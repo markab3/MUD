@@ -35,7 +35,7 @@ namespace MUD.Core.Commands
                 {
                     foreach (var currentAliasSet in terminalAliases)
                     {
-                        _terminalTypes = _terminalTypes.Union(currentAliasSet).ToArray();
+                        _terminalTypes = _terminalTypes.Union(currentAliasSet.Select(a => a.ToLower())).ToArray();
                     }
                 }
             }

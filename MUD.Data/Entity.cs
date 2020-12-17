@@ -1,32 +1,33 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 
 namespace MUD.Data
 {
     public abstract class Entity
     {
+        [BsonRepresentation(BsonType.ObjectId)]
         public string Id { get; set; }
+
         protected IMongoDatabase _db;
 
         protected DateTime _lastSave = DateTime.Now;
-
-        protected string _dbCollection = null;
 
         public Entity (IMongoDatabase db) {
             _db = db;
         }
 
+        protected abstract string getCollection();
+
         public virtual bool Update()
         {
-            if (string.IsNullOrWhiteSpace(_dbCollection))
+            if (string.IsNullOrWhiteSpace(getCollection()))
             {
                 throw new ArgumentNullException("No DB collection provided.");
             }
 
-            var collection = _db.GetCollection<Entity>(_dbCollection);
+            var collection = _db.GetCollection<Entity>(getCollection());
             if (string.IsNullOrWhiteSpace(Id))
             {
                 collection.InsertOne(this);

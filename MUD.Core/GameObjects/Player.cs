@@ -79,6 +79,8 @@ namespace MUD.Core
             _world = world;
             _commandQueue = commandQueue;
         }
+      
+        protected override string getCollection() { return "players"; }
 
         public bool Save()
         {
@@ -127,7 +129,7 @@ namespace MUD.Core
 
         public void ReceiveMessage(string message)
         {
-            var selectedTerminalHandler = _world.TerminalHandlers.FirstOrDefault(th => th.TerminalName == SelectedTerm || (th.Aliases != null && th.Aliases.Contains(SelectedTerm)));
+            var selectedTerminalHandler = _world.TerminalHandlers.FirstOrDefault(th => th.TerminalName.ToLower() == SelectedTerm?.ToLower() || (th.Aliases != null && th.Aliases.Any(a => a.ToLower() == SelectedTerm?.ToLower())));
             if (selectedTerminalHandler != null)
             {
                 message = selectedTerminalHandler.ResolveOutput(message);

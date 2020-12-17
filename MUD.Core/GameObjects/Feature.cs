@@ -6,5 +6,7 @@ namespace MUD.Core
     public class Feature : GameObject
     {
         public Feature(IMongoDatabase db) : base(db) { }
+        
+        protected override string getCollection() { return "feature"; }
     }
 }

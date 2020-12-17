@@ -26,7 +26,8 @@ namespace MUD.Data
 
         public BsonClassMap RegisterRootClassMap(Type rootType)
         {
-            if(BsonClassMap.IsClassMapRegistered(rootType)) {
+            if (BsonClassMap.IsClassMapRegistered(rootType))
+            {
                 return BsonClassMap.LookupClassMap(rootType); // This registers, but also freezes the thing.
             }
 
@@ -45,18 +46,22 @@ namespace MUD.Data
         }
         public void Unregister(Type typeToUnregister)
         {
-            GetClassMaps().Remove(typeToUnregister);
+            GetClassMaps()?.Remove(typeToUnregister);
         }
 
         public void ClearClassMaps()
         {
-            GetClassMaps().Clear();
+            GetClassMaps()?.Clear();
+            RegisterRootClassMap(typeof(Entity));
         }
 
         // Dirty dirty guy on the internet made this.
         // They were using it for mocking unit test objects, which is a better excuse.
         private Dictionary<Type, BsonClassMap> GetClassMaps()
         {
+            var allClassMaps = BsonClassMap.GetRegisteredClassMaps();
+            if (allClassMaps == null || allClassMaps.Count() == 0) { return null; }
+
             var cm = BsonClassMap.GetRegisteredClassMaps().First();
             var fi = typeof(BsonClassMap).GetField("__classMaps", BindingFlags.Static | BindingFlags.NonPublic);
             var classMaps = (Dictionary<Type, BsonClassMap>)fi.GetValue(cm);

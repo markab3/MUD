@@ -5,6 +5,6 @@ using MUD.Data;
 namespace MUD.Core.Providers {
     public class PlayerProvider : EntityProvider<Player>, IPlayerProvider
     {
-        public PlayerProvider(IMongoClient dbClient) : base(dbClient, "testmud", "room") { }
+        public PlayerProvider(IMongoClient dbClient) : base(dbClient, "testmud", "players") { }
     }
 }

@@ -51,6 +51,8 @@ namespace MUD.Core
             _roomProvider = roomProvider;
         }
 
+        protected override string getCollection() { return "room"; }
+
         public void TellRoom(string message, Player[] exclusionList = null)
         {
             var recipients = _occupants;

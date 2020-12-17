@@ -8,6 +8,7 @@ using MUD.Core.Formatting;
 using Microsoft.Extensions.DependencyInjection;
 using MUD.Telnet;
 using MUD.Core.Providers.Interfaces;
+using MUD.Core.Providers;
 
 namespace MUD.Core
 {
@@ -64,6 +65,10 @@ namespace MUD.Core
                 .AddTransient<Player>()
                 .AddTransient<Room>()
 
+                // Load providers
+                .AddSingleton<IPlayerProvider, PlayerProvider>()
+                .AddSingleton<IRoomProvider, RoomProvider>()
+
                 // Load this and build.
                 .AddSingleton<World>(this)
                 .BuildServiceProvider();
@@ -71,7 +76,7 @@ namespace MUD.Core
             // Make sure the classMaps are properly registered.
             var classMapManager = new MUD.Data.MongoDBClassMapManager(_serviceProvider);
             classMapManager.ClearClassMaps();
-            classMapManager.RegisterRootClassMap(typeof(GameObject));
+            classMapManager.RegisterClassMap(typeof(GameObject));
             classMapManager.RegisterClassMap(typeof(Player));
             classMapManager.RegisterClassMap(typeof(Room));
 
