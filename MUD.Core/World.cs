@@ -7,8 +7,8 @@ using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using Microsoft.Extensions.DependencyInjection;
 using MUD.Telnet;
-using MUD.Core.Providers.Interfaces;
-using MUD.Core.Providers;
+using MUD.Core.Repositories.Interfaces;
+using MUD.Core.Repositories;
 
 namespace MUD.Core
 {
@@ -30,7 +30,6 @@ namespace MUD.Core
 
         private bool _isRunning;
 
-        private List<Room> _rooms;
 
         private CommandQueue _commandQueue;
 
@@ -65,9 +64,9 @@ namespace MUD.Core
                 .AddTransient<Player>()
                 .AddTransient<Room>()
 
-                // Load providers
-                .AddSingleton<IPlayerProvider, PlayerProvider>()
-                .AddSingleton<IRoomProvider, RoomProvider>()
+                // Load repositories
+                .AddSingleton<IPlayerRepository, PlayerRepository>()
+                .AddSingleton<IRoomRepository, RoomRepository>()
 
                 // Load this and build.
                 .AddSingleton<World>(this)
@@ -87,7 +86,6 @@ namespace MUD.Core
             _commandQueue = _serviceProvider.GetService<CommandQueue>();
 
             Players = new List<Player>();
-            _rooms = new List<Room>();
         }
 
         public void Start()
@@ -147,15 +145,13 @@ namespace MUD.Core
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
 
-            var playerProvider = _serviceProvider.GetService<IPlayerProvider>();
-            var foundPlayerEntity = playerProvider.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
+            var foundPlayer = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
 
-            if (foundPlayerEntity != null)
+            if (foundPlayer != null)
             {
-                if (foundPlayerEntity.Password == password)
+                if (foundPlayer.Password == password)
                 {
-                    Player foundPlayer = _serviceProvider.GetService<Player>(); // new Player(this, playerProvider, foundUser);
-                    //foundPlayer.LoadEntity(foundPlayerEntity);
                     foundPlayer.Connection = client;
                     foundPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
                     AddPlayer(foundPlayer);
@@ -169,8 +165,8 @@ namespace MUD.Core
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
 
-            var playerProvider = _serviceProvider.GetService<IPlayerProvider>();
-            var foundUser = playerProvider.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
+            var foundUser = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
 
             if (foundUser == null)
             {
@@ -194,13 +190,8 @@ namespace MUD.Core
         {
             if (string.IsNullOrWhiteSpace(roomId)) { return null; }
 
-            Room foundRoom = _rooms.FirstOrDefault(r => r.Id == roomId);
-
-            if (foundRoom != null) { return foundRoom; }
-
-            var roomProvider = (IRoomProvider)_serviceProvider.GetService(typeof(IRoomProvider));
-            foundRoom = roomProvider.Get(roomId);
-            return foundRoom;
+            var roomRepository = _serviceProvider.GetService<IRoomRepository>();
+            return roomRepository.Get(roomId);
         }
 
         public void LoadGameObjectType(Type objectType) {

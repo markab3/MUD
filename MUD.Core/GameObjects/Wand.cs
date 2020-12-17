@@ -8,7 +8,7 @@ namespace MUD.Core
         public int CurrentCharges { get; set; }
         public int MaxCharges { get; set; }
 
-        public Wand(IMongoDatabase db) : base(db) { }
+        public Wand() { }
 
         public override string Examine()
         {

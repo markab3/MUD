@@ -4,8 +4,7 @@ namespace MUD.Core
 {
     public class InventoryItem : GameObject
     {
-        public InventoryItem(IMongoDatabase db) : base(db) { }
+        public InventoryItem() {}
 
-        protected override string getCollection() { return "item"; }
     }
 }

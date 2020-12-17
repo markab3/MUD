@@ -4,7 +4,7 @@ using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
-using MUD.Core.Providers.Interfaces;
+using MUD.Core.Repositories.Interfaces;
 
 namespace MUD.Core
 {
@@ -44,14 +44,12 @@ namespace MUD.Core
             {new string[] {"up", "u"}}
         };
 
-        private IRoomProvider _roomProvider;
+        private IRoomRepository _roomRepository;
 
-        public Room(IMongoDatabase db, IRoomProvider roomProvider) :base(db)
+        public Room(IRoomRepository roomRepository)
         {
-            _roomProvider = roomProvider;
+            _roomRepository = roomRepository;
         }
-
-        protected override string getCollection() { return "room"; }
 
         public void TellRoom(string message, Player[] exclusionList = null)
         {
@@ -125,7 +123,11 @@ namespace MUD.Core
 
         public bool Save()
         {
-            return Update();
+            if (_roomRepository.Update(this))
+            {
+                return true;
+            }
+            return false;
         }
 
         public string Examine(Player examiner)

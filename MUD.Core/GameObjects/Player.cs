@@ -5,12 +5,14 @@ using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
+using MUD.Core.Repositories.Interfaces;
 using MUD.Telnet;
 
 namespace MUD.Core
 {
     public class Player : GameObject
     {
+        private IPlayerRepository _playerRepository;
         private Client _connection;
 
         private World _world;
@@ -74,18 +76,31 @@ namespace MUD.Core
             set { _currentLocation = value; } // Maybe make this private so we have to load via ID?
         }
 
-        public Player(IMongoDatabase db, World world, CommandQueue commandQueue) : base(db)
+        public Player(World world, CommandQueue commandQueue, IPlayerRepository playerRepository)
         {
             _world = world;
             _commandQueue = commandQueue;
+            _playerRepository = playerRepository;
         }
-      
-        protected override string getCollection() { return "players"; }
 
         public bool Save()
         {
             ReceiveMessage("%^Bold%^%^Yellow%^Saving...%^Reset%^");
-            return base.Update();
+            if (string.IsNullOrWhiteSpace(Id))
+            {
+                _playerRepository.Insert(this);
+                _lastSave = DateTime.Now;
+                return true;
+            }
+            else
+            {
+                if (_playerRepository.Update(this))
+                {
+                    _lastSave = DateTime.Now;
+                    return true;
+                }
+            }
+            return false;
         }
 
         public void Quit()

@@ -11,7 +11,7 @@ namespace MUD.Core
 
         public string LongDescription { get; set; }
 
-        public GameObject(IMongoDatabase db) : base(db)       {        }
+        public GameObject() {}
 
         public virtual string Examine()
         {

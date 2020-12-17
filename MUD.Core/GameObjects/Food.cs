@@ -7,7 +7,7 @@ namespace MUD.Core
     {
         public int Servings { get; set; }
 
-        public Food(IMongoDatabase db) : base(db) { }
+        public Food() { }
 
         public override string Examine()
         {

@@ -1,7 +1,6 @@
 using System;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
-using MongoDB.Driver;
 
 namespace MUD.Data
 {
@@ -10,37 +9,38 @@ namespace MUD.Data
         [BsonRepresentation(BsonType.ObjectId)]
         public string Id { get; set; }
 
-        protected IMongoDatabase _db;
+        // protected IMongoDatabase _db;
 
         protected DateTime _lastSave = DateTime.Now;
 
-        public Entity (IMongoDatabase db) {
-            _db = db;
-        }
-
-        protected abstract string getCollection();
-
-        public virtual bool Update()
+        public Entity()
         {
-            if (string.IsNullOrWhiteSpace(getCollection()))
-            {
-                throw new ArgumentNullException("No DB collection provided.");
-            }
-
-            var collection = _db.GetCollection<Entity>(getCollection());
-            if (string.IsNullOrWhiteSpace(Id))
-            {
-                collection.InsertOne(this);
-                _lastSave = DateTime.Now;
-                return true;
-            }
-            else
-            {
-                var result = collection.ReplaceOne<Entity>((m => m.Id == this.Id), this);
-                _lastSave = DateTime.Now;
-                return result != null && result.IsModifiedCountAvailable && result.ModifiedCount == 1;
-            }
+            //_db = db;
         }
+
+        //protected abstract string getCollection();
+
+        // public virtual bool Update()
+        // {
+        //     if (string.IsNullOrWhiteSpace(getCollection()))
+        //     {
+        //         throw new ArgumentNullException("No DB collection provided.");
+        //     }
+
+        //     var collection = _db.GetCollection<Entity>(getCollection());
+        //     if (string.IsNullOrWhiteSpace(Id))
+        //     {
+        //         collection.InsertOne(this);
+        //         _lastSave = DateTime.Now;
+        //         return true;
+        //     }
+        //     else
+        //     {
+        //         var result = collection.ReplaceOne<Entity>((m => m.Id == this.Id), this);
+        //         _lastSave = DateTime.Now;
+        //         return result != null && result.IsModifiedCountAvailable && result.ModifiedCount == 1;
+        //     }
+        // }
 
         // public void LoadEntity(Entity entity)
         // {
