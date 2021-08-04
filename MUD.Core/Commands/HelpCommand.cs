@@ -1,3 +1,5 @@
+using MUD.Core.GameObjects;
+
 namespace MUD.Core.Commands
 {
     public class HelpCommand : ICommand

@@ -2,7 +2,7 @@ using System;
 using MongoDB.Driver;
 using MUD.Data;
 
-namespace MUD.Core
+namespace MUD.Core.GameObjects
 {
     public abstract class GameObject: Entity
     {

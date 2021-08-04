@@ -1,5 +1,6 @@
 using System.Linq;
 using MUD.Core.Formatting;
+using MUD.Core.GameObjects;
 
 namespace MUD.Core.Commands
 {

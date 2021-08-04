@@ -8,9 +8,9 @@ using MUD.Core.Formatting;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Telnet;
 
-namespace MUD.Core
+namespace MUD.Core.GameObjects
 {
-    public class Player : GameObject
+    public class Player : Living
     {
         private IPlayerRepository _playerRepository;
         private Client _connection;
@@ -21,20 +21,9 @@ namespace MUD.Core
 
         private Room _currentLocation;
 
-        public string Gender { get; set; }
-
-        public string Race { get; set; }
-
-        [BsonRepresentation(BsonType.ObjectId)]
-        public string CurrentLocationId { get; set; }
-
         public string PlayerName { get; set; }
 
         public string Password { get; set; }
-
-        public string Class { get; set; }
-
-        public string[] KnownCommands { get; set; }
 
         public string SelectedTerm { get; set; }
 

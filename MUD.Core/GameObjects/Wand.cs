@@ -1,7 +1,5 @@
 
-using MongoDB.Driver;
-
-namespace MUD.Core
+namespace MUD.Core.GameObjects
 {
     public class Wand : InventoryItem
     {

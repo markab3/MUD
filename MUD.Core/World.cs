@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using MUD.Telnet;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Core.Repositories;
+using MUD.Core.GameObjects;
 
 namespace MUD.Core
 {

@@ -1,3 +1,4 @@
+using MUD.Core.GameObjects;
 using MUD.Data;
 
 namespace MUD.Core.Repositories.Interfaces

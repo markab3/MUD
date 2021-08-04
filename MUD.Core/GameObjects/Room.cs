@@ -6,7 +6,7 @@ using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using MUD.Core.Repositories.Interfaces;
 
-namespace MUD.Core
+namespace MUD.Core.GameObjects
 {
     public class Room : GameObject
     {

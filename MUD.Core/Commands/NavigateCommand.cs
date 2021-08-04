@@ -1,4 +1,5 @@
 using System.Linq;
+using MUD.Core.GameObjects;
 
 namespace MUD.Core.Commands
 {

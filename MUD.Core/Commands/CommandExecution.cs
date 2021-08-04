@@ -1,4 +1,5 @@
 using System;
+using MUD.Core.GameObjects;
 
 namespace MUD.Core.Commands
 {

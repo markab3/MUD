@@ -1,4 +1,5 @@
 using MongoDB.Driver;
+using MUD.Core.GameObjects;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Data;
 

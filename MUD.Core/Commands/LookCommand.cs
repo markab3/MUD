@@ -1,3 +1,4 @@
+using MUD.Core.GameObjects;
 using MUD.Core.Interfaces;
 using System.Linq;
 namespace MUD.Core.Commands
