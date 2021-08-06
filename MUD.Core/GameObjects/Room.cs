@@ -10,6 +10,8 @@ namespace MUD.Core.GameObjects
 {
     public class Room : GameObject
     {
+        public List<InventoryItem> Items { get; set; } = new List<InventoryItem>();
+        
         public List<Feature> Features { get; set; } = new List<Feature>();
 
         public List<Exit> Exits { get; set; } = new List<Exit>();

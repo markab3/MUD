@@ -12,11 +12,15 @@ namespace MUD.Core.GameObjects
 
         [BsonRepresentation(BsonType.ObjectId)]
         public string CurrentLocationId { get; set; }
-        
+
         public string Class { get; set; }
 
         public string[] KnownCommands { get; set; }
 
-        public List<string> Inventory { get; set; }
+        public List<InventoryItem> Inventory { get; set; }
+
+        public List<InventoryItem> WornItems { get; set; }
+        
+        public List<InventoryItem> HeldItems { get; set; }
     }
 }
