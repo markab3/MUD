@@ -11,7 +11,7 @@ namespace MUD.Core.GameObjects
     public class Room : GameObject
     {
         public List<InventoryItem> Items { get; set; } = new List<InventoryItem>();
-        
+
         public List<Feature> Features { get; set; } = new List<Feature>();
 
         public List<Exit> Exits { get; set; } = new List<Exit>();
@@ -82,11 +82,7 @@ namespace MUD.Core.GameObjects
         public void ExitRoom(Player occupant, string exitMessage = null)
         {
             _occupants.Remove(occupant);
-            if (string.IsNullOrEmpty(exitMessage))
-            {
-                TellRoom(occupant.ShortDescription + " leaves.");
-            }
-            else
+            if (!string.IsNullOrEmpty(exitMessage))
             {
                 TellRoom(exitMessage);
             }

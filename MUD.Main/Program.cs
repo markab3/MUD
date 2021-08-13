@@ -18,6 +18,25 @@ namespace MUD.Main
     {
         private static World _gameWorld;
         private static Server _serverInstance;
+        private static string alternateMessage =
+@"
+
+
+        ______      _ _         ___        ______          _         
+        | ___ \    | | |       / _ \       | ___ \        | |        
+        | |_/ /   _| | |______/ /_\ \______| |_/ /_ _ _ __| |_ _   _ 
+        |  __/ | | | | |______|  _  |______|  __/ _` | '__| __| | | |
+        | |  | |_| | | |      | | | |      | | | (_| | |  | |_| |_| |
+        \_|   \__,_|_|_|      \_| |_/      \_|  \__,_|_|   \__|\__, |
+                                                                __/ |
+                                                               |___/ 
+
+--------------------------------------------------------------------------------
+    Use 'connect <username> <password>' to connect to an existing player.
+    Use 'create <username> <password>' to create a new player.
+    Use 'who' to see who is currently online.
+    Use 'quit' to disconnect.
+--------------------------------------------------------------------------------";
         private static string welcomeMessage =
 @"
                      Welcome to Planar Realms 0.2
@@ -347,7 +366,12 @@ namespace MUD.Main
             }
             else
             {
-                client.Send(string.Format("Command {0} was not recognized.", message.Substring(0, message.IndexOf(" "))));
+                string commandString = message;
+                if (message.Contains(" "))
+                {
+                    message = message.Substring(0, message.IndexOf(" "));
+                }
+                client.Send(string.Format("Command {0} was not recognized.", commandString));
             }
         }
     }

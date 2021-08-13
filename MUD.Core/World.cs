@@ -55,14 +55,16 @@ namespace MUD.Core
                     .WithSingletonLifetime()
                 )
                 // Load up the mongo client
-                .AddSingleton<IMongoClient>(dbClient)                
+                .AddSingleton<IMongoClient>(dbClient)
                 .AddSingleton<IMongoDatabase>(dbClient.GetDatabase("testmud"))
                 // Load utility stuff?
                 .AddSingleton<CommandQueue>()
-                
+
                 // Load GameObject types
                 //.AddTransient<GameObject>() // No this is an abstract base class. We need to register it with mongo, but whatever.
                 .AddTransient<Player>()
+                .AddTransient<Creator>()
+                .AddTransient<Admin>()
                 .AddTransient<Room>()
 
                 // Load repositories
@@ -72,12 +74,14 @@ namespace MUD.Core
                 // Load this and build.
                 .AddSingleton<World>(this)
                 .BuildServiceProvider();
-            
+
             // Make sure the classMaps are properly registered.
             var classMapManager = new MUD.Data.MongoDBClassMapManager(_serviceProvider);
             classMapManager.ClearClassMaps();
             classMapManager.RegisterClassMap(typeof(GameObject));
             classMapManager.RegisterClassMap(typeof(Player));
+            classMapManager.RegisterClassMap(typeof(Creator));
+            classMapManager.RegisterClassMap(typeof(Admin));
             classMapManager.RegisterClassMap(typeof(Room));
 
             List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
@@ -109,8 +113,6 @@ namespace MUD.Core
             _heartbeatTimer.Change(Timeout.Infinite, Timeout.Infinite);
             _isRunning = false;
         }
-
-
 
         public void AddPlayer(Player newPlayer)
         {
@@ -180,7 +182,7 @@ namespace MUD.Core
                 newPlayer.SelectedTerm = "Default"; // Or just do the subnegotiation to get a value for this...
                 newPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
                 newPlayer.Connection = connectingClient;
-                
+
                 AddPlayer(newPlayer);
                 return true;
             }
@@ -195,7 +197,8 @@ namespace MUD.Core
             return roomRepository.Get(roomId);
         }
 
-        public void LoadGameObjectType(Type objectType) {
+        public void LoadGameObjectType(Type objectType)
+        {
             var classMapManager = new MUD.Data.MongoDBClassMapManager(_serviceProvider);
             classMapManager.RegisterClassMap(objectType);
         }

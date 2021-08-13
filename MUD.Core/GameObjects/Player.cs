@@ -121,7 +121,7 @@ namespace MUD.Core.GameObjects
             var roomToEnter = _world.GetRoom(roomIdToEnter);
             if (CurrentLocation != null)
             {
-                CurrentLocation.ExitRoom(this);
+                CurrentLocation.ExitRoom(this, string.Format("{0} leaves.", this.ShortDescription));
             }
 
             CurrentLocation = roomToEnter;

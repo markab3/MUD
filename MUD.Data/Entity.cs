@@ -4,6 +4,7 @@ using MongoDB.Bson.Serialization.Attributes;
 
 namespace MUD.Data
 {
+    [BsonIgnoreExtraElements(Inherited = true)]
     public abstract class Entity
     {
         [BsonRepresentation(BsonType.ObjectId)]
