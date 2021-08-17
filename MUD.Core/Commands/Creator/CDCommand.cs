@@ -1,4 +1,6 @@
+using System.Linq;
 using MUD.Core.GameObjects;
+using MUD.Core.Properties;
 
 namespace MUD.Core.Commands
 {
@@ -6,7 +8,7 @@ namespace MUD.Core.Commands
     {
         public string[] CommandKeywords { get => new string[] { "cd" }; }
 
-        public bool IsDefault { get => true; }
+        public CommandCategories CommandCategory { get => CommandCategories.Creator; }
 
         public string HelpText { get => "Change your current directory."; }
 
@@ -17,21 +19,21 @@ namespace MUD.Core.Commands
 
         public void DoCommand(Player commandIssuer, object[] commandArgs)
         {
-            if (!(commandIssuer is Creator))
+            CreatorProperty creatorStatusObj = (CreatorProperty)commandIssuer.ExtendedProperties.FirstOrDefault(s => s.GetType() == typeof(CreatorProperty));
+            if (creatorStatusObj == null)
             {
                 commandIssuer.ReceiveMessage("This is a creator only command. How did you get this?!");
                 return;
             }
 
-            var creatorIssuer = ((Creator)commandIssuer);
             if (commandArgs == null || commandArgs.Length == 0 || !(commandArgs[0] is string) || string.IsNullOrWhiteSpace((string)commandArgs[0]))
             {
-                commandIssuer.ReceiveMessage(creatorIssuer.CurrentDirectory);
+                commandIssuer.ReceiveMessage(creatorStatusObj.CurrentDirectory);
             }
             else
             {
-                creatorIssuer.CurrentDirectory = (string)commandArgs[0];
-                commandIssuer.ReceiveMessage(creatorIssuer.CurrentDirectory + ">");
+                creatorStatusObj.CurrentDirectory = (string)commandArgs[0];
+                commandIssuer.ReceiveMessage(creatorStatusObj.CurrentDirectory + ">");
             }
         }
     }

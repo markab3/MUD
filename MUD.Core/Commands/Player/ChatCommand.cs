@@ -7,13 +7,14 @@ namespace MUD.Core.Commands
 
         public string[] CommandKeywords { get => new string[] { "chat" }; }
 
-        public bool IsDefault { get => true; }
+        public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
         public string HelpText { get => "Send a message to all other players.\r\n \r\nFormat: chat <message>"; }
 
         private World _world;
 
-        public ChatCommand(World world) {
+        public ChatCommand(World world)
+        {
             _world = world;
         }
 

@@ -8,7 +8,7 @@ namespace MUD.Core.Commands
     {
         public string[] CommandKeywords { get => new string[] { "term", "terminal" }; }
 
-        public bool IsDefault { get => true; }
+        public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
         public string HelpText { get => string.Format("Set your terminal type. Current types include: {0}\r\n \r\nFormat: term <terminal type>", _terminalTypes.GetListText()); }
 

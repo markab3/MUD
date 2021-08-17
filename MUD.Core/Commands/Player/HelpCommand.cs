@@ -6,7 +6,7 @@ namespace MUD.Core.Commands
     {
         public string[] CommandKeywords { get => new string[] { "help" }; }
 
-        public bool IsDefault { get => true; }
+        public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
         public string HelpText { get => "Displays information about the usage of a command.\r\n \r\nFormat: help <command>"; }
 

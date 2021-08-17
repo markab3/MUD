@@ -13,13 +13,10 @@ namespace MUD.Core.GameObjects
     public class Player : Living
     {
         private IPlayerRepository _playerRepository;
+
         private Client _connection;
 
-        private World _world;
-
         private CommandQueue _commandQueue;
-
-        private Room _currentLocation;
 
         public string PlayerName { get; set; }
 
@@ -49,25 +46,10 @@ namespace MUD.Core.GameObjects
         }
 
         [BsonIgnore]
-        public EPlayerConnectionStatus ConnectionStatus { get; set; }
+        public PlayerConnectionStatuses ConnectionStatus { get; set; }
 
-        [BsonIgnore]
-        public Room CurrentLocation
+        public Player(World world, CommandQueue commandQueue, IPlayerRepository playerRepository) : base(world)
         {
-            get
-            {
-                if (_currentLocation == null && !string.IsNullOrWhiteSpace(CurrentLocationId))
-                {
-                    _currentLocation = _world.GetRoom(CurrentLocationId);
-                }
-                return _currentLocation;
-            }
-            set { _currentLocation = value; } // Maybe make this private so we have to load via ID?
-        }
-
-        public Player(World world, CommandQueue commandQueue, IPlayerRepository playerRepository)
-        {
-            _world = world;
             _commandQueue = commandQueue;
             _playerRepository = playerRepository;
         }
@@ -95,7 +77,7 @@ namespace MUD.Core.GameObjects
         public void Quit()
         {
             ReceiveMessage("Thanks for playing!");
-            ConnectionStatus = EPlayerConnectionStatus.Offline;
+            ConnectionStatus = PlayerConnectionStatuses.Offline;
             if (Save())
             {
                 _world.RemovePlayer(this);
@@ -105,15 +87,6 @@ namespace MUD.Core.GameObjects
             {
                 // Uh oh!
             }
-        }
-
-        public CommandSource GetKnownCommandSource()
-        {
-            if (KnownCommands != null)
-            {
-                return _world.AllCommands.GetSubset(KnownCommands);
-            }
-            return new CommandSource();
         }
 
         public void MoveToRoom(string roomIdToEnter)
@@ -131,7 +104,7 @@ namespace MUD.Core.GameObjects
             ReceiveMessage(roomToEnter.Examine(this));
         }
 
-        public void ReceiveMessage(string message)
+        public override void ReceiveMessage(string message)
         {
             var selectedTerminalHandler = _world.TerminalHandlers.FirstOrDefault(th => th.TerminalName.ToLower() == SelectedTerm?.ToLower() || (th.Aliases != null && th.Aliases.Any(a => a.ToLower() == SelectedTerm?.ToLower())));
             if (selectedTerminalHandler != null)
@@ -141,14 +114,11 @@ namespace MUD.Core.GameObjects
             _connection.Send(message);
         }
 
-        public override string Examine()
+        public override void DoHeartbeat()
         {
-            return string.Format("Here stands {0}, a prime example of {1} {2}.", PlayerName, Race.GetArticle(), Race);
-        }
+            base.DoHeartbeat();
 
-        public void DoHeartbeat()
-        {
-            if (ConnectionStatus == EPlayerConnectionStatus.LoggedIn)
+            if (ConnectionStatus == PlayerConnectionStatuses.LoggedIn)
             {
                 if (DateTime.Now.Subtract(_lastSave).Minutes >= 10)
                 {
@@ -170,28 +140,6 @@ namespace MUD.Core.GameObjects
             {
                 ReceiveMessage("Command not recognized.");
             }
-        }
-
-        /// <summary>
-        /// Checks the player, their environment, their equipment, and the global default commands to find a command that matches the provided input.
-        /// </summary>
-        public ICommand ResolveCommand(string input)
-        {
-            ICommand matchedCommand = null;
-
-            if (CurrentLocation != null)
-            {
-                matchedCommand = CurrentLocation.RoomCommandSource.GetCommandFromInput(input);
-            }
-            if (matchedCommand != null) { return matchedCommand; }
-
-            matchedCommand = GetKnownCommandSource().GetCommandFromInput(input);
-            if (matchedCommand != null) { return matchedCommand; }
-
-            matchedCommand = _world.DefaultCommands.GetCommandFromInput(input);
-            if (matchedCommand != null) { return matchedCommand; }
-
-            return null;
         }
 
         private void ClientDisconnectedHandler(object sender, Client e)

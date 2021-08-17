@@ -9,7 +9,7 @@ namespace MUD.Core.Commands
     {
         public string[] CommandKeywords { get => new string[] { "terraform" }; }
 
-        public bool IsDefault { get => true; }
+        public CommandCategories CommandCategory { get => CommandCategories.Creator; }
 
         public string HelpText { get => String.Format("Change the room you are in or create a new one. Valid options are: {0}", Enum.GetNames(typeof(TerraformOption)).GetListText()); }
 

@@ -55,6 +55,18 @@ namespace MUD.Data
             RegisterRootClassMap(typeof(Entity));
         }
 
+        public void RegisterEntityClasses(IEnumerable<Assembly> assemblies)
+        {
+            foreach (Assembly currentAssembly in assemblies)
+            {
+                foreach (var currentType in currentAssembly.GetTypes().Where(t => t.IsSubclassOf(typeof(Entity))))
+                {
+                    RegisterClassMap(currentType);
+                    Console.WriteLine(currentType + " added to class map.");
+                }
+            }
+        }
+
         // Dirty dirty guy on the internet made this.
         // They were using it for mocking unit test objects, which is a better excuse.
         private Dictionary<Type, BsonClassMap> GetClassMaps()

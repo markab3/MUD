@@ -8,8 +8,10 @@ using MUD.Core.Formatting;
 using Microsoft.Extensions.DependencyInjection;
 using MUD.Telnet;
 using MUD.Core.Repositories.Interfaces;
-using MUD.Core.Repositories;
 using MUD.Core.GameObjects;
+using MUD.Data;
+using System.IO;
+using System.Reflection;
 
 namespace MUD.Core
 {
@@ -22,6 +24,10 @@ namespace MUD.Core
         public CommandSource AllCommands;
 
         public CommandSource DefaultCommands;
+
+        public CommandSource CreatorCommands;
+
+        public CommandSource AdminCommands;
 
         public List<ITerminalHandler> TerminalHandlers;
 
@@ -36,61 +42,98 @@ namespace MUD.Core
 
         public World(IMongoClient dbClient)
         {
+            _serviceProvider = LoadTypes(dbClient);
+
+            List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
+            AllCommands = new CommandSource(loadedCommands.ToList());
+            DefaultCommands = new CommandSource(loadedCommands.Where(c => c.CommandCategory == CommandCategories.Default).ToList());
+            CreatorCommands = new CommandSource(loadedCommands.Where(c => c.CommandCategory == CommandCategories.Creator).ToList());
+            AdminCommands = new CommandSource(loadedCommands.Where(c => c.CommandCategory == CommandCategories.Admin).ToList());
+
+            TerminalHandlers = _serviceProvider.GetServices<ITerminalHandler>().ToList();
+
+            _commandQueue = _serviceProvider.GetService<CommandQueue>();
+
+            Players = new List<Player>();
+        }
+
+        public IServiceProvider LoadTypes(IMongoClient dbClient)
+        {
+            // Load assemblies
+            var currentDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            string[] libAssemblyNames = new string[] { "MUD.Core.dll", "MUD.PlanarRealms.dll" }; // Make this config value?
+            List<Assembly> libAssemblies = new List<Assembly>();
+            foreach (string currentAssembly in libAssemblyNames)
+            {
+                try
+                {
+                    var loadedAssembly = System.Reflection.Assembly.LoadFrom(currentDirectory + "\\" + currentAssembly);
+                    if (loadedAssembly != null)
+                    {
+                        libAssemblies.Add(loadedAssembly);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(string.Format("Exception encountered when loading assemblies. Exception was:\r\n{0}", ex));
+                }
+            }
+
             //setup our DI
-            _serviceProvider = new ServiceCollection()
+            IServiceProvider serviceProvider = new ServiceCollection()
                 // Load all commands 
                 .Scan(scan => scan
-                    //.FromCallingAssembly()
-                    //                    .FromAssemblies(new System.Reflection.Assembly[] {})
-                    .FromApplicationDependencies()
+                    .FromAssemblies(libAssemblies)
                     .AddClasses(classes => classes.AssignableTo<ICommand>().Where(t => t.Name != "AnonymousCommand"))
                     .AsImplementedInterfaces()
                     .WithSingletonLifetime()
                 )
+
                 // Load all terminals
                 .Scan(scan => scan
-                    .FromApplicationDependencies()
+                    .FromAssemblies(libAssemblies)
                     .AddClasses(classes => classes.AssignableTo<ITerminalHandler>())
                     .AsImplementedInterfaces()
                     .WithSingletonLifetime()
                 )
+
                 // Load up the mongo client
                 .AddSingleton<IMongoClient>(dbClient)
                 .AddSingleton<IMongoDatabase>(dbClient.GetDatabase("testmud"))
+
                 // Load utility stuff?
                 .AddSingleton<CommandQueue>()
 
-                // Load GameObject types
-                //.AddTransient<GameObject>() // No this is an abstract base class. We need to register it with mongo, but whatever.
-                .AddTransient<Player>()
-                .AddTransient<Creator>()
-                .AddTransient<Admin>()
-                .AddTransient<Room>()
-
                 // Load repositories
-                .AddSingleton<IPlayerRepository, PlayerRepository>()
-                .AddSingleton<IRoomRepository, RoomRepository>()
+                .Scan(scan => scan
+                    .FromAssemblies(libAssemblies)
+                    .AddClasses(classes => classes.AssignableTo(typeof(Repository<>)).Where(t => !t.IsGenericType))
+                    .AsImplementedInterfaces()
+                    .WithSingletonLifetime()
+                )
+
+                // Load Entity types
+                .Scan(scan => scan
+                    .FromAssemblies(libAssemblies)
+                    .AddClasses(classes => classes.AssignableTo<Entity>().Where(t => !t.IsAbstract))
+                    .AsSelf()
+                    .WithTransientLifetime()
+                )
 
                 // Load this and build.
                 .AddSingleton<World>(this)
+
                 .BuildServiceProvider();
 
             // Make sure the classMaps are properly registered.
-            var classMapManager = new MUD.Data.MongoDBClassMapManager(_serviceProvider);
+            // TODO: Do assembly scans here.
+            var classMapManager = new MUD.Data.MongoDBClassMapManager(serviceProvider);
             classMapManager.ClearClassMaps();
-            classMapManager.RegisterClassMap(typeof(GameObject));
-            classMapManager.RegisterClassMap(typeof(Player));
-            classMapManager.RegisterClassMap(typeof(Creator));
-            classMapManager.RegisterClassMap(typeof(Admin));
-            classMapManager.RegisterClassMap(typeof(Room));
 
-            List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
-            AllCommands = new CommandSource(loadedCommands.ToList());
-            DefaultCommands = new CommandSource(loadedCommands.Where(c => c.IsDefault).ToList());
-            TerminalHandlers = _serviceProvider.GetServices<ITerminalHandler>().ToList();
-            _commandQueue = _serviceProvider.GetService<CommandQueue>();
+            // Add Things that go to the DB.
+            classMapManager.RegisterEntityClasses(libAssemblies);
 
-            Players = new List<Player>();
+            return serviceProvider;
         }
 
         public void Start()
@@ -156,7 +199,7 @@ namespace MUD.Core
                 if (foundPlayer.Password == password)
                 {
                     foundPlayer.Connection = client;
-                    foundPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
+                    foundPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
                     AddPlayer(foundPlayer);
                     return true;
                 }
@@ -180,7 +223,7 @@ namespace MUD.Core
                 newPlayer.Race = "human";
                 newPlayer.CurrentLocationId = "5f6e27f20c1fdd24b4b18b1a";
                 newPlayer.SelectedTerm = "Default"; // Or just do the subnegotiation to get a value for this...
-                newPlayer.ConnectionStatus = EPlayerConnectionStatus.LoggedIn;
+                newPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
                 newPlayer.Connection = connectingClient;
 
                 AddPlayer(newPlayer);

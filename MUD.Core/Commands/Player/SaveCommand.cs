@@ -6,7 +6,7 @@ namespace MUD.Core.Commands
     {
         public string[] CommandKeywords { get => new string[] { "save" }; }
 
-        public bool IsDefault { get => true; }
+        public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
         public string HelpText { get => "Saves your precious player information."; }
 

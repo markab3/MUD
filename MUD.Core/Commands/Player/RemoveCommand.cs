@@ -6,7 +6,7 @@ namespace MUD.Core.Commands
     {
         public string[] CommandKeywords { get => new string[] { "remove", "unwear" }; }
 
-        public bool IsDefault { get => true; }
+        public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
         public string HelpText { get => "Remove an item in you are currently wearing."; }
 

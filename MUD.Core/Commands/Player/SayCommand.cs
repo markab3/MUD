@@ -7,7 +7,7 @@ namespace MUD.Core.Commands
 
         public string[] CommandKeywords { get => new string[] { "say", "'" }; }
 
-        public bool IsDefault { get => true; }
+        public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
         public string HelpText { get => "Send a message to everyone in the same room.\r\n \r\nFormat: say <message>"; }
 

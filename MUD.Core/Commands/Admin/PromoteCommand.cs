@@ -1,10 +1,8 @@
 using System.Linq;
-using System.Text.Json;
 using System.Text.RegularExpressions;
-using MongoDB.Bson;
-using MongoDB.Bson.Serialization;
 using MUD.Core.Formatting;
 using MUD.Core.GameObjects;
+using MUD.Core.Properties;
 
 namespace MUD.Core.Commands
 {
@@ -12,7 +10,7 @@ namespace MUD.Core.Commands
     {
         public string[] CommandKeywords { get => new string[] { "promote" }; }
 
-        public bool IsDefault { get => true; }
+        public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
         public string HelpText { get => string.Format("Promote the specified player to the provided rank. Available ranks include {0}.\nSyntax: promote <player> to <rank>", _ranks.GetListText()); }
 
@@ -40,11 +38,13 @@ namespace MUD.Core.Commands
 
         public void DoCommand(Player commandIssuer, object[] commandArgs)
         {
-            if (!(commandIssuer is Admin))
-            {
-                commandIssuer.ReceiveMessage("This is an admin only command. How did you get this?!");
-                return;
-            }
+            AdminProperty adminStatusObj = (AdminProperty)commandIssuer.ExtendedProperties.FirstOrDefault(s => s.GetType() == typeof(AdminProperty));
+
+            // if (adminStatusObj == null)
+            // {
+            //     commandIssuer.ReceiveMessage("This is an admin only command. How did you get this?!");
+            //     return;
+            // }
 
             if (commandArgs == null || commandArgs.Length != 2)
             {
@@ -66,39 +66,63 @@ namespace MUD.Core.Commands
                 return;
             }
 
+            // Yuck yuck barf vomit. This was really tortured. I am keeping it here for the neat regex stuff though. Like project paperclip.
+            // string jsonString = recipient.ToJson();
+            // var typeElementPattern = "^(.*)(\"_t\" : \\[.*\\],)(.*)$"; // Buckle up. Gotta fiddle with the type discriminator here to get it to deserialize to the right type.
 
-            string jsonString = recipient.ToJson();
-            var typeElementPattern = "^(.*)(\"_t\" : \\[.*\\],)(.*)$"; // Buckle up. Gotta fiddle with the type discriminator here to get it to deserialize to the right type.
+            // Player newPlayerObject = null;
+            // switch (commandArgs[1])
+            // {
+            //     case "player":
+            //         jsonString = Regex.Replace(jsonString, typeElementPattern, "$1\"_t\" : [\"Entity\", \"GameObject\", \"Living\", \"Player\"]$3");
+            //         newPlayerObject = BsonSerializer.Deserialize<Player>(jsonString);
+            //         break;
+            //     case "creator":
+            //         jsonString = Regex.Replace(jsonString, typeElementPattern, "$1\"_t\" : [\"Entity\", \"GameObject\", \"Living\", \"Player\", \"Creator\"]$3");
+            //         newPlayerObject = BsonSerializer.Deserialize<Creator>(jsonString);
+            //         break;
+            //     case "admin":
+            //         jsonString = Regex.Replace(jsonString, typeElementPattern, "$1\"_t\" : [\"Entity\", \"GameObject\", \"Living\", \"Player\", \"Creator\", \"Admin\"]$3");
+            //         newPlayerObject = BsonSerializer.Deserialize<Admin>(jsonString);
+            //         break;
+            // }
+            // newPlayerObject.Connection = recipient.Connection;
+            // newPlayerObject.ConnectionStatus = recipient.ConnectionStatus;
+            // newPlayerObject.CurrentLocation = recipient.CurrentLocation;
+            // newPlayerObject.Save();
 
-            Player newPlayerObject = null;
+            // _world.Players.Remove(recipient);
+            // recipient.Connection = null;
+            // recipient.CurrentLocation.ExitRoom(recipient);
+
+            // _world.Players.Add(newPlayerObject);
+            // newPlayerObject.CurrentLocation.EnterRoom(newPlayerObject);
             switch (commandArgs[1])
             {
                 case "player":
-                    jsonString = Regex.Replace(jsonString, typeElementPattern, "$1\"_t\" : [\"Entity\", \"GameObject\", \"Living\", \"Player\"]$3");
-                    newPlayerObject = BsonSerializer.Deserialize<Player>(jsonString);
+                    recipient.ExtendedProperties.RemoveAll(s => s.GetType() == typeof(CreatorProperty) || s.GetType() == typeof(AdminProperty));
                     break;
                 case "creator":
-                    jsonString = Regex.Replace(jsonString, typeElementPattern, "$1\"_t\" : [\"Entity\", \"GameObject\", \"Living\", \"Player\", \"Creator\"]$3");
-                    newPlayerObject = BsonSerializer.Deserialize<Creator>(jsonString);
+                    recipient.ExtendedProperties.RemoveAll(s => s.GetType() == typeof(AdminProperty));
+                    if (!recipient.ExtendedProperties.Any(s => s.GetType() == typeof(CreatorProperty)))
+                    {
+                        recipient.ExtendedProperties.Add(new CreatorProperty());
+                    }
                     break;
                 case "admin":
-                    jsonString = Regex.Replace(jsonString, typeElementPattern, "$1\"_t\" : [\"Entity\", \"GameObject\", \"Living\", \"Player\", \"Creator\", \"Admin\"]$3");
-                    newPlayerObject = BsonSerializer.Deserialize<Admin>(jsonString);
+                    if (!recipient.ExtendedProperties.Any(s => s.GetType() == typeof(CreatorProperty)))
+                    {
+                        recipient.ExtendedProperties.Add(new CreatorProperty());
+                    }
+                    if (!recipient.ExtendedProperties.Any(s => s.GetType() == typeof(AdminProperty)))
+                    {
+                        recipient.ExtendedProperties.Add(new AdminProperty());
+                    }
                     break;
             }
-            newPlayerObject.Connection = recipient.Connection;
-            newPlayerObject.ConnectionStatus = recipient.ConnectionStatus;
-            newPlayerObject.CurrentLocation = recipient.CurrentLocation;
-            newPlayerObject.Save();
 
-            _world.Players.Remove(recipient);
-            recipient.Connection = null;
-            recipient.CurrentLocation.ExitRoom(recipient);
-
-            _world.Players.Add(newPlayerObject);
-            newPlayerObject.CurrentLocation.EnterRoom(newPlayerObject);
-
-            newPlayerObject.ReceiveMessage(string.Format("You have been promoted to {0}.", commandArgs[1]));
+            recipient.Save();
+            recipient.ReceiveMessage(string.Format("You have been promoted to {0}.", commandArgs[1]));
             commandIssuer.ReceiveMessage(string.Format("{0} has been promoted to {1}.", recipient.PlayerName, commandArgs[1]));
         }
     }

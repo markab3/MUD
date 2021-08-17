@@ -7,7 +7,7 @@ namespace MUD.Core.Commands
     {
         public string[] CommandKeywords => new string[] { "look", "l", "examine", "exa" };
 
-        public bool IsDefault { get => true; }
+        public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
         public string HelpText { get => "Send a message to all other players.\r\n \r\nFormat: chat <message>"; }
 
@@ -19,7 +19,7 @@ namespace MUD.Core.Commands
             {
                 remainingInput = remainingInput.Substring(3);
             }
-            
+
             return new object[] { remainingInput };
         }
 

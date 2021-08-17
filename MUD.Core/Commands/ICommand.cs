@@ -9,7 +9,7 @@ namespace MUD.Core.Commands
     {
         string[] CommandKeywords { get; }
 
-        bool IsDefault { get; }
+        CommandCategories CommandCategory { get; }
 
         string HelpText { get; }
 

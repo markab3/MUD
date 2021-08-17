@@ -1,6 +1,11 @@
 # MUD
 ## Background/Status
 This is a first crack/experimental mud server. I started with the telnet stuff, which turned out to have a few twists and turns. Now I'm wresting with getting the projects all structured right and some of the basics built out.
+## Notes for futher building
+* Most things will need to be registered with the service provider.
+* Anything that will be going in the database needs to inherit from Entity and be registered with the MongoDBClassMapManager class.
+* Registering things with MongoDBClassMapManager automatically configures it to use the DI service provider as the instance creator.
+* So anything that will go in the database also needs to be registered with the service provider
 ## Code Objectives/Ideas
 **MongoDB BackEnd**
 

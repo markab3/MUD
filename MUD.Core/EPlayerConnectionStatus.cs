@@ -1,7 +1,7 @@
 
 namespace MUD.Core
 {
-    public enum EPlayerConnectionStatus // Do I need this?
+    public enum PlayerConnectionStatuses // Do I need this?
     {
         /// <summary>
         /// The client has not been

@@ -8,7 +8,7 @@ namespace MUD.Core.Commands
 
         public string[] CommandKeywords { get => new string[] { "tell", "t" }; }
 
-        public bool IsDefault { get => true; }
+        public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
         public string HelpText { get => "Send a message to a specific person.\r\n \r\nFormat: tell <person> <message>"; }
 
