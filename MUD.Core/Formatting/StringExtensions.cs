@@ -19,7 +19,7 @@ namespace MUD.Core.Formatting
             if (strArr.Length == 1) { return strArr[0]; }
             return string.Join(", ", strArr, 0, strArr.Length - 1) + " and " + strArr[strArr.Length - 1];
         }
-        
+
         public static string GetListText(this IEnumerable<string> strIEnum)
         {
             if (strIEnum == null) { return string.Empty; }
@@ -101,7 +101,7 @@ namespace MUD.Core.Formatting
 
         public static string GetArticle(this string str)
         {
-            if (str[str.Length - 1].IsVowel())
+            if (!string.IsNullOrEmpty(str) && str[0].IsVowel())
             {
                 return "an";
             }

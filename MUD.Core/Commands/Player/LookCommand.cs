@@ -1,6 +1,8 @@
 using MUD.Core.GameObjects;
 using MUD.Core.Interfaces;
 using System.Linq;
+using System.Text;
+
 namespace MUD.Core.Commands
 {
     public class LookCommand : ICommand
@@ -40,14 +42,16 @@ namespace MUD.Core.Commands
             }
 
             // TODO: Resolve the object(s) given the player's context...
-            IExaminable matchedObjects = null;
-            if (matchedObjects != null)
+            var matchedObjects = commandIssuer.MatchObjects(((string)commandArgs[0]).ToLower());
+            if (matchedObjects != null && matchedObjects.Length > 0)
             {
-                commandIssuer.ReceiveMessage(matchedObjects.Examine());
+                StringBuilder sb = new StringBuilder();
+                sb.AppendJoin("\r\n", matchedObjects.Select(g => g.Examine()));
+                commandIssuer.ReceiveMessage(sb.ToString());
             }
             else
             {
-                commandIssuer.ReceiveMessage("Look at what?");
+                commandIssuer.ReceiveMessage(string.Format("There is no {0} to look at.", (string)commandArgs[0]));
             }
         }
     }

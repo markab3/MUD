@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MUD.Core.Commands;
@@ -25,11 +26,11 @@ namespace MUD.Core.GameObjects
 
         public string[] KnownCommands { get; set; }
 
-        public List<InventoryItem> Inventory { get; set; }
+        public List<InventoryItem> Inventory { get; set; } = new List<InventoryItem>();
 
-        public List<InventoryItem> WornItems { get; set; }
+        public List<InventoryItem> WornItems { get; set; } = new List<InventoryItem>();
 
-        public List<InventoryItem> HeldItems { get; set; }
+        public List<InventoryItem> HeldItems { get; set; } = new List<InventoryItem>();
 
         [BsonIgnore]
         public bool IsBusy { get; set; } = false;
@@ -68,10 +69,37 @@ namespace MUD.Core.GameObjects
             return string.Format("Here stands {0}, a prime example of {1} {2}.", ShortDescription, Race.GetArticle(), Race);
         }
 
-        public GameObject MatchItems(string input)
+        public GameObject[] MatchObjects(string input)
         {
+            // Trim whitespace.
+            input = input.Trim().ToLower();
 
-            return null;
+            // Support adding a number at the end - so "sword 2" would get the second sword in the room.
+            int? ordinalValue = null;
+            if (input.Contains(" "))
+            {
+                var ordinalMatches = Regex.Match(input, "^(.*) (\\d+)$");
+                if (ordinalMatches.Success)
+                {
+                    ordinalValue = int.Parse(ordinalMatches.Groups[2].Value);
+                    input = Regex.Replace(input, "^(.*) (\\d+)$", "$1");
+                }
+            }
+
+            List<GameObject> searchList = new List<GameObject>();
+            searchList.AddRange(this.Inventory ?? new List<InventoryItem>());// Check inventory of items in the living's inventory
+            searchList.AddRange(CurrentLocation.Items ?? new List<InventoryItem>());// Check inventory of items in the living's inventory
+            searchList.AddRange(CurrentLocation.Occupants ?? new List<Living>());// Check the living occupants of the current room
+            searchList.AddRange(CurrentLocation.Features ?? new List<Feature>());// Check the features of the current room
+
+            GameObject[] matches = searchList.Where(g => g.IsMatchForString(input)).ToArray();
+
+            if (ordinalValue != null && ordinalValue < matches.Count())
+            {
+                return new GameObject[] { matches[ordinalValue.Value] };
+            }
+
+            return matches;
         }
 
         public void MoveToRoom(string roomIdToEnter)
@@ -130,6 +158,14 @@ namespace MUD.Core.GameObjects
                 return _world.AllCommands.GetSubset(KnownCommands);
             }
             return new CommandSource();
+        }
+
+        public override bool IsMatchForString(string input)
+        {
+            return input == Gender?.ToLower()
+                    || input == Race?.ToLower()
+                    || input == Class?.ToLower()
+                    || base.IsMatchForString(input);
         }
     }
 }

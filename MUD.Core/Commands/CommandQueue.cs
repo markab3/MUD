@@ -53,10 +53,9 @@ namespace MUD.Core.Commands
                         try
                         {
                             command.Execute();
-                            command.CommandIssuer.IsBusy = false;
                         }
                         catch (Exception ex) { command.NotifyException(ex); }
-
+                        finally { command.CommandIssuer.IsBusy = false; }
                     });
                 }
             }

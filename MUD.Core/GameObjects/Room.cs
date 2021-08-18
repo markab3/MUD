@@ -29,6 +29,8 @@ namespace MUD.Core.GameObjects
             }
         }
 
+        public List<Living> Occupants { get { return _occupants; } }
+
         private CommandSource _roomCommandSource = null;
 
         private List<Living> _occupants = new List<Living>();
