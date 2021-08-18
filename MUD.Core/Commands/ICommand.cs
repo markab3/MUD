@@ -13,8 +13,8 @@ namespace MUD.Core.Commands
 
         string HelpText { get; }
 
-        object[] ParseCommand(Player commandIssuer, string input);
+        object[] ParseCommand(Living commandIssuer, string input);
 
-        void DoCommand(Player commandIssuer, object[] commandArgs);
+        void DoCommand(Living commandIssuer, object[] commandArgs);
     }
 }

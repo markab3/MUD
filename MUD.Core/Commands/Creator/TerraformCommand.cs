@@ -31,7 +31,7 @@ namespace MUD.Core.Commands
             _world = world;
         }
 
-        public object[] ParseCommand(Player commandIssuer, string input)
+        public object[] ParseCommand(Living commandIssuer, string input)
         {
             input = this.StripKeyword(input);
 
@@ -49,7 +49,7 @@ namespace MUD.Core.Commands
             return inputArgs;
         }
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs)
+        public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
             if (_terraformOption == null)
             {
@@ -128,7 +128,7 @@ namespace MUD.Core.Commands
                             }
                         }
                     }
-                    commandIssuer.DataReceivedHandler(commandIssuer, "look");
+                    ((Player)commandIssuer).DataReceivedHandler(commandIssuer, "look");
                     break;
                 case TerraformOption.UNLINK:
                     // Remove an exit.
@@ -152,7 +152,7 @@ namespace MUD.Core.Commands
                     }
                     currentLocation.Exits.Remove(exitToRemove);
                     currentLocation.RebuildExitCommands();
-                    commandIssuer.DataReceivedHandler(commandIssuer, "look");
+                    ((Player)commandIssuer).DataReceivedHandler(commandIssuer, "look");
 
                     break;
                 case TerraformOption.SETSHORT:

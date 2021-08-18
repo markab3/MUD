@@ -17,13 +17,13 @@ namespace MUD.Core.Commands
 {0}
 --------------------------------------------------------------------------------";
 
-        public object[] ParseCommand(Player commandIssuer, string input)
+        public object[] ParseCommand(Living commandIssuer, string input)
         {
             // TODO: Match command here. Also check that it is a default command or the player already knows that command.
             return new object[] { this.StripKeyword(input) };
         }
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs)
+        public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
             if (commandArgs == null || commandArgs.Length != 1 || string.IsNullOrWhiteSpace((string)commandArgs[0]))
             {

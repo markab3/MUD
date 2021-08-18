@@ -32,6 +32,9 @@ namespace MUD.Core.GameObjects
         public List<InventoryItem> HeldItems { get; set; }
 
         [BsonIgnore]
+        public bool IsBusy { get; set; } = false;
+
+        [BsonIgnore]
         public Room CurrentLocation
         {
             get
@@ -64,10 +67,26 @@ namespace MUD.Core.GameObjects
         {
             return string.Format("Here stands {0}, a prime example of {1} {2}.", ShortDescription, Race.GetArticle(), Race);
         }
+
         public GameObject MatchItems(string input)
         {
 
             return null;
+        }
+
+        public void MoveToRoom(string roomIdToEnter)
+        {
+            var roomToEnter = _world.GetRoom(roomIdToEnter);
+            if (CurrentLocation != null)
+            {
+                CurrentLocation.ExitRoom(this, string.Format("{0} leaves.", this.ShortDescription));
+            }
+
+            CurrentLocation = roomToEnter;
+            CurrentLocationId = roomToEnter.Id;
+
+            roomToEnter.EnterRoom(this);
+            ReceiveMessage(roomToEnter.Examine(this));
         }
 
         /// <summary>

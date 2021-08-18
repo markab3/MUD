@@ -13,12 +13,12 @@ namespace MUD.Core.Commands
 
         public string HelpText { get => "List all status effects that are currently applied to you.\r\n \r\nFormat: status"; }
 
-        public object[] ParseCommand(Player commandIssuer, string input)
+        public object[] ParseCommand(Living commandIssuer, string input)
         {
             return null;
         }
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs)
+        public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
             // string returnString = string.Empty;
             // var statusList = commandIssuer.Statuses.Select(s => s.StatusName).GetListText();

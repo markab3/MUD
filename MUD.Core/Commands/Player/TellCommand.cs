@@ -19,7 +19,7 @@ namespace MUD.Core.Commands
             _world = world;
         }
 
-        public object[] ParseCommand(Player commandIssuer, string input)
+        public object[] ParseCommand(Living commandIssuer, string input)
         {
             input = this.StripKeyword(input);
 
@@ -31,7 +31,7 @@ namespace MUD.Core.Commands
             return new object[] { input.Substring(0, firstSpace).Trim(), input.Substring(firstSpace).Trim() };
         }
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs)
+        public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
             if (commandArgs == null || commandArgs.Length != 2)
             {
@@ -48,8 +48,8 @@ namespace MUD.Core.Commands
                 return;
             }
 
-            string recipientMessage = string.Format("{0} tells you: {1}", commandIssuer.PlayerName, (string)commandArgs[1]);
-            string myMessage = string.Format("You tell {0}: {1}", recipient.PlayerName, (string)commandArgs[1]);
+            string recipientMessage = string.Format("{0} tells you: {1}", commandIssuer.ShortDescription, (string)commandArgs[1]);
+            string myMessage = string.Format("You tell {0}: {1}", recipient.ShortDescription, (string)commandArgs[1]);
 
             recipient.ReceiveMessage(recipientMessage);
             commandIssuer.ReceiveMessage(myMessage);

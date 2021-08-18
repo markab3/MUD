@@ -62,7 +62,6 @@ namespace MUD.Data
                 foreach (var currentType in currentAssembly.GetTypes().Where(t => t.IsSubclassOf(typeof(Entity))))
                 {
                     RegisterClassMap(currentType);
-                    Console.WriteLine(currentType + " added to class map.");
                 }
             }
         }

@@ -11,7 +11,7 @@ namespace MUD.Core.Commands
 
         public string HelpText { get => "Send a message to all other players.\r\n \r\nFormat: chat <message>"; }
 
-        public object[] ParseCommand(Player commandIssuer, string input)
+        public object[] ParseCommand(Living commandIssuer, string input)
         {
             string remainingInput = this.StripKeyword(input);
 
@@ -23,7 +23,7 @@ namespace MUD.Core.Commands
             return new object[] { remainingInput };
         }
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs)
+        public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
             if (commandArgs == null || commandArgs.Length == 0 || string.IsNullOrWhiteSpace((string)commandArgs[0]) || ((string)commandArgs[0]).ToLower() == "room")
             {

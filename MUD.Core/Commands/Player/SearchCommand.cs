@@ -14,24 +14,27 @@ namespace MUD.Core.Commands
         public string HelpText { get => "Search for things in the specified spot. If no additional arguments are provided, search the room in general. Syntax: search <optional item>"; }
 
 
-        public object[] ParseCommand(Player commandIssuer, string input)
+        public object[] ParseCommand(Living commandIssuer, string input)
         {
             return new object[] { this.StripKeyword(input) };
         }
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs)
+        public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
-            Room currentRoom = commandIssuer.CurrentLocation;
-            SearchProperty searchProp = (SearchProperty)currentRoom.ExtendedProperties.FirstOrDefault(p => p.GetType() == typeof(SearchProperty));
-            if (searchProp != null)
-            {
-                searchProp.DoSearch(commandIssuer, (string)commandArgs[0]);
-            }
-            else
-            {
-                commandIssuer.ReceiveMessage(string.Format("You search the {0} but find nothing of any value.", (string)commandArgs[0]));
-            }
-            commandIssuer.CurrentLocation.TellRoom(string.Format("{0} searches around a bit.", commandIssuer.ShortDescription), new Player[] { commandIssuer });
+            // Room currentRoom = commandIssuer.CurrentLocation;
+            // SearchProperty searchProp = (SearchProperty)currentRoom.ExtendedProperties.FirstOrDefault(p => p.GetType() == typeof(SearchProperty));
+            // if (searchProp != null)
+            // {
+            //     searchProp.DoSearch(commandIssuer, (string)commandArgs[0]);
+            // }
+            // else
+            // {
+            //     commandIssuer.ReceiveMessage(string.Format("You search the {0} but find nothing of any value.", (string)commandArgs[0]));
+            // }
+            commandIssuer.ReceiveMessage("You begin your search.");
+            System.Threading.Thread.Sleep(3000);
+            commandIssuer.ReceiveMessage("You finish your search.");
+            commandIssuer.CurrentLocation.TellRoom(string.Format("{0} searches around a bit.", commandIssuer.ShortDescription), new Living[] { commandIssuer });
         }
     }
 }

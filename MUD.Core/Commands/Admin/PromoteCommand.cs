@@ -23,7 +23,7 @@ namespace MUD.Core.Commands
             _world = world;
         }
 
-        public object[] ParseCommand(Player commandIssuer, string input)
+        public object[] ParseCommand(Living commandIssuer, string input)
         {
             Match m = Regex.Match(input, "^promote (.+) to (\\w+)$"); // Neat.
             if (m.Success)
@@ -36,7 +36,7 @@ namespace MUD.Core.Commands
             }
         }
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs)
+        public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
             AdminProperty adminStatusObj = (AdminProperty)commandIssuer.ExtendedProperties.FirstOrDefault(s => s.GetType() == typeof(AdminProperty));
 

@@ -18,12 +18,12 @@ namespace MUD.Core.Commands
             _world = world;
         }
 
-        public object[] ParseCommand(Player commandIssuer, string input)
+        public object[] ParseCommand(Living commandIssuer, string input)
         {
             return new object[] { this.StripKeyword(input) };
         }
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs)
+        public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
             if (commandArgs == null || commandArgs.Length != 1 || string.IsNullOrWhiteSpace((string)commandArgs[0]))
             {
@@ -33,7 +33,7 @@ namespace MUD.Core.Commands
 
             foreach (Player currentPlayer in _world.Players)
             {
-                currentPlayer.ReceiveMessage(string.Format("(Chat) {0}: {1}", commandIssuer.PlayerName, (string)commandArgs[0]));
+                currentPlayer.ReceiveMessage(string.Format("(Chat) {0}: {1}", ((Player)commandIssuer).PlayerName, (string)commandArgs[0]));
             }
         }
     }

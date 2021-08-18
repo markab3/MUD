@@ -20,12 +20,12 @@ namespace MUD.Core.Commands
             _world = world;
         }
 
-        public object[] ParseCommand(Player commandIssuer, string input)
+        public object[] ParseCommand(Living commandIssuer, string input)
         {
             return null;
         }
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs)
+        public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
             string returnString = string.Empty;
             var knownCommandList = commandIssuer.KnownCommands.GetListText();

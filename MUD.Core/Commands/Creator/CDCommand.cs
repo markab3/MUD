@@ -12,12 +12,12 @@ namespace MUD.Core.Commands
 
         public string HelpText { get => "Change your current directory."; }
 
-        public object[] ParseCommand(Player commandIssuer, string input)
+        public object[] ParseCommand(Living commandIssuer, string input)
         {
             return new object[] { this.StripKeyword(input) }; ;
         }
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs)
+        public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
             CreatorProperty creatorStatusObj = (CreatorProperty)commandIssuer.ExtendedProperties.FirstOrDefault(s => s.GetType() == typeof(CreatorProperty));
             if (creatorStatusObj == null)

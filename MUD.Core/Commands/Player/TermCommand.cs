@@ -21,12 +21,12 @@ namespace MUD.Core.Commands
             _world = world;
         }
 
-        public object[] ParseCommand(Player commandIssuer, string input)
+        public object[] ParseCommand(Living commandIssuer, string input)
         {
             return new object[] { this.StripKeyword(input) };
         }
 
-        public void DoCommand(Player commandIssuer, object[] commandArgs)
+        public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
             if (_terminalTypes == null)
             {
@@ -43,14 +43,14 @@ namespace MUD.Core.Commands
 
             if (commandArgs == null || commandArgs.Length == 0 || string.IsNullOrWhiteSpace((string)commandArgs[0]))
             {
-                commandIssuer.ReceiveMessage(string.Format("Terminal currently set to: {0}", commandIssuer.SelectedTerm));
+                commandIssuer.ReceiveMessage(string.Format("Terminal currently set to: {0}", ((Player)commandIssuer).SelectedTerm));
                 return;
             }
 
             string newTermValue = ((string)commandArgs[0]).Trim().ToLower();
             if (_terminalTypes.Contains(newTermValue))
             {
-                commandIssuer.SelectedTerm = newTermValue;
+                ((Player)commandIssuer).SelectedTerm = newTermValue;
                 commandIssuer.ReceiveMessage(string.Format("Terminal type set to {0}.", newTermValue));
             }
             else

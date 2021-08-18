@@ -5,14 +5,14 @@ namespace MUD.Core.Properties
 {
     public class SearchProperty : ExtendedProperty
     {
-        private Action<Player, string> _searchFunction;
+        private Action<Living, string> _searchFunction;
 
-        public SearchProperty(Action<Player, string> searchFunction)
+        public SearchProperty(Action<Living, string> searchFunction)
         {
             _searchFunction = searchFunction;
         }
 
-        public void DoSearch(Player searcher, string searchTarget)
+        public void DoSearch(Living searcher, string searchTarget)
         {
             _searchFunction(searcher, searchTarget);
         }

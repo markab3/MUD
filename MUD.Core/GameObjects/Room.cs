@@ -31,7 +31,7 @@ namespace MUD.Core.GameObjects
 
         private CommandSource _roomCommandSource = null;
 
-        private List<Player> _occupants = new List<Player>();
+        private List<Living> _occupants = new List<Living>();
 
         private List<string[]> _exitAliases = new List<string[]>() {
             {new string[] {"northwest", "nw"}},
@@ -53,7 +53,7 @@ namespace MUD.Core.GameObjects
             _roomRepository = roomRepository;
         }
 
-        public void TellRoom(string message, Player[] exclusionList = null)
+        public void TellRoom(string message, Living[] exclusionList = null)
         {
             var recipients = _occupants;
             if (exclusionList != null)
@@ -66,7 +66,7 @@ namespace MUD.Core.GameObjects
             }
         }
 
-        public void EnterRoom(Player newOccupant, string entranceMessage = null)
+        public void EnterRoom(Living newOccupant, string entranceMessage = null)
         {
             if (string.IsNullOrEmpty(entranceMessage))
             {
@@ -79,7 +79,7 @@ namespace MUD.Core.GameObjects
             _occupants.Add(newOccupant);
         }
 
-        public void ExitRoom(Player occupant, string exitMessage = null)
+        public void ExitRoom(Living occupant, string exitMessage = null)
         {
             _occupants.Remove(occupant);
             if (!string.IsNullOrEmpty(exitMessage))
@@ -104,11 +104,11 @@ namespace MUD.Core.GameObjects
                 _roomCommandSource.AddCommand(new AnonymousCommand()
                 {
                     CommandKeywords = keywords,
-                    ParseCommandHandler = ((Player commandIssuer, string input) =>
+                    ParseCommandHandler = ((Living commandIssuer, string input) =>
                         {
                             return new object[] { currentExit };
                         }),
-                    DoCommandHandler = ((Player commandIssuer, object[] commandArgs) =>
+                    DoCommandHandler = ((Living commandIssuer, object[] commandArgs) =>
                     {
                         if (commandArgs[0] != null && commandArgs[0] is Exit)
                         {
@@ -128,7 +128,7 @@ namespace MUD.Core.GameObjects
             return false;
         }
 
-        public string Examine(Player examiner)
+        public string Examine(Living examiner)
         {
             string exitLine;
             if (Exits == null || Exits.Count == 0)
@@ -149,11 +149,11 @@ namespace MUD.Core.GameObjects
             var otherOccupants = _occupants.Where(p => p != examiner).ToList();
             if (otherOccupants.Count == 1)
             {
-                occupantsLine = otherOccupants.Select(o => o.PlayerName).GetListText() + " is here.\r\n";
+                occupantsLine = otherOccupants.Select(o => o.ShortDescription).GetListText() + " is here.\r\n";
             }
             else if (otherOccupants.Count > 1)
             {
-                occupantsLine = otherOccupants.Select(o => o.PlayerName).GetListText() + " are here.\r\n";
+                occupantsLine = otherOccupants.Select(o => o.ShortDescription).GetListText() + " are here.\r\n";
             }
 
             return ShortDescription + " (" + Id + ")\r\n" + LongDescription + "\r\n" + exitLine + "\r\n" + occupantsLine;

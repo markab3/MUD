@@ -19,8 +19,6 @@ namespace MUD.Core
     {
         public List<Player> Players;
 
-        // public List<Room> Rooms;
-
         public CommandSource AllCommands;
 
         public CommandSource DefaultCommands;
@@ -36,7 +34,6 @@ namespace MUD.Core
         private Timer _heartbeatTimer;
 
         private bool _isRunning;
-
 
         private CommandQueue _commandQueue;
 
@@ -216,9 +213,10 @@ namespace MUD.Core
 
             if (foundUser == null)
             {
-                Player newPlayer = _serviceProvider.GetService<Player>(); // new Player(this, playerProvider, new PlayerEntity()) // Swap out for DI instead.
+                Player newPlayer = _serviceProvider.GetService<Player>();
 
                 newPlayer.PlayerName = userName;
+                newPlayer.ShortDescription = userName;
                 newPlayer.Password = password;
                 newPlayer.Race = "human";
                 newPlayer.CurrentLocationId = "5f6e27f20c1fdd24b4b18b1a";
@@ -238,12 +236,6 @@ namespace MUD.Core
 
             var roomRepository = _serviceProvider.GetService<IRoomRepository>();
             return roomRepository.Get(roomId);
-        }
-
-        public void LoadGameObjectType(Type objectType)
-        {
-            var classMapManager = new MUD.Data.MongoDBClassMapManager(_serviceProvider);
-            classMapManager.RegisterClassMap(objectType);
         }
 
         // Might want this on the living object or whatever is needing a periodic update like this - like for HP regen, etc. Doesn't need to be centralized necessarily.

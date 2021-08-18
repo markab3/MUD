@@ -89,21 +89,6 @@ namespace MUD.Core.GameObjects
             }
         }
 
-        public void MoveToRoom(string roomIdToEnter)
-        {
-            var roomToEnter = _world.GetRoom(roomIdToEnter);
-            if (CurrentLocation != null)
-            {
-                CurrentLocation.ExitRoom(this, string.Format("{0} leaves.", this.ShortDescription));
-            }
-
-            CurrentLocation = roomToEnter;
-            CurrentLocationId = roomToEnter.Id;
-
-            roomToEnter.EnterRoom(this);
-            ReceiveMessage(roomToEnter.Examine(this));
-        }
-
         public override void ReceiveMessage(string message)
         {
             var selectedTerminalHandler = _world.TerminalHandlers.FirstOrDefault(th => th.TerminalName.ToLower() == SelectedTerm?.ToLower() || (th.Aliases != null && th.Aliases.Any(a => a.ToLower() == SelectedTerm?.ToLower())));
