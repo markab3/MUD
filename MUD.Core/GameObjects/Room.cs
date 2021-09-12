@@ -123,9 +123,24 @@ namespace MUD.Core.GameObjects
 
         public bool Save()
         {
-            if (_roomRepository.Update(this))
+            try
             {
-                return true;
+                if (string.IsNullOrWhiteSpace(Id))
+                {
+                    _roomRepository.Insert(this);
+                    return true;
+                }
+                else
+                {
+                    if (_roomRepository.Update(this))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("Exception encountered while saving room: " + ex.Message);
             }
             return false;
         }
@@ -145,7 +160,7 @@ namespace MUD.Core.GameObjects
             {
                 exitLine = string.Format("There are {0} obvious exits: {1}", Exits.Count.GetExactNumberText(), Exits.Select(e => e.Name).GetListText());
             }
-            exitLine = string.Format("%^{0}%^{1}%^{2}%^", EFormatOptions.Green, exitLine, EFormatOptions.Reset);
+            exitLine = string.Format("%^{0}%^{1}%^{2}%^", EFormatOptions.Green, exitLine, EFormatOptions.Reset) + "/r/n";
 
             string occupantsLine = null;
             var otherOccupants = _occupants.Where(p => p != examiner).ToList();
@@ -157,8 +172,22 @@ namespace MUD.Core.GameObjects
             {
                 occupantsLine = otherOccupants.Select(o => o.ShortDescription).GetListText() + " are here.\r\n";
             }
+            if (!string.IsNullOrEmpty(occupantsLine))
+            {
+                occupantsLine = occupantsLine + "\r\n";
+            }
 
-            return ShortDescription + " (" + Id + ")\r\n" + LongDescription + "\r\n" + exitLine + "\r\n" + occupantsLine;
+            string itemsLine = null;
+            if (Items.Count > 0)
+            {
+                itemsLine = Items.Select(i => i.ShortDescription).GetListText() + "\r\n";
+            }
+            if (!string.IsNullOrEmpty(itemsLine))
+            {
+                itemsLine = itemsLine + "\r\n";
+            }
+
+            return ShortDescription + " (" + Id + ")\r\n" + LongDescription + "\r\n" + exitLine + occupantsLine + itemsLine;
         }
     }
 

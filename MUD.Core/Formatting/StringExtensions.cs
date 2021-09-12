@@ -120,5 +120,22 @@ namespace MUD.Core.Formatting
             }
             return str + "s";
         }
+
+        public static bool IsPlural(this string str)
+        {
+            if (str.EndsWith("es") && str.Substring(0, str.Length - 2).GetPlural() == str)
+            {
+                return true;
+            }
+            if (str.EndsWith("ies") && str.Substring(0, str.Length - 3).GetPlural() == str)
+            {
+                return true;
+            }
+            if (str.EndsWith("s") && str.Substring(0, str.Length - 1).GetPlural() == str)
+            {
+                return true;
+            }
+            return false;
+        }
     }
 }

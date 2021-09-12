@@ -6,6 +6,8 @@ using MongoDB.Bson.Serialization.Attributes;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using MUD.Core.Properties;
+using MUD.Core.Properties.Interfaces;
+using MUD.Core.Properties.PlayerProperties;
 
 namespace MUD.Core.GameObjects
 {
@@ -69,10 +71,22 @@ namespace MUD.Core.GameObjects
             return string.Format("Here stands {0}, a prime example of {1} {2}.", ShortDescription, Race.GetArticle(), Race);
         }
 
-        public GameObject[] MatchObjects(string input)
+        public GameObject[] MatchObjects(string input, bool includeInventory = true, bool includeRoomItems = true, bool includeRoomOccupants = true, bool includeRoomFeatures = true)
         {
             // Trim whitespace.
             input = input.Trim().ToLower();
+
+            // support adding a number at the start - so "2 swords" would get the first 2 swords in the room.
+            int? quantity = null;
+            if (input.Contains(" "))
+            {
+                var quantityMatches = Regex.Match(input, "^(\\d+) (.*)$");
+                if (quantityMatches.Success)
+                {
+                    quantity = int.Parse(quantityMatches.Groups[1].Value);
+                    input = Regex.Replace(input, "^(\\d+) (.*)$", "$2");
+                }
+            }
 
             // Support adding a number at the end - so "sword 2" would get the second sword in the room.
             int? ordinalValue = null;
@@ -87,19 +101,34 @@ namespace MUD.Core.GameObjects
             }
 
             List<GameObject> searchList = new List<GameObject>();
-            searchList.AddRange(this.Inventory ?? new List<InventoryItem>());// Check inventory of items in the living's inventory
-            searchList.AddRange(CurrentLocation.Items ?? new List<InventoryItem>());// Check inventory of items in the living's inventory
-            searchList.AddRange(CurrentLocation.Occupants ?? new List<Living>());// Check the living occupants of the current room
-            searchList.AddRange(CurrentLocation.Features ?? new List<Feature>());// Check the features of the current room
+            if (includeInventory) { searchList.AddRange(this.Inventory ?? new List<InventoryItem>()); }// Check inventory of items in the living's inventory
+            if (includeRoomItems) { searchList.AddRange(CurrentLocation.Items ?? new List<InventoryItem>()); }// Check inventory of items in the living's inventory
+            if (includeRoomOccupants) { searchList.AddRange(CurrentLocation.Occupants ?? new List<Living>()); }// Check the living occupants of the current room
+            if (includeRoomFeatures) { searchList.AddRange(CurrentLocation.Features ?? new List<Feature>()); }// Check the features of the current room
 
-            GameObject[] matches = searchList.Where(g => g.IsMatchForString(input)).ToArray();
+            // Return all (or quantity of) the things that match on plurals.
+            GameObject[] matches = searchList.Where(g => g.IsPluralMatchForString(input)).ToArray();
+            if (matches != null && matches.Length >= 1)
+            {
+                if (quantity != null && quantity.Value <= matches.Count())
+                {
+                    return matches.Take(quantity.Value).ToArray(); // Return first quantity matches
+                }
+                else
+                {
+                    return matches; // Return all plural matches
+                }
+            }
+
+            // If nothing matches on plurals, return the first (or ordinal) item that matches otherwise.
+            matches = searchList.Where(g => g.IsMatchForString(input)).ToArray();
 
             if (ordinalValue != null && ordinalValue < matches.Count())
             {
-                return new GameObject[] { matches[ordinalValue.Value] };
+                return new GameObject[] { matches[ordinalValue.Value] }; // Return the ordinalValue-th match
             }
 
-            return matches;
+            return matches; // Return all singular matches
         }
 
         public void MoveToRoom(string roomIdToEnter)

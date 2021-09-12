@@ -1,5 +1,4 @@
 using MUD.Core.GameObjects;
-using MUD.Core.Interfaces;
 using System.Linq;
 using System.Text;
 
@@ -11,7 +10,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Send a message to all other players.\r\n \r\nFormat: chat <message>"; }
+        public string HelpText { get => "Look at your surroundings or at a particular object.\r\n \r\nSyntax: look <optional object>"; }
 
         public object[] ParseCommand(Living commandIssuer, string input)
         {
@@ -41,7 +40,7 @@ namespace MUD.Core.Commands
                 return;
             }
 
-            // TODO: Resolve the object(s) given the player's context...
+            // Resolve the object(s) given the player's context.
             var matchedObjects = commandIssuer.MatchObjects(((string)commandArgs[0]).ToLower());
             if (matchedObjects != null && matchedObjects.Length > 0)
             {

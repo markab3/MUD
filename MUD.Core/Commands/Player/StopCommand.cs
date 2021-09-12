@@ -9,7 +9,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Clear your current command queue.\r\n \r\nFormat: stop"; }
+        public string HelpText { get => "Clear your current command queue.\r\n \r\nSyntax: stop"; }
 
         public object[] ParseCommand(Living commandIssuer, string input)
         {

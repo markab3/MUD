@@ -1,6 +1,6 @@
 using System.Linq;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties;
+using MUD.Core.Properties.PlayerProperties;
 
 namespace MUD.Core.Commands
 {

@@ -9,7 +9,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Send a message to all other players.\r\n \r\nFormat: chat <message>"; }
+        public string HelpText { get => "Send a message to all other players.\r\n \r\nSyntax: chat <message>"; }
 
         private World _world;
 

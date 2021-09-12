@@ -1,4 +1,4 @@
-namespace MUD.Core.Interfaces
+namespace MUD.Core.Properties.Interfaces
 {
     public interface IExaminable
     {

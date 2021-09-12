@@ -9,7 +9,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Quits the game."; }
+        public string HelpText { get => "Quits the game.\r\n \r\nSyntax: quit"; }
 
         public object[] ParseCommand(Living commandIssuer, string input)
         {

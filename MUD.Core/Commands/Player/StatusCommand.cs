@@ -11,7 +11,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "List all status effects that are currently applied to you.\r\n \r\nFormat: status"; }
+        public string HelpText { get => "List all status effects that are currently applied to you.\r\n \r\nSyntax: status"; }
 
         public object[] ParseCommand(Living commandIssuer, string input)
         {

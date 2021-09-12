@@ -8,7 +8,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Lower an item you are currently holding."; }
+        public string HelpText { get => "Lower an item you are currently holding.\r\n \r\nSyntax: lower <item>"; }
 
         public object[] ParseCommand(Living commandIssuer, string input)
         {

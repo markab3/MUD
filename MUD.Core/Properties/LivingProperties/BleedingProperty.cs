@@ -1,7 +1,8 @@
 using System;
 using MUD.Core.GameObjects;
+using MUD.Core.Properties.Interfaces;
 
-namespace MUD.Core.Properties
+namespace MUD.Core.Properties.LivingProperties
 {
     public class BleedingProperty : ExtendedProperty, IHeartbeat
     {

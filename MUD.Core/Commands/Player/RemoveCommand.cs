@@ -8,7 +8,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Remove an item in you are currently wearing."; }
+        public string HelpText { get => "Remove an item in you are currently wearing.\r\n \r\nSyntax: remove <item>"; }
 
         public object[] ParseCommand(Living commandIssuer, string input)
         {

@@ -8,7 +8,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Saves your precious player information."; }
+        public string HelpText { get => "Saves your precious player information.\r\n \r\nSyntax: save"; }
 
         public object[] ParseCommand(Living commandIssuer, string input)
         {

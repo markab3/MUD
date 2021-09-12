@@ -8,7 +8,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Displays information about the usage of a command.\r\n \r\nFormat: help <command>"; }
+        public string HelpText { get => "Displays information about the usage of a command.\r\n \r\nSyntax: help <command>"; }
 
         private string _helpTextWrapper =
 @"

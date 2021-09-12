@@ -4,13 +4,13 @@ using MUD.Core.Properties.PlayerProperties;
 
 namespace MUD.Core.Commands
 {
-    public class CloneCommand : ICommand
+    public class ExportCommand : ICommand
     {
-        public string[] CommandKeywords { get => new string[] { "clone" }; }
+        public string[] CommandKeywords { get => new string[] { "export" }; }
 
         public CommandCategories CommandCategory { get => CommandCategories.Creator; }
 
-        public string HelpText { get => "Create a new object from a given object or JSON template file. Syntax: clone <object or filename>"; }
+        public string HelpText { get => "Generate JSON for the given object.\r\n\r\nSyntax: export <object>"; }
 
         public object[] ParseCommand(Living commandIssuer, string input)
         {

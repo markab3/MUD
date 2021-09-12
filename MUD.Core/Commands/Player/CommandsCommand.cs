@@ -1,7 +1,7 @@
 using System.Linq;
 using MUD.Core.Formatting;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties;
+using MUD.Core.Properties.PlayerProperties;
 
 namespace MUD.Core.Commands
 {
@@ -11,7 +11,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Returns available commands."; }
+        public string HelpText { get => "Returns available commands.\r\n \r\nSyntax: commands"; }
 
         private World _world;
 
@@ -37,7 +37,7 @@ namespace MUD.Core.Commands
             var defaultCommandList = _world.DefaultCommands.Commands.Select(c => c.Value.CommandKeywords[0]).Distinct().ToArray().GetListText();
             if (defaultCommandList != null && defaultCommandList.Length > 0)
             {
-                returnString = returnString + string.Format("Default Commands:\r\n\r\n{0}", defaultCommandList);
+                returnString = returnString + string.Format("Default Commands:\r\n\r\n{0}\r\n\r\n", defaultCommandList);
             }
 
             if (commandIssuer.ExtendedProperties.Any(s => s.GetType() == typeof(CreatorProperty)))
@@ -45,7 +45,7 @@ namespace MUD.Core.Commands
                 var creatorCommandList = _world.CreatorCommands.Commands.Select(c => c.Value.CommandKeywords[0]).Distinct().ToArray().GetListText();
                 if (creatorCommandList != null && creatorCommandList.Length > 0)
                 {
-                    returnString = returnString + string.Format("Creator Commands:\r\n\r\n{0}", creatorCommandList);
+                    returnString = returnString + string.Format("Creator Commands:\r\n\r\n{0}\r\n\r\n", creatorCommandList);
                 }
             }
 
@@ -54,7 +54,7 @@ namespace MUD.Core.Commands
                 var adminCommandList = _world.AdminCommands.Commands.Select(c => c.Value.CommandKeywords[0]).Distinct().ToArray().GetListText();
                 if (adminCommandList != null && adminCommandList.Length > 0)
                 {
-                    returnString = returnString + string.Format("Admin Commands:\r\n\r\n{0}", adminCommandList);
+                    returnString = returnString + string.Format("Admin Commands:\r\n\r\n{0}\r\n\r\n", adminCommandList);
                 }
             }
 

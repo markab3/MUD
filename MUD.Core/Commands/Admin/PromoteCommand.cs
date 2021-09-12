@@ -2,7 +2,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using MUD.Core.Formatting;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties;
+using MUD.Core.Properties.PlayerProperties;
 
 namespace MUD.Core.Commands
 {
@@ -10,7 +10,7 @@ namespace MUD.Core.Commands
     {
         public string[] CommandKeywords { get => new string[] { "promote" }; }
 
-        public CommandCategories CommandCategory { get => CommandCategories.Default; }
+        public CommandCategories CommandCategory { get => CommandCategories.Admin; }
 
         public string HelpText { get => string.Format("Promote the specified player to the provided rank. Available ranks include {0}.\nSyntax: promote <player> to <rank>", _ranks.GetListText()); }
 

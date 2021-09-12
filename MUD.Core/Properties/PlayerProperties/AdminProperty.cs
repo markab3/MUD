@@ -1,4 +1,4 @@
-namespace MUD.Core.Properties
+namespace MUD.Core.Properties.PlayerProperties
 {
     public class AdminProperty : ExtendedProperty
     {

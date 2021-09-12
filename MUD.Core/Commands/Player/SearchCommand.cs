@@ -1,6 +1,7 @@
 using System.Linq;
 using MUD.Core.GameObjects;
 using MUD.Core.Properties;
+using MUD.Core.Properties.Interfaces;
 
 namespace MUD.Core.Commands
 {
@@ -11,7 +12,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Search for things in the specified spot. If no additional arguments are provided, search the room in general. Syntax: search <optional item>"; }
+        public string HelpText { get => "Search for things in the specified spot. If no additional arguments are provided, search the room in general.\r\n \r\nSyntax: search <optional item>"; }
 
 
         public object[] ParseCommand(Living commandIssuer, string input)
@@ -33,7 +34,20 @@ namespace MUD.Core.Commands
             // }
             commandIssuer.ReceiveMessage("You begin your search.");
             System.Threading.Thread.Sleep(3000);
-            commandIssuer.ReceiveMessage("You finish your search.");
+
+            bool success = false;
+
+            var searchProp = commandIssuer.CurrentLocation.ExtendedProperties.FirstOrDefault(ep => ep is ISearchable);
+            if (searchProp != null)
+            {
+                success = ((ISearchable)searchProp).DoSearch(commandIssuer, (string)commandArgs[0]);
+            }
+
+            if (!success)
+            {
+                commandIssuer.ReceiveMessage("You finish your search.");
+            }
+
             commandIssuer.CurrentLocation.TellRoom(string.Format("{0} searches around a bit.", commandIssuer.ShortDescription), new Living[] { commandIssuer });
         }
     }

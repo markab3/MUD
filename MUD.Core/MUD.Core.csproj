@@ -6,12 +6,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta1.21308.1" />
     <ProjectReference Include="..\MUD.Telnet\MUD.Telnet.csproj" />
     <ProjectReference Include="..\MUD.Data\MUD.Data.csproj" />
     <PackageReference Include="MongoDB.Bson" Version="2.11.0" />
     <PackageReference Include="MongoDB.Driver" Version="2.11.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="3.1.8"/>
-    <PackageReference Include="Scrutor" Version="3.2.2"/>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="3.1.8" />
+    <PackageReference Include="Scrutor" Version="3.2.2" />
   </ItemGroup>
 
 </Project>

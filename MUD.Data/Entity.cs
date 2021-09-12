@@ -1,5 +1,6 @@
 using System;
 using MongoDB.Bson;
+using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace MUD.Data
@@ -65,5 +66,10 @@ namespace MUD.Data
         //         }
         //     };
         // }
+        public T Clone<T>()
+        {
+            var serializedObj = this.ToBson();
+            return BsonSerializer.Deserialize<T>(serializedObj);
+        }
     }
 }

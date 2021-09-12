@@ -9,7 +9,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Send a message to everyone in the same room.\r\n \r\nFormat: say <message>"; }
+        public string HelpText { get => "Send a message to everyone in the same room.\r\n \r\nSyntax: say <message>"; }
 
         public SayCommand() { }
 

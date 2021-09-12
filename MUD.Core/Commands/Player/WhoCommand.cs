@@ -12,7 +12,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "See who is logged on right now.\r\n \r\nFormat: who"; }
+        public string HelpText { get => "See who is logged on right now.\r\n \r\nSyntax: who"; }
 
         private World _world;
 

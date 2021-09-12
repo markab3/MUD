@@ -10,7 +10,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => "Send a message to a specific person.\r\n \r\nFormat: tell <person> <message>"; }
+        public string HelpText { get => "Send a message to a specific person.\r\n \r\nSyntax: tell <person> <message>"; }
 
         private World _world;
 

@@ -10,7 +10,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => string.Format("Set your terminal type. Current types include: {0}\r\n \r\nFormat: term <terminal type>", _terminalTypes.GetListText()); }
+        public string HelpText { get => string.Format("Set your terminal type. Current types include: {0}\r\n \r\nSyntax: term <terminal type>", _terminalTypes.GetListText()); }
 
         private string[] _terminalTypes = null;
 
