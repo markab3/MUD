@@ -80,3 +80,4 @@ NPCs. World state is persisted in MongoDB.
 - Future work items get their own feature branches off the latest state;
   integration to `master` (if it ever happens) is a deliberate, separate
   act owned by the repository maintainer.
+- Full policy, scope, and enforcement requirements: [BRANCHING_POLICY.md](BRANCHING_POLICY.md).
