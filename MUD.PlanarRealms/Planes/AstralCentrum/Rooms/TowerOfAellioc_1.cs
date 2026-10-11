@@ -8,17 +8,18 @@ namespace MUD.PlanarRealms.Planes.Neutral.Rooms
     {
         public TowerOfAellioc_1(IRoomRepository roomRepository) : base(roomRepository)
         {
-            ExtendedProperties.Add(new SearchProperty((searcher, searchTarget) =>
-            {
-                if (searchTarget.ToLower() == "table")
-                {
-                    searcher.ReceiveMessage("You search the table and find a really cool sword.");
-                }
-                else
-                {
-                    searcher.ReceiveMessage(string.Format("You search the {0} but find nothing of any value.", searchTarget));
-                }
-            }));
+            // TODO: SearchProperty no longer exists (replaced by BasicSearchProperty); disabled until the behavior registry replaces this lambda.
+            //ExtendedProperties.Add(new SearchProperty((searcher, searchTarget) =>
+            //{
+            //    if (searchTarget.ToLower() == "table")
+            //    {
+            //        searcher.ReceiveMessage("You search the table and find a really cool sword.");
+            //    }
+            //    else
+            //    {
+            //        searcher.ReceiveMessage(string.Format("You search the {0} but find nothing of any value.", searchTarget));
+            //    }
+            //}));
         }
     }
 }
