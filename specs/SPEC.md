@@ -76,6 +76,7 @@ NPCs. World state is persisted in MongoDB.
 
 - **All changes land on branches other than `master`.** Never commit to or
   push to `master`.
+- `hermes` is the integration branch for agent work; feature branches are cut from it, have no slashes in their names, and commit messages carry no attribution. See [DESIGN_PRINCIPLES.md](DESIGN_PRINCIPLES.md) §6.
 - Spec drafts: `specs/initial-draft` branch (this document set).
 - Future work items get their own feature branches off the latest state;
   integration to `master` (if it ever happens) is a deliberate, separate
