@@ -234,6 +234,19 @@ namespace MUD.Core
             return false;
         }
 
+        // Imports every area file in the configured content directory (no-op when none is configured).
+        public void ImportContent()
+        {
+            if (string.IsNullOrWhiteSpace(_settings.ContentDirectory) || !_settings.ImportOnStartup) { return; }
+
+            var store = new MUD.Core.Import.RoomRepositoryImportStore(_serviceProvider.GetService<IRoomRepository>());
+            var service = new MUD.Core.Import.AreaFileService(new MUD.Core.Import.AreaImporter(store), _settings.ContentDirectory);
+            foreach (var line in service.ImportAll())
+            {
+                Console.WriteLine(line);
+            }
+        }
+
         public Room GetRoom(string roomId)
         {
             if (string.IsNullOrWhiteSpace(roomId)) { return null; }

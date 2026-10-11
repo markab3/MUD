@@ -17,5 +17,15 @@ namespace MUD.Data
         IEnumerable<TModel> GetAll();
 
         IEnumerable<TModel> Search(Expression<Func<TModel, bool>> matchExpression);
+
+        // Raw stored document (bypasses the cache), or null.
+        MongoDB.Bson.BsonDocument GetRawDocument(string id);
+
+        // _ids of stored documents where the given field equals the given value.
+        List<string> GetIdsByField(string fieldName, string value);
+
+        // Field-level upsert: $set the given fields, $setOnInsert the insert defaults. Never replaces the document.
+        // A cached live instance, if any, is refreshed afterwards.
+        void UpsertFields(string id, MongoDB.Bson.BsonDocument set, MongoDB.Bson.BsonDocument setOnInsert);
     }
 }
