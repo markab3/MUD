@@ -36,7 +36,7 @@ public hosting.
 - CI: AppVeyor (`appveyor.yml`) — master branch only; restore +
   `build.ps1`; zips publish output. The test step is commented out
   (no tests exist).
-- Target framework `netcoreapp3.1` (EOL) in all projects.
+- Target framework `net8.0` in all projects.
 - **Content assemblies must land next to the executable:** `World`
   `Assembly.LoadFrom`s `MUD.Core.dll` and `MUD.PlanarRealms.dll` from
   the output directory. `MUD.PlanarRealms` is not a csproj reference of
