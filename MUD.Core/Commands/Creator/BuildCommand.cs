@@ -17,9 +17,12 @@ namespace MUD.Core.Commands
 
         public string HelpText { get => "Build a room."; }
 
-        public BuildCommand(IRoomRepository roomRepository)
+        private WorldSettings _settings;
+
+        public BuildCommand(IRoomRepository roomRepository, WorldSettings settings)
         {
             _roomRepository = roomRepository;
+            _settings = settings;
         }
 
         public object[] ParseCommand(Living commandIssuer, string input)
@@ -54,7 +57,7 @@ namespace MUD.Core.Commands
                 }
             };
             newRoom.Exits = new List<Exit>() {
-                new Exit() { Name = "out", DestinationId= "5f6e27f20c1fdd24b4b18b1c" }
+                new Exit() { Name = "out", DestinationId= _settings.StartRoomKey }
             };
             newRoom.Save();
             commandIssuer.ReceiveMessage("Room built! Id: " + newRoom.Id);

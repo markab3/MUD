@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Net;
+using Microsoft.Extensions.Configuration;
 using MUD.Telnet;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -62,6 +63,17 @@ namespace MUD.Main
 
         static void Main(string ip = null, int port = 23, string db = null)
         {
+            var config = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: true)
+                .Build();
+            var startRoomKey = config["WorldSettings:StartRoomKey"];
+            if (string.IsNullOrWhiteSpace(startRoomKey))
+            {
+                Console.WriteLine("WorldSettings:StartRoomKey is not configured in appsettings.json!");
+                return;
+            }
+
             Console.Write("Checking databases...");
             MongoClient dbClient = null;
 
@@ -189,7 +201,7 @@ namespace MUD.Main
 
 
             Console.Write("Starting world...");
-            _gameWorld = new World(dbClient);
+            _gameWorld = new World(dbClient, new WorldSettings { StartRoomKey = startRoomKey });
             Thread gameWorldThread = new Thread(_gameWorld.Start);
             gameWorldThread.Start();
             Console.WriteLine("done.");

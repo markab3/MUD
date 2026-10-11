@@ -21,7 +21,6 @@ namespace MUD.Core.GameObjects
 
         public string Race { get; set; }
 
-        [BsonRepresentation(BsonType.ObjectId)]
         public string CurrentLocationId { get; set; }
 
         public string Class { get; set; }

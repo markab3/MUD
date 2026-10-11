@@ -9,7 +9,6 @@ namespace MUD.Core.GameObjects
     {
         public string Name { get; set; }
 
-        [BsonRepresentation(BsonType.ObjectId)]
         public string DestinationId { get; set; }
     }
 }

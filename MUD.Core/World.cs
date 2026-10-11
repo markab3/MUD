@@ -37,8 +37,11 @@ namespace MUD.Core
 
         private CommandQueue _commandQueue;
 
-        public World(IMongoClient dbClient)
+        private WorldSettings _settings;
+
+        public World(IMongoClient dbClient, WorldSettings settings)
         {
+            _settings = settings;
             _serviceProvider = LoadTypes(dbClient);
 
             List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
@@ -96,6 +99,7 @@ namespace MUD.Core
 
                 // Load up the mongo client
                 .AddSingleton<IMongoClient>(dbClient)
+                .AddSingleton<WorldSettings>(_settings)
                 .AddSingleton<IMongoDatabase>(dbClient.GetDatabase("testmud"))
 
                 // Load utility stuff?
@@ -219,7 +223,7 @@ namespace MUD.Core
                 newPlayer.ShortDescription = userName;
                 newPlayer.Password = password;
                 newPlayer.Race = "human";
-                newPlayer.CurrentLocationId = "5f6e27f20c1fdd24b4b18b1a";
+                newPlayer.CurrentLocationId = _settings.StartRoomKey;
                 newPlayer.SelectedTerm = "Default"; // Or just do the subnegotiation to get a value for this...
                 newPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
                 newPlayer.Connection = connectingClient;
