@@ -42,4 +42,7 @@ jobs:
 
       - name: Test
         if: steps.tests.outputs.found == 'true'
+        # The 3.1 runtime crashes on OpenSSL 3 (no libssl 1.x), so run the tests on the newest installed runtime.
+        env:
+          DOTNET_ROLL_FORWARD: LatestMajor
         run: dotnet test MUD.sln --no-build
