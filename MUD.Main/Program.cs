@@ -201,7 +201,22 @@ namespace MUD.Main
 
 
             Console.Write("Starting world...");
-            _gameWorld = new World(dbClient, new WorldSettings { StartRoomKey = startRoomKey });
+            var contentDirectory = config["WorldSettings:ContentDirectory"];
+            if (!string.IsNullOrWhiteSpace(contentDirectory) && !System.IO.Path.IsPathRooted(contentDirectory))
+            {
+                contentDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, contentDirectory);
+            }
+            bool importOnStartup;
+            if (!bool.TryParse(config["WorldSettings:ImportOnStartup"], out importOnStartup)) { importOnStartup = true; }
+            _gameWorld = new World(dbClient, new WorldSettings { StartRoomKey = startRoomKey, ContentDirectory = contentDirectory, ImportOnStartup = importOnStartup });
+            try
+            {
+                _gameWorld.ImportContent();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Content import failed: " + ex.Message);
+            }
             Thread gameWorldThread = new Thread(_gameWorld.Start);
             gameWorldThread.Start();
             Console.WriteLine("done.");

@@ -131,6 +131,25 @@ namespace MUD.Core.GameObjects
             }
         }
 
+        // Copies authored definition fields (specs/ROOM_FILES.md section 5) from another copy of this room.
+        // State (Items, occupants) is untouched.
+        public void ApplyDefinition(Room source)
+        {
+            ShortDescription = source.ShortDescription;
+            LongDescription = source.LongDescription;
+            Handles = source.Handles;
+            Adjectives = source.Adjectives;
+            Plurals = source.Plurals;
+            ExtendedProperties = source.ExtendedProperties;
+            Features = source.Features;
+            Exits = source.Exits;
+            Area = source.Area;
+            X = source.X;
+            Y = source.Y;
+            Z = source.Z;
+            RebuildExitCommands();
+        }
+
         public bool Save()
         {
             try
