@@ -18,6 +18,10 @@ namespace MUD.Data
 
         IEnumerable<TModel> Search(Expression<Func<TModel, bool>> matchExpression);
 
+        // Write-through of runtime state: $set only the given fields of an existing document (never replaces it).
+        // Returns false if the document does not exist or the write was not acknowledged.
+        bool UpdateFields(string id, MongoDB.Bson.BsonDocument set);
+
         // Raw stored document (bypasses the cache), or null.
         MongoDB.Bson.BsonDocument GetRawDocument(string id);
 

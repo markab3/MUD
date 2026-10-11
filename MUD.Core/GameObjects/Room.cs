@@ -174,6 +174,26 @@ namespace MUD.Core.GameObjects
             return false;
         }
 
+        // Write-through of runtime state (Items). Persists only the state fields of the stored document, so
+        // authored definition fields are never rewritten from this in-memory copy. Falls back to a whole-document
+        // Save() when the room has never been stored. Call after every mutation of Items.
+        public bool SaveState()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(Id)) { return Save(); }
+
+                var state = new MongoDB.Bson.BsonDocument("Items", MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this)["Items"]);
+                if (_roomRepository.UpdateFields(Id, state)) { return true; }
+                return Save();
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("Exception encountered while saving room state: " + ex.Message);
+            }
+            return false;
+        }
+
         public string Examine(Living examiner)
         {
             string exitLine;
