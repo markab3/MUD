@@ -58,6 +58,12 @@ namespace MUD.Core.Import
 
         public string Long { get; set; }
 
+        // Text appended to the room description. Null when the feature adds nothing.
+        public string RoomLine { get; set; }
+
+        // Text shown for 'look <noun>'. Null means fall back to Long.
+        public string Detail { get; set; }
+
         public List<string> Handles { get; set; } = new List<string>();
 
         public List<string> Adjectives { get; set; } = new List<string>();

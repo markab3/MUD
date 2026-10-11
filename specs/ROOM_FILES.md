@@ -202,11 +202,33 @@ A feature is a described, matchable thing in a room that is not an item
 features:
   - short: "a heavy oak table"
     long: "A heavy oak table, scarred by years of use."
+    room_line: "A heavy oak table stands against the far wall."   # optional
+    detail: "The table is scarred by years of use."               # optional
     handles: [table]
     adjectives: [oak, heavy]
     plurals: [tables]
     properties: [...]          # optional, same form as 4.5
 ```
+
+Feature text fields (all independent; any may be omitted):
+- `handles` / `adjectives` / `plurals`: the nouns a player can target
+  (`look table`).
+- `room_line` -> `Feature.RoomLine`: appended to the room description (after
+  the room's `long`, one space between pieces). Omitted or empty means the
+  feature adds nothing to the room description.
+- `detail` -> `Feature.DetailDescription`: shown for `look <noun>`. Omitted or
+  empty means `look` falls back to `long`.
+- `long` -> `LongDescription`: required, as before; it is the fallback
+  described above.
+
+`room_line` and `detail` follow the text rules of section 11. An empty value
+is the same as an omitted one and is stored as null. Features are replaced as
+part of the `Features` list (6.2): a feature is matched by `short`; for a
+matched feature the file's `room_line` and `detail` replace the stored values,
+and omitting them clears them. Removing a feature from the file removes it
+from the room on the next import. The creator `export` command writes
+`room_line` and `detail` only when set, and import -> export -> import is
+stable.
 
 Features have no key, so identity within a room is the `short` string
 (case-insensitive, unique within the room; duplicates are a validation

@@ -174,12 +174,14 @@ namespace MUD.Core.Import
             {
                 var featureMap = featureNode as YamlMappingNode;
                 if (featureMap == null) { _errors.Add(ctx + ": each feature must be a mapping."); continue; }
-                CheckKeys(featureMap, new[] { "short", "long", "handles", "adjectives", "plurals", "properties" }, ctx + ".features");
+                CheckKeys(featureMap, new[] { "short", "long", "room_line", "detail", "handles", "adjectives", "plurals", "properties" }, ctx + ".features");
                 var fctx = ctx + ".features";
                 var feature = new FeatureDefinition
                 {
                     Short = Text(featureMap, "short", fctx, true),
                     Long = Text(featureMap, "long", fctx, true),
+                    RoomLine = NullIfEmpty(Text(featureMap, "room_line", fctx, false)),
+                    Detail = NullIfEmpty(Text(featureMap, "detail", fctx, false)),
                     Handles = StringList(featureMap, "handles", fctx),
                     Adjectives = StringList(featureMap, "adjectives", fctx),
                     Plurals = StringList(featureMap, "plurals", fctx)
@@ -283,6 +285,12 @@ namespace MUD.Core.Import
         {
             var value = Scalar(map, key, ctx, required);
             return value == null ? null : NormalizeText(value);
+        }
+
+        // An empty optional text is the same as an absent one, so the stored value is stable.
+        private static string NullIfEmpty(string value)
+        {
+            return string.IsNullOrEmpty(value) ? null : value;
         }
 
         // Spec section 11: trim trailing whitespace per line and overall, LF line endings.
