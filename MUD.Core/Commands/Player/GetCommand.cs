@@ -34,6 +34,10 @@ namespace MUD.Core.Commands
                     commandIssuer.Inventory.Add((InventoryItem)currentItem);
                 }
 
+                // Write-through. Player first, then room: a crash between the two duplicates the item rather than losing it.
+                (commandIssuer as Player)?.Save(true);
+                commandIssuer.CurrentLocation.SaveState();
+
                 string itemList = matchedObjects.Select(ob => ob.ShortDescription).GetListText();
                 commandIssuer.ReceiveMessage(string.Format("You get {0}.", itemList));
                 commandIssuer.CurrentLocation.TellRoom(string.Format("{0} gets {1}.", commandIssuer.ShortDescription, matchedObjects.Select(ob => ob.ShortDescription).GetListText()), new Living[] { commandIssuer });

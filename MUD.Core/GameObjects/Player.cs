@@ -54,9 +54,9 @@ namespace MUD.Core.GameObjects
             _playerRepository = playerRepository;
         }
 
-        public bool Save()
+        public bool Save(bool quiet = false)
         {
-            ReceiveMessage("%^Bold%^%^Yellow%^Saving...%^Reset%^");
+            if (!quiet) { ReceiveMessage("%^Bold%^%^Yellow%^Saving...%^Reset%^"); }
             if (string.IsNullOrWhiteSpace(Id))
             {
                 _playerRepository.Insert(this);
