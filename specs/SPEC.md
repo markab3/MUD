@@ -32,8 +32,8 @@ NPCs. World state is persisted in MongoDB.
 
 ## 4. Tech stack
 
-- C# on **.NET Core 3.1** (`netcoreapp3.1` — end-of-life target).
-- MongoDB (driver 2.11.0; Atlas `mongodb+srv` in the current deployment).
+- C# on **.NET 8** (`net8.0`; upgraded from the EOL `netcoreapp3.1`).
+- MongoDB (driver 2.30.0, server 4.4 compatible; Atlas `mongodb+srv` in the current deployment).
 - Scrutor 3.2.2 for assembly-scanned DI.
 - Custom raw-socket telnet layer (`MUD.Telnet`, no packages).
 - `System.CommandLine` / DragonFruit referenced but not actually used for
@@ -41,7 +41,7 @@ NPCs. World state is persisted in MongoDB.
 
 ## 5. Known issues (must-fix list)
 
-1. **.NET Core 3.1 is EOL** — upgrade target needed.
+1. ~~.NET Core 3.1 is EOL~~ — resolved: all projects target net8.0.
 2. **Secrets committed to the repo** — Mongo Atlas password in
    `MUD.Main/appsettings.json` and `planar-realms.service`; public IP in config.
 3. **Plaintext passwords** stored in Mongo and compared in `World.DoLogin`.

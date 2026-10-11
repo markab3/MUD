@@ -13,14 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Projects target netcoreapp3.1. The 3.1 SDK cannot run on current Ubuntu images (OpenSSL 3),
-      # so build with the 8.0 SDK (it builds netcoreapp3.1 targets) and also install the 3.1
-      # runtime so test projects targeting netcoreapp3.1 can run.
+      # All projects target net8.0.
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: |
-            8.0.x
-            3.1.x
+          dotnet-version: 8.0.x
 
       - name: Restore
         run: dotnet restore MUD.sln
@@ -42,7 +38,4 @@ jobs:
 
       - name: Test
         if: steps.tests.outputs.found == 'true'
-        # The 3.1 runtime crashes on OpenSSL 3 (no libssl 1.x), so run the tests on the newest installed runtime.
-        env:
-          DOTNET_ROLL_FORWARD: LatestMajor
         run: dotnet test MUD.sln --no-build
