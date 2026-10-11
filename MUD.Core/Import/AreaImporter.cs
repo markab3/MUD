@@ -257,6 +257,8 @@ namespace MUD.Core.Import
                         Id = def.FullKey + "#" + f.Short.ToLowerInvariant(),
                         ShortDescription = f.Short,
                         LongDescription = f.Long,
+                        RoomLine = f.RoomLine,
+                        DetailDescription = f.Detail,
                         Handles = new List<string>(f.Handles),
                         Adjectives = new List<string>(f.Adjectives),
                         Plurals = new List<string>(f.Plurals),
