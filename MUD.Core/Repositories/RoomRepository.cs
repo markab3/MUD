@@ -6,7 +6,7 @@ using MUD.Data;
 namespace MUD.Core.Repositories {
     public class RoomRepository : Repository<Room>, IRoomRepository
     {
-        public RoomRepository(IMongoClient dbClient) : base(dbClient, "testmud", "room") { }
+        public RoomRepository(IMongoClient dbClient, WorldSettings settings) : base(dbClient, settings.DatabaseName, "room") { }
 
         // Copy authored definition fields onto the live room so players inside it keep their
         // room object; Items and Occupants (state) are left alone.

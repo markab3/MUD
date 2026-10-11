@@ -61,12 +61,34 @@ namespace MUD.Main
     Use 'quit' to disconnect.
 --------------------------------------------------------------------------------";
 
-        static void Main(string ip = null, int port = 23, string db = null)
+        static void Main(string ip = null, int? port = null)
         {
             var config = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: true)
                 .Build();
+
+            // The connection string is a secret: it is only ever read from the environment.
+            var mongoUri = Environment.GetEnvironmentVariable("MUD_MONGO_URI");
+            if (string.IsNullOrWhiteSpace(mongoUri))
+            {
+                Console.Error.WriteLine("MUD_MONGO_URI is not set. Set it to the MongoDB connection string (for the systemd service it comes from ~/.config/mud/mongo.env).");
+                Environment.Exit(1);
+                return;
+            }
+            var databaseName = config["WorldSettings:DatabaseName"];
+            if (string.IsNullOrWhiteSpace(databaseName)) { databaseName = "testmud"; }
+
+            // Bind address and port: command line, then environment, then appsettings.json.
+            if (string.IsNullOrWhiteSpace(ip)) { ip = Environment.GetEnvironmentVariable("MUD_BIND_ADDRESS"); }
+            if (string.IsNullOrWhiteSpace(ip)) { ip = config["TelnetSettings:IPAddress"]; }
+            if (port == null)
+            {
+                int parsedPort;
+                if (int.TryParse(Environment.GetEnvironmentVariable("MUD_PORT"), out parsedPort)) { port = parsedPort; }
+                else if (int.TryParse(config["TelnetSettings:Port"], out parsedPort)) { port = parsedPort; }
+                else { port = 7680; }
+            }
             var startRoomKey = config["WorldSettings:StartRoomKey"];
             if (string.IsNullOrWhiteSpace(startRoomKey))
             {
@@ -79,7 +101,7 @@ namespace MUD.Main
 
             try
             {
-                dbClient = new MongoClient(db);
+                dbClient = new MongoClient(mongoUri);
                 // //setup our DI
                 // IServiceProvider _serviceProvider = new ServiceCollection()
                 //     // Load all commands 
@@ -129,7 +151,7 @@ namespace MUD.Main
                 //     cm.SetCreator(() => { return _serviceProvider.GetService<Food>(); });
                 // });
 
-                var database = dbClient.GetDatabase("testmud"); // This creates the database if it doesn't otherwise exist?
+                var database = dbClient.GetDatabase(databaseName); // This creates the database if it doesn't otherwise exist?
                 if (database == null) { Console.WriteLine("Database not found!"); }
                 var collection = database.GetCollection<BsonDocument>("players"); // Check that the collection is there. If it is not, then the collection exists in memory and is created on the actual DB when needed.
                 var testFind = collection.AsQueryable().FirstOrDefault();
@@ -208,7 +230,7 @@ namespace MUD.Main
             }
             bool importOnStartup;
             if (!bool.TryParse(config["WorldSettings:ImportOnStartup"], out importOnStartup)) { importOnStartup = true; }
-            _gameWorld = new World(dbClient, new WorldSettings { StartRoomKey = startRoomKey, ContentDirectory = contentDirectory, ImportOnStartup = importOnStartup });
+            _gameWorld = new World(dbClient, new WorldSettings { StartRoomKey = startRoomKey, DatabaseName = databaseName, ContentDirectory = contentDirectory, ImportOnStartup = importOnStartup });
             try
             {
                 _gameWorld.ImportContent();
@@ -225,7 +247,7 @@ namespace MUD.Main
             IPAddress ipAddress = null;
             if (!IPAddress.TryParse(ip, out ipAddress)) { ipAddress = IPAddress.Any; }
 
-            _serverInstance = new Server(ipAddress, port);
+            _serverInstance = new Server(ipAddress, port.Value);
             _serverInstance.ClientConnected += clientConnected;
             _serverInstance.ClientDisconnected += clientDisconnected;
 
