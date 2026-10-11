@@ -22,6 +22,11 @@ namespace MUD.Data
 
         public void Insert(TModel model)
         {
+            if (string.IsNullOrWhiteSpace(model.Id))
+            {
+                throw new ArgumentException("Entity must have an Id before it can be inserted.", nameof(model));
+            }
+
             _collection.InsertOne(model);
 
             if (!_modelCache.ContainsKey(model.Id))
@@ -32,8 +37,12 @@ namespace MUD.Data
 
         public bool Update(TModel model)
         {
-            var result = _collection.ReplaceOne<TModel>((m => m.Id == model.Id), model);
-            var success = (result != null && result.IsModifiedCountAvailable && result.ModifiedCount == 1);
+            if (string.IsNullOrWhiteSpace(model.Id)) { return false; }
+
+            // Entities always carry an Id (generated or authored key), so a first save arrives here too: upsert.
+            var result = _collection.ReplaceOne<TModel>((m => m.Id == model.Id), model, new ReplaceOptions { IsUpsert = true });
+            // Not ModifiedCount: saving an unchanged document modifies nothing but still succeeds.
+            var success = (result != null && result.IsAcknowledged && (result.MatchedCount == 1 || result.UpsertedId != null));
 
             if (success && !_modelCache.ContainsKey(model.Id))
             {
@@ -58,6 +67,8 @@ namespace MUD.Data
 
         public TModel Get(string id)
         {
+            if (string.IsNullOrWhiteSpace(id)) { return null; }
+
             if (_modelCache.ContainsKey(id))
             {
                 return _modelCache[id];

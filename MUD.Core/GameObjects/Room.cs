@@ -10,6 +10,16 @@ namespace MUD.Core.GameObjects
 {
     public class Room : GameObject
     {
+        // Area prefix this room belongs to (e.g. "castle"). Definition field.
+        public string Area { get; set; }
+
+        // Per-area local grid coordinates. Null means "unplaced" (distinct from the origin).
+        public int? X { get; set; }
+
+        public int? Y { get; set; }
+
+        public int? Z { get; set; }
+
         public List<InventoryItem> Items { get; set; } = new List<InventoryItem>();
 
         public List<Feature> Features { get; set; } = new List<Feature>();

@@ -8,7 +8,9 @@ namespace MUD.Data
     [BsonIgnoreExtraElements(Inherited = true)]
     public abstract class Entity
     {
-        [BsonRepresentation(BsonType.ObjectId)]
+        // Plain string _id. Authored entities (e.g. rooms) supply a human-readable key
+        // such as "castle.throne_room"; everything else gets a generated ObjectId string.
+        [BsonId]
         public string Id { get; set; }
 
         // protected IMongoDatabase _db;
@@ -17,6 +19,7 @@ namespace MUD.Data
 
         public Entity()
         {
+            Id = ObjectId.GenerateNewId().ToString();
             //_db = db;
         }
 
