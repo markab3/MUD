@@ -100,7 +100,7 @@ namespace MUD.Core
                 // Load up the mongo client
                 .AddSingleton<IMongoClient>(dbClient)
                 .AddSingleton<WorldSettings>(_settings)
-                .AddSingleton<IMongoDatabase>(dbClient.GetDatabase("testmud"))
+                .AddSingleton<IMongoDatabase>(dbClient.GetDatabase(_settings.DatabaseName))
 
                 // Load utility stuff?
                 .AddSingleton<CommandQueue>()

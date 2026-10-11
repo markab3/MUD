@@ -1,29 +1,40 @@
-# Planar Realms — Configuration & Deployment
+# Planar Realms — Configuration
 
 ## 1. Runtime configuration
 
-Configuration is passed **entirely as CLI arguments**:
+Configuration comes from the **environment** (secrets and per-host values)
+and `MUD.Main/appsettings.json` (non-secret defaults, copied next to the
+executable). Nothing secret is committed.
 
+| Setting | Source | Default | Notes |
+|---|---|---|---|
+| Mongo connection string | env `MUD_MONGO_URI` | none, **required** | `MUD.Main` prints a clear error and exits 1 if unset or blank |
+| Database name | `WorldSettings:DatabaseName` | `testmud` | used by `Program`, `World` and the repositories |
+| Bind address | `--ip`, else env `MUD_BIND_ADDRESS`, else `TelnetSettings:IPAddress` | all interfaces | an empty or unparsable value means all interfaces |
+| Port | `--port`, else env `MUD_PORT`, else `TelnetSettings:Port` | `7680` | |
+| Start room | `WorldSettings:StartRoomKey` | required | see ROOM_FILES.md |
+| Content directory | `WorldSettings:ContentDirectory` | `Content` | relative to the executable |
+| Import on startup | `WorldSettings:ImportOnStartup` | `true` | |
+
+The old `--db` command-line option is gone: the connection string is never
+accepted on the command line (it would show up in `ps` output).
+
+Local run:
+
+```bash
+MUD_MONGO_URI="mongodb://localhost:27017" dotnet run --project MUD.Main -- --ip 127.0.0.1 --port 7680
 ```
-MUD.Main --ip <bind-ip> --port <port> --db <mongodb-connection-string>
-```
 
-- `MUD.Main/appsettings.json` exists (TelnetSettings,
-  `ConnectionStrings:MongoDBConnection`) and is copied to output, but
-  `Program.Main` never loads `IConfiguration` — **the file is currently
-  dead config**. Do not edit it expecting an effect.
-- The Mongo **database name is hardcoded to `testmud`** in
-  `Program.cs` (collections `player`, `room`), independent of the
-  connection string's database.
-- New-player start room ID is hardcoded in `World`
-  (`5f6e27f20c1fdd24b4b18b1a`).
+### The service environment files
 
-### SECURITY WARNING
+The systemd unit reads two optional/required files in the service user's
+`~/.config/mud/`:
 
-`appsettings.json` and `planar-realms.service` contain a **live Mongo
-Atlas password and public IP committed to the repo**. Rotate the
-credential and externalize it (env var / secret manager) before any
-public hosting.
+- `mongo.env` (required, mode 600, created by the maintainer's install
+  script): `MUD_MONGO_URI=mongodb://user:password@localhost:27017/?authSource=admin`
+- `server.env` (optional): `MUD_BIND_ADDRESS=...` and/or `MUD_PORT=...`
+
+Neither file is in the repository. Never commit a connection string.
 
 ## 2. Build
 
@@ -42,30 +53,14 @@ public hosting.
   the output directory. `MUD.PlanarRealms` is not a csproj reference of
   `MUD.Main` — publish must include its DLL or the content scan misses it.
 
-## 3. Deployment (current: systemd on Linux)
+## 3. Deployment
 
-`planar-realms.service`:
+See [DEPLOYMENT.md](DEPLOYMENT.md): `planar-realms.service` (systemd user
+unit) and `scripts/deploy.sh` (versioned releases, `current` symlink,
+rollback).
 
-```ini
-[Unit]
-Description=Planar Realms MUD server
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/planar-realms/MUD.Main --ip 34.123.49.245 --port 7680 --db mongodb+srv://...
-
-[Install]
-WantedBy=multi-user.target
-```
-
-- Listens on **TCP 7680**.
-- Deployment steps (current practice):
-  1. Build via AppVeyor (or local `build.ps1`), download zip.
-  2. Extract to `/usr/bin/planar-realms/` (keep both `MUD.Core.dll` and
-     `MUD.PlanarRealms.dll` present).
-  3. `systemctl enable --now planar-realms`.
-- No Dockerfile. No TLS. Console stdout is the only log output —
-  journalctl captures it.
+- Listens on TCP 7680 by default (`MUD_PORT`). No Dockerfile. No TLS.
+  Console stdout is the only log output; journald captures it.
 
 ## 4. Operational notes
 
@@ -82,12 +77,12 @@ WantedBy=multi-user.target
 ## 5. Local development quick start
 
 A reachable MongoDB is required at boot (the client is constructed first
-and the boot sequence issues a read against db `testmud`). The boot check
-against the `players` collection is a no-op read (`FirstOrDefault`, no
-failure path).
+and the boot sequence issues a read against the configured database).
+The boot check against the `players` collection is a no-op read
+(`FirstOrDefault`, no failure path).
 
 ```bash
-dotnet run --project MUD.Main -- --ip 127.0.0.1 --port 7680 --db "mongodb://localhost:27017"
+MUD_MONGO_URI="mongodb://localhost:27017" dotnet run --project MUD.Main -- --ip 127.0.0.1 --port 7680
 ```
 
 Note a collection-name discrepancy: the boot check reads collection
@@ -98,6 +93,6 @@ vestigial (seed-code era); treat `player` as the real player collection.
 
 | Collection | Used by |
 |---|---|
-| `player` | `PlayerRepository` (db `testmud`) |
-| `room` | `RoomRepository` (db `testmud`) |
+| `player` | `PlayerRepository` (configured database, default `testmud`) |
+| `room` | `RoomRepository` (configured database, default `testmud`) |
 | `players` | boot-time no-op read only — not a real collection |

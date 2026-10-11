@@ -6,6 +6,6 @@ using MUD.Data;
 namespace MUD.Core.Repositories {
     public class PlayerRepository : Repository<Player>, IPlayerRepository
     {
-        public PlayerRepository(IMongoClient dbClient) : base(dbClient, "testmud", "player") { }
+        public PlayerRepository(IMongoClient dbClient, WorldSettings settings) : base(dbClient, settings.DatabaseName, "player") { }
     }
 }
