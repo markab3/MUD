@@ -194,20 +194,20 @@ namespace MUD.Core.GameObjects
             return false;
         }
 
-        // The long description followed by each feature's non-empty RoomLine, in Features order.
+        // The long description followed by each feature's non-empty GetRoomLine(examiner), in Features order.
         // Pieces are separated by a single space so they read as one paragraph.
-        private string GetLongDescriptionWithFeatures()
+        private string GetLongDescriptionWithFeatures(Living examiner)
         {
             var parts = new List<string>();
             if (!string.IsNullOrEmpty(LongDescription)) { parts.Add(LongDescription); }
             if (Features != null)
             {
-                parts.AddRange(Features.Where(f => f != null && !string.IsNullOrEmpty(f.RoomLine)).Select(f => f.RoomLine));
+                parts.AddRange(Features.Where(f => f != null).Select(f => f.GetRoomLine(examiner)).Where(l => !string.IsNullOrEmpty(l)));
             }
             return string.Join(" ", parts);
         }
 
-        public string Examine(Living examiner)
+        public override string Examine(Living examiner)
         {
             string exitLine;
             if (Exits == null || Exits.Count == 0)
@@ -249,7 +249,7 @@ namespace MUD.Core.GameObjects
                 itemsLine = itemsLine + "\r\n";
             }
 
-            return ShortDescription + " (" + Id + ")\r\n" + GetLongDescriptionWithFeatures() + "\r\n" + exitLine + occupantsLine + itemsLine;
+            return ShortDescription + " (" + Id + ")\r\n" + GetLongDescriptionWithFeatures(examiner) + "\r\n" + exitLine + occupantsLine + itemsLine;
         }
     }
 

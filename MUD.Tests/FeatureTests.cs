@@ -141,6 +141,81 @@ namespace MUD.Tests
             Assert.Equal("There is no rock to look at.", Look(player, "rock"));
         }
 
+        // Shows a different line/detail to a given examiner, and hides entirely from another.
+        public class ExaminerAwareFeature : Feature
+        {
+            public Living Hidden;
+
+            public override string GetRoomLine(Living examiner)
+            {
+                if (examiner != null && examiner == Hidden) { return ""; }
+                return examiner == null ? RoomLine : RoomLine + " (seen by " + examiner.ShortDescription + ")";
+            }
+
+            public override string GetDetailDescription(Living examiner)
+            {
+                if (examiner != null && examiner == Hidden) { return null; }
+                return examiner == null ? DetailDescription : DetailDescription + " Examined by " + examiner.ShortDescription + ".";
+            }
+        }
+
+        [Fact]
+        public void FeatureSubclassVariesRoomTextAndLookByExaminer()
+        {
+            var seer = new CapturePlayer(new FakePlayerRepo()) { ShortDescription = "Seer" };
+            var blind = new CapturePlayer(new FakePlayerRepo()) { ShortDescription = "Blind" };
+            var feature = new ExaminerAwareFeature
+            {
+                ShortDescription = "a glyph",
+                Handles = new List<string> { "glyph" },
+                Plurals = new List<string>(),
+                LongDescription = "A faint glyph.",
+                RoomLine = "A glyph glows on the floor.",
+                DetailDescription = "An intricate glyph.",
+                Hidden = blind
+            };
+            var room = NewRoom(new FakeRoomRepo(), feature);
+            seer.CurrentLocation = room;
+            blind.CurrentLocation = room;
+
+            Assert.StartsWith("a hall (t.hall)\r\nA bare hall. A glyph glows on the floor. (seen by Seer)\r\n", room.Examine(seer));
+            Assert.StartsWith("a hall (t.hall)\r\nA bare hall.\r\n", room.Examine(blind));
+            Assert.DoesNotContain("glyph", room.Examine(blind));
+
+            Assert.Equal("An intricate glyph. Examined by Seer.", Look(seer, "glyph"));
+            // Hidden detail falls back to LongDescription.
+            Assert.Equal("A faint glyph.", Look(blind, "glyph"));
+            // Examiner-less Examine() still works.
+            Assert.Equal("An intricate glyph.", feature.Examine());
+        }
+
+        [Fact]
+        public void BaseGettersReturnStoredText()
+        {
+            var rocks = Rocks();
+            Assert.Equal("Loose rocks litter the ground.", rocks.GetRoomLine(null));
+            Assert.Equal("Grey, jagged rocks.", rocks.GetDetailDescription(null));
+        }
+
+        [Fact]
+        public void TowerOfAellioc1RendersFeaturesAsOneParagraphAndIsLookable()
+        {
+            var room = new MUD.PlanarRealms.Planes.Neutral.Rooms.TowerOfAellioc_1(new FakeRoomRepo()) { Id = "t.tower", ShortDescription = "tower", LongDescription = "A round chamber." };
+            Assert.True(room.Features.Count >= 1);
+            var firstLine = room.Examine(null).Split(new[] { "\r\n" }, System.StringSplitOptions.None)[1];
+            Assert.StartsWith("A round chamber. ", firstLine);
+            foreach (var f in room.Features)
+            {
+                Assert.False(string.IsNullOrWhiteSpace(f.GetRoomLine(null)));
+                Assert.EndsWith(".", f.RoomLine);
+                Assert.Contains(f.RoomLine, firstLine);
+                Assert.False(string.IsNullOrWhiteSpace(f.DetailDescription));
+                Assert.NotEmpty(f.Handles);
+            }
+            var player = new CapturePlayer(new FakePlayerRepo()) { CurrentLocation = room };
+            Assert.Equal(room.Features[0].DetailDescription, Look(player, room.Features[0].Handles[0]));
+        }
+
         [Fact]
         public void SavePersistsRuntimeFeatureSwapAndRoundTrips()
         {

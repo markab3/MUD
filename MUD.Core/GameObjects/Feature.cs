@@ -16,11 +16,31 @@ namespace MUD.Core.GameObjects
         /// Text shown when the feature itself is looked at.
         public virtual string DetailDescription { get; set; }
 
-        /// Returns DetailDescription. If none is set (e.g. features created from area files, which only
-        /// carry a LongDescription), falls back to LongDescription so they stay lookable.
+        /// The room-description text as seen by the examiner. Base returns RoomLine; subclasses may vary it
+        /// per examiner or return null/empty to hide the feature.
+        public virtual string GetRoomLine(Living examiner)
+        {
+            return RoomLine;
+        }
+
+        /// The look text as seen by the examiner. Base returns DetailDescription; subclasses may vary it per examiner.
+        public virtual string GetDetailDescription(Living examiner)
+        {
+            return DetailDescription;
+        }
+
+        /// Examine with no particular examiner (examiner is null).
         public override string Examine()
         {
-            return string.IsNullOrEmpty(DetailDescription) ? base.Examine() : DetailDescription;
+            return Examine(null);
+        }
+
+        /// Returns GetDetailDescription(examiner). If that is empty (e.g. features created from area files, which
+        /// only carry a LongDescription), falls back to LongDescription so they stay lookable.
+        public override string Examine(Living examiner)
+        {
+            var detail = GetDetailDescription(examiner);
+            return string.IsNullOrEmpty(detail) ? LongDescription : detail;
         }
     }
 }
