@@ -28,6 +28,11 @@ namespace MUD.Telnet
 
         private List<Client> _clients;
 
+        private readonly object _clientsLock = new object();
+
+        // The listening socket, kept so Stop() can close it.
+        private Socket _listener;
+
         public event EventHandler ServerStopped;
 
         public event EventHandler<Client> ClientConnected;
@@ -50,6 +55,7 @@ namespace MUD.Telnet
             Console.WriteLine($"Local address and port : {localEP.ToString()}");
 
             Socket listener = new Socket(localEP.Address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            _listener = listener;
 
             try
             {
@@ -80,9 +86,17 @@ namespace MUD.Telnet
             _isAcceptingConnections = false;
             _allDone.Set();
 
-            foreach (Client currentClient in _clients)
+            // Closing the listener stops new connections being accepted.
+            Socket listener = _listener;
+            if (listener != null)
             {
-                currentClient.Send("The server is shutting down and your connection will now be closeed.");
+                listener.Close();
+            }
+
+            // Iterate over a snapshot: Disconnect() removes the client from _clients.
+            foreach (Client currentClient in snapshotClients())
+            {
+                currentClient.Send("The server is shutting down and your connection will now be closed.");
                 currentClient.Disconnect();
             }
         }
@@ -94,7 +108,7 @@ namespace MUD.Telnet
         
         public void SendMessageToAll(byte[] data)
         {
-            foreach (Client currentClient in _clients)
+            foreach (Client currentClient in snapshotClients())
             {
                 currentClient.Send(data);
             }
@@ -102,34 +116,56 @@ namespace MUD.Telnet
 
         public void SendMessageToAll(string message)
         {
-            foreach (Client currentClient in _clients)
+            foreach (Client currentClient in snapshotClients())
             {
                 currentClient.Send(message);
             }
         }
 
+        private List<Client> snapshotClients()
+        {
+            lock (_clientsLock)
+            {
+                return new List<Client>(_clients);
+            }
+        }
+
         private void acceptCallback(IAsyncResult ar)
         {
+            // Release the accept loop first so it always re-arms BeginAccept, even if this callback fails.
             _allDone.Set();
 
-            Socket listener = (Socket)ar.AsyncState;
-            Socket handler = listener.EndAccept(ar);
+            try
+            {
+                Socket listener = (Socket)ar.AsyncState;
+                Socket handler = listener.EndAccept(ar);
 
-            // Create the client connection object  
-            Client client = new Client(handler);
-            client.ClientDisconnected += handleClientDisconnect;
-            client.Read();
+                // Create the client connection object  
+                Client client = new Client(handler);
+                client.ClientDisconnected += handleClientDisconnect;
+                client.Read();
 
-            _clients.Add(client);
+                lock (_clientsLock)
+                {
+                    _clients.Add(client);
+                }
 
-            //client.Send(new byte[] {(byte) CommandCode.IAC, (byte) CommandCode.DO, (byte) OptionCode.TerminalType});
+                //client.Send(new byte[] {(byte) CommandCode.IAC, (byte) CommandCode.DO, (byte) OptionCode.TerminalType});
 
-            ClientConnected?.Invoke(this, client);
+                ClientConnected?.Invoke(this, client);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Failed to accept a client connection: " + e.ToString());
+            }
         }
 
         private void handleClientDisconnect(object sender, Client client)
         {
-            _clients.Remove(client);
+            lock (_clientsLock)
+            {
+                _clients.Remove(client);
+            }
             ClientDisconnected?.Invoke(this, client);
         }
     }

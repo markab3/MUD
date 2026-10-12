@@ -10,6 +10,16 @@ namespace MUD.Core.GameObjects
 {
     public class Room : GameObject
     {
+        // Area prefix this room belongs to (e.g. "castle"). Definition field.
+        public string Area { get; set; }
+
+        // Per-area local grid coordinates. Null means "unplaced" (distinct from the origin).
+        public int? X { get; set; }
+
+        public int? Y { get; set; }
+
+        public int? Z { get; set; }
+
         public List<InventoryItem> Items { get; set; } = new List<InventoryItem>();
 
         public List<Feature> Features { get; set; } = new List<Feature>();
@@ -122,6 +132,25 @@ namespace MUD.Core.GameObjects
             }
         }
 
+        // Copies authored definition fields (specs/ROOM_FILES.md section 5) from another copy of this room.
+        // State (Items, occupants) is untouched.
+        public void ApplyDefinition(Room source)
+        {
+            ShortDescription = source.ShortDescription;
+            LongDescription = source.LongDescription;
+            Handles = source.Handles;
+            Adjectives = source.Adjectives;
+            Plurals = source.Plurals;
+            ExtendedProperties = source.ExtendedProperties;
+            Features = source.Features;
+            Exits = source.Exits;
+            Area = source.Area;
+            X = source.X;
+            Y = source.Y;
+            Z = source.Z;
+            RebuildExitCommands();
+        }
+
         public bool Save()
         {
             try
@@ -146,7 +175,40 @@ namespace MUD.Core.GameObjects
             return false;
         }
 
-        public string Examine(Living examiner)
+        // Write-through of runtime state (Items). Persists only the state fields of the stored document, so
+        // authored definition fields are never rewritten from this in-memory copy. Falls back to a whole-document
+        // Save() when the room has never been stored. Call after every mutation of Items.
+        public bool SaveState()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(Id)) { return Save(); }
+
+                var state = new MongoDB.Bson.BsonDocument("Items", MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this)["Items"]);
+                if (_roomRepository.UpdateFields(Id, state)) { return true; }
+                return Save();
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("Exception encountered while saving room state: " + ex.Message);
+            }
+            return false;
+        }
+
+        // The long description followed by each feature's non-empty GetRoomLine(examiner), in Features order.
+        // Pieces are separated by a single space so they read as one paragraph.
+        private string GetLongDescriptionWithFeatures(Living examiner)
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(LongDescription)) { parts.Add(LongDescription); }
+            if (Features != null)
+            {
+                parts.AddRange(Features.Where(f => f != null).Select(f => f.GetRoomLine(examiner)).Where(l => !string.IsNullOrEmpty(l)));
+            }
+            return string.Join(" ", parts);
+        }
+
+        public override string Examine(Living examiner)
         {
             string exitLine;
             if (Exits == null || Exits.Count == 0)
@@ -161,7 +223,7 @@ namespace MUD.Core.GameObjects
             {
                 exitLine = string.Format("There are {0} obvious exits: {1}", Exits.Count.GetExactNumberText(), Exits.Select(e => e.Name).GetListText());
             }
-            exitLine = string.Format("%^{0}%^{1}%^{2}%^", EFormatOptions.Green, exitLine, EFormatOptions.Reset) + "/r/n";
+            exitLine = string.Format("%^{0}%^{1}%^{2}%^", EFormatOptions.Green, exitLine, EFormatOptions.Reset) + "\r\n";
 
             string occupantsLine = null;
             var otherOccupants = _occupants.Where(p => p != examiner).ToList();
@@ -188,7 +250,7 @@ namespace MUD.Core.GameObjects
                 itemsLine = itemsLine + "\r\n";
             }
 
-            return ShortDescription + " (" + Id + ")\r\n" + LongDescription + "\r\n" + exitLine + occupantsLine + itemsLine;
+            return ShortDescription + " (" + Id + ")\r\n" + GetLongDescriptionWithFeatures(examiner) + "\r\n" + exitLine + occupantsLine + itemsLine;
         }
     }
 

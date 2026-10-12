@@ -101,6 +101,10 @@ namespace MUD.Tests
         public Player Get(string id) { return null; }
         public IEnumerable<Player> GetAll() { return new Player[0]; }
         public IEnumerable<Player> Search(Expression<Func<Player, bool>> m) { return new Player[0]; }
+        public bool UpdateFields(string id, BsonDocument set) { return true; }
+        public BsonDocument GetRawDocument(string id) { return null; }
+        public List<string> GetIdsByField(string fieldName, string value) { return new List<string>(); }
+        public void UpsertFields(string id, BsonDocument set, BsonDocument setOnInsert) { }
     }
 
     public class HeartbeatPlayer : Player
@@ -152,12 +156,14 @@ namespace MUD.Tests
         }
 
         [Fact]
-        public void SaveWithoutIdInserts()
+        public void SaveOfNewPlayerUpsertsAndGetsAnId()
         {
+            // Entities are given an Id on construction, so a first save goes through Update (upsert).
             var repo = new SavePlayerRepo();
             var p = new HeartbeatPlayer(repo);
+            Assert.False(string.IsNullOrWhiteSpace(p.Id));
             Assert.True(p.Save());
-            Assert.Equal(1, repo.Inserts);
+            Assert.Equal(1, repo.Updates);
         }
     }
 

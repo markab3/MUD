@@ -45,7 +45,7 @@ namespace MUD.Core.Commands
             if (matchedObjects != null && matchedObjects.Length > 0)
             {
                 StringBuilder sb = new StringBuilder();
-                sb.AppendJoin("\r\n", matchedObjects.Select(g => g.Examine()));
+                sb.AppendJoin("\r\n", matchedObjects.Select(g => g.Examine(commandIssuer)));
                 commandIssuer.ReceiveMessage(sb.ToString());
             }
             else
