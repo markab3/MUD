@@ -12,5 +12,6 @@
     <ProjectReference Include="..\MUD.Core\MUD.Core.csproj" />
     <ProjectReference Include="..\MUD.Data\MUD.Data.csproj" />
     <ProjectReference Include="..\MUD.PlanarRealms\MUD.PlanarRealms.csproj" />
+    <ProjectReference Include="..\MUD.Telnet\MUD.Telnet.csproj" />
   </ItemGroup>
 </Project>
