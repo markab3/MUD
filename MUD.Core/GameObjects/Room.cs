@@ -160,7 +160,7 @@ namespace MUD.Core.GameObjects
             {
                 exitLine = string.Format("There are {0} obvious exits: {1}", Exits.Count.GetExactNumberText(), Exits.Select(e => e.Name).GetListText());
             }
-            exitLine = string.Format("%^{0}%^{1}%^{2}%^", EFormatOptions.Green, exitLine, EFormatOptions.Reset) + "/r/n";
+            exitLine = string.Format("%^{0}%^{1}%^{2}%^", EFormatOptions.Green, exitLine, EFormatOptions.Reset) + "\r\n";
 
             string occupantsLine = null;
             var otherOccupants = _occupants.Where(p => p != examiner).ToList();
