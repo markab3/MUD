@@ -30,9 +30,10 @@ namespace MUD.Core.Commands
 
         public void NotifyException(Exception exception)
         {
+            Console.WriteLine(string.Format("Exception executing command of type {0}: {1}", _commandObject.GetType().Name, exception));
             if (_commandIssuer != null)
             {
-                _commandIssuer.ReceiveMessage(string.Format("There was an error executing your command of type {0}.\r\n{1}", _commandObject.GetType().Name, exception));
+                _commandIssuer.ReceiveMessage("There was an error executing your command.");
             }
         }
     }
