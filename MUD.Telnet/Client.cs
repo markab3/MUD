@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 
 namespace MUD.Telnet
 {
@@ -30,6 +31,12 @@ namespace MUD.Telnet
 
         private TelnetCommand _currentCommand = null;
 
+        // True when the last data byte consumed was a CR (used to handle CR LF / CR NUL split across reads).
+        private bool _lastDataByteWasCR = false;
+
+        // 0 until Disconnect has run; guards ClientDisconnected so it is raised exactly once.
+        private int _disconnected = 0;
+
         public bool IsRemoteEcho { get; set; }
 
         public bool IsEchoSupressed { get; set; }
@@ -54,13 +61,25 @@ namespace MUD.Telnet
         public void Send(String data)
         {
             // Unify line endings to be consistent with the client.
-            data.Replace("\n", "\r").Replace("\r\r", "\r").Replace("\r", _lineEnding);
+            data = data.Replace("\n", "\r").Replace("\r\r", "\r").Replace("\r", _lineEnding);
 
             // Ensure that it ends with line ending
             if (!data.EndsWith(_lineEnding)) { data = data + _lineEnding; }
 
             // Convert the string data to byte data using the client's encoding.  
             byte[] byteData = _clientEncoding.GetBytes(data);
+
+            // A literal 0xFF data byte must be escaped as IAC IAC.
+            if (Array.IndexOf(byteData, (byte)CommandCode.IAC) >= 0)
+            {
+                List<byte> escaped = new List<byte>(byteData.Length + 1);
+                foreach (byte b in byteData)
+                {
+                    escaped.Add(b);
+                    if (b == (byte)CommandCode.IAC) { escaped.Add(b); }
+                }
+                byteData = escaped.ToArray();
+            }
 
             Send(byteData);
         }
@@ -99,13 +118,27 @@ namespace MUD.Telnet
         }
         public void Disconnect()
         {
-            if (_workSocket.Connected)
-            {
-                _workSocket.Shutdown(SocketShutdown.Both);
-                _workSocket.Close();
+            // Only the first call does any work, so ClientDisconnected is raised exactly once.
+            if (Interlocked.Exchange(ref _disconnected, 1) != 0) { return; }
 
-                ClientDisconnected?.Invoke(this, this);
+            if (_workSocket != null)
+            {
+                try
+                {
+                    if (_workSocket.Connected) { _workSocket.Shutdown(SocketShutdown.Both); }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.ToString());
+                }
+                finally
+                {
+                    try { _workSocket.Close(); }
+                    catch (Exception ex) { Console.WriteLine(ex.ToString()); }
+                }
             }
+
+            ClientDisconnected?.Invoke(this, this);
         }
 
         private void sendCallback(IAsyncResult ar)
@@ -129,82 +162,16 @@ namespace MUD.Telnet
                 // Read data from the client socket.
                 int bytesRead = _workSocket.EndReceive(ar);
 
-                if (bytesRead > 0)
+                if (bytesRead == 0)
                 {
-                    // Grab raw data.
-                    byte[] receivedData = _buffer.Take(bytesRead).ToArray();
-
-                    // Decode.
-                    string receivedMessage = string.Empty;
-
-                    // Handle telnet commands.
-                    foreach (byte currentByte in receivedData)
-                    {
-                        if (_currentCommand != null)
-                        {
-                            if (_currentCommand.ProccessByte(currentByte) && !_currentCommand.IsComplete)
-                            {
-                                continue;
-                            }
-                            else
-                            {
-                                handleTelnetCommand(_currentCommand);
-                                _currentCommand = null;
-                            }
-                        }
-
-                        if (currentByte == (byte)CommandCode.IAC)
-                        {
-                            _currentCommand = new TelnetCommand();
-                            continue;
-                        }
-                        receivedMessage += _clientEncoding.GetString(new byte[] { currentByte }); // hmm...
-                    }
-
-                    // Get last used line ending..
-                    if (receivedMessage.Contains("\r\n"))
-                    {
-                        _lineEnding = "\r\n";
-                    }
-                    else if (receivedMessage.Contains("\r"))
-                    {
-                        _lineEnding = "\r";
-                    }
-                    else if (receivedMessage.Contains("\n"))
-                    {
-                        _lineEnding = "\n";
-                    }
-
-                    // Unify the line endings.
-                    receivedMessage = receivedMessage.Replace("\n", "\r").Replace("\r\r", "\r");
-
-                    // There might be more data, so store the data received so far.  
-                    _receivedData = _receivedData + receivedMessage;
-
-                    int newlineIndex = _receivedData.IndexOf("\r");
-
-                    string currentLine = string.Empty;
-
-                    // Peel off each line, treating a newline as the terminator for the command.                 
-                    while (newlineIndex > -1)
-                    {
-                        // TODO: Handle TelnetCommands
-                        currentLine = _receivedData.Substring(0, newlineIndex);
-                        _receivedData = _receivedData.Substring(newlineIndex + 1);
-
-                        DataReceived?.Invoke(this, currentLine);
-
-                        //  Display it on the console.  
-                        Console.WriteLine("Line received: {0}\r", currentLine);
-
-                        // Echo the data back to the client.  
-                        if (IsRemoteEcho && !IsEchoSupressed) { Send(currentLine); }
-
-                        newlineIndex = _receivedData.IndexOf("\r");
-                    }
-
-                    Read();
+                    // Remote end closed the connection.
+                    Disconnect();
+                    return;
                 }
+
+                ProcessReceivedBytes(_buffer, bytesRead);
+
+                Read();
             }
             catch (Exception ex)
             {
@@ -213,12 +180,122 @@ namespace MUD.Telnet
             }
         }
 
+        /// <summary>
+        /// Parses raw bytes received from the remote end: handles telnet commands and
+        /// raises DataReceived for each complete line of text.
+        /// </summary>
+        internal void ProcessReceivedBytes(byte[] buffer, int count)
+        {
+            // Decode.
+            string receivedMessage = string.Empty;
+            bool previousWasCR = _lastDataByteWasCR;
+
+            // Handle telnet commands.
+            for (int i = 0; i < count; i++)
+            {
+                byte currentByte = buffer[i];
+
+                if (_currentCommand != null)
+                {
+                    if (_currentCommand.Command == null && currentByte == (byte)CommandCode.IAC)
+                    {
+                        // IAC IAC is a literal 0xFF data byte.
+                        _currentCommand = null;
+                        receivedMessage += _clientEncoding.GetString(new byte[] { currentByte });
+                        previousWasCR = false;
+                        continue;
+                    }
+
+                    if (_currentCommand.ProccessByte(currentByte))
+                    {
+                        if (!_currentCommand.IsComplete) { continue; }
+
+                        // This byte (the option) completed the command; it is consumed, not text.
+                        handleTelnetCommand(_currentCommand);
+                        _currentCommand = null;
+                        continue;
+                    }
+
+                    handleTelnetCommand(_currentCommand);
+                    _currentCommand = null;
+                }
+
+                if (currentByte == (byte)CommandCode.IAC)
+                {
+                    _currentCommand = new TelnetCommand();
+                    continue;
+                }
+
+                if (previousWasCR && currentByte == 0)
+                {
+                    // CR NUL is a bare CR; drop the NUL.
+                    previousWasCR = false;
+                    continue;
+                }
+
+                if (previousWasCR && currentByte == (byte)'\n' && receivedMessage.Length == 0)
+                {
+                    // LF completing a CRLF whose CR arrived in an earlier read; that line was already delivered.
+                    _lineEnding = "\r\n";
+                    previousWasCR = false;
+                    continue;
+                }
+
+                previousWasCR = currentByte == (byte)'\r';
+                receivedMessage += _clientEncoding.GetString(new byte[] { currentByte }); // hmm...
+            }
+
+            _lastDataByteWasCR = previousWasCR;
+
+            // Get last used line ending..
+            if (receivedMessage.Contains("\r\n"))
+            {
+                _lineEnding = "\r\n";
+            }
+            else if (receivedMessage.Contains("\r"))
+            {
+                _lineEnding = "\r";
+            }
+            else if (receivedMessage.Contains("\n"))
+            {
+                _lineEnding = "\n";
+            }
+
+            // Unify the line endings.
+            receivedMessage = receivedMessage.Replace("\n", "\r").Replace("\r\r", "\r");
+
+            // There might be more data, so store the data received so far.  
+            _receivedData = _receivedData + receivedMessage;
+
+            int newlineIndex = _receivedData.IndexOf("\r");
+
+            string currentLine = string.Empty;
+
+            // Peel off each line, treating a newline as the terminator for the command.                 
+            while (newlineIndex > -1)
+            {
+                // TODO: Handle TelnetCommands
+                currentLine = _receivedData.Substring(0, newlineIndex);
+                _receivedData = _receivedData.Substring(newlineIndex + 1);
+
+                DataReceived?.Invoke(this, currentLine);
+
+                //  Display it on the console.  
+                Console.WriteLine("Line received: {0}\r", currentLine);
+
+                // Echo the data back to the client.  
+                if (IsRemoteEcho && !IsEchoSupressed) { Send(currentLine); }
+
+                newlineIndex = _receivedData.IndexOf("\r");
+            }
+        }
+
         /// <summary>	
         /// Handles an incoming telnet command. May not need this here, but 	
         /// </summary>	
         private void handleTelnetCommand(TelnetCommand command)
         {
-            Console.WriteLine("Client at " + RemoteAddress.ToString() + " sent: " + command.Command + " " + command.Option + " " + Encoding.Default.GetString(command.NegotiationData.ToArray()));
+            Console.WriteLine("Client at " + _workSocket?.RemoteEndPoint + " sent: " + command.Command + " " + command.Option + " " + Encoding.Default.GetString(command.NegotiationData.ToArray()));
             // Durr do stuff.	
             switch (command.Command.GetValueOrDefault())
             {
@@ -256,4 +333,4 @@ namespace MUD.Telnet
             return;
         }
     }
-}
+}
