@@ -339,7 +339,11 @@ namespace MUD.Main
             Client client = (Client)sender;
             message = message.TrimEnd('\n').TrimEnd('\r');
 
-            Console.WriteLine("MESSAGE: " + message);
+            // Do not log connect/create lines: they carry credentials.
+            if (!Client.IsCredentialCommand(message))
+            {
+                Console.WriteLine("MESSAGE: length {0} from {1}", message.Length, client.RemoteAddress);
+            }
 
             if (message == "quit" || message.StartsWith("quit "))
             {
@@ -363,7 +367,7 @@ namespace MUD.Main
             }
             else if (message == "connect" || message.StartsWith("connect "))
             {
-                string[] args = message.Substring(8).Split(' ');
+                string[] args = message.Length > 8 ? message.Substring(8).Split(' ') : new string[0];
 
                 if (args.Length != 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
                 {
@@ -389,7 +393,7 @@ namespace MUD.Main
             }
             else if (message == "create" || message.StartsWith("create "))
             {
-                string[] args = message.Substring(7).Split(' ');
+                string[] args = message.Length > 7 ? message.Substring(7).Split(' ') : new string[0];
 
                 if (args.Length != 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
                 {

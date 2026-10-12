@@ -10,7 +10,7 @@ namespace MUD.Telnet
 {
     public class Client
     {
-        public IPEndPoint RemoteAddress { get { return (IPEndPoint)_workSocket.RemoteEndPoint; } }
+        public IPEndPoint RemoteAddress { get { return _remoteAddress; } }
         // Size of receive buffer.  
         public const int BufferSize = 1024;
 
@@ -24,6 +24,9 @@ namespace MUD.Telnet
 
         // Client socket.
         private Socket _workSocket = null;
+
+        // Remote endpoint, captured at construction so it stays available after the socket closes.
+        private readonly IPEndPoint _remoteAddress;
 
         private Encoding _clientEncoding = Encoding.ASCII;
 
@@ -48,6 +51,15 @@ namespace MUD.Telnet
         public Client(Socket workSocket)
         {
             _workSocket = workSocket;
+            _remoteAddress = (IPEndPoint)workSocket.RemoteEndPoint;
+        }
+
+        /// <summary>
+        /// True for lines carrying credentials (connect/create). Such lines must not be logged.
+        /// </summary>
+        public static bool IsCredentialCommand(string line)
+        {
+            return line == "connect" || line.StartsWith("connect ") || line == "create" || line.StartsWith("create ");
         }
 
         public void Send(TelnetCommand command)
@@ -280,8 +292,11 @@ namespace MUD.Telnet
 
                 DataReceived?.Invoke(this, currentLine);
 
-                //  Display it on the console.  
-                Console.WriteLine("Line received: {0}\r", currentLine);
+                //  Display it on the console, without the text of credential commands.  
+                if (!IsCredentialCommand(currentLine))
+                {
+                    Console.WriteLine("Line received: length {0} from {1}", currentLine.Length, RemoteAddress);
+                }
 
                 // Echo the data back to the client.  
                 if (IsRemoteEcho && !IsEchoSupressed) { Send(currentLine); }
@@ -295,7 +310,7 @@ namespace MUD.Telnet
         /// </summary>	
         private void handleTelnetCommand(TelnetCommand command)
         {
-            Console.WriteLine("Client at " + _workSocket?.RemoteEndPoint + " sent: " + command.Command + " " + command.Option + " " + Encoding.Default.GetString(command.NegotiationData.ToArray()));
+            Console.WriteLine("Client at " + _remoteAddress + " sent: " + command.Command + " " + command.Option + " " + Encoding.Default.GetString(command.NegotiationData.ToArray()));
             // Durr do stuff.	
             switch (command.Command.GetValueOrDefault())
             {

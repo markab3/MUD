@@ -59,9 +59,10 @@ namespace MUD.Core.GameObjects
 
         public virtual void DoHeartbeat()
         {
-            foreach (ExtendedProperty currentProperty in ExtendedProperties.Where(p => p.GetType().IsSubclassOf(typeof(IHeartbeat))))
+            var heartbeatProperties = ExtendedProperties.OfType<IHeartbeat>().ToList();
+            foreach (IHeartbeat currentProperty in heartbeatProperties)
             {
-                ((IHeartbeat)currentProperty).DoHeartbeat();
+                currentProperty.DoHeartbeat();
             }
         }
 
@@ -133,6 +134,12 @@ namespace MUD.Core.GameObjects
         public void MoveToRoom(string roomIdToEnter)
         {
             var roomToEnter = _world.GetRoom(roomIdToEnter);
+            if (roomToEnter == null)
+            {
+                ReceiveMessage("The way is blocked.");
+                return;
+            }
+
             if (CurrentLocation != null)
             {
                 CurrentLocation.ExitRoom(this, string.Format("{0} leaves.", this.ShortDescription));

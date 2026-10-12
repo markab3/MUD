@@ -67,7 +67,7 @@ namespace MUD.Core
             {
                 try
                 {
-                    var loadedAssembly = System.Reflection.Assembly.LoadFrom(currentDirectory + "\\" + currentAssembly);
+                    var loadedAssembly = System.Reflection.Assembly.LoadFrom(Path.Combine(currentDirectory, currentAssembly));
                     if (loadedAssembly != null)
                     {
                         libAssemblies.Add(loadedAssembly);
@@ -258,10 +258,18 @@ namespace MUD.Core
         // Might want this on the living object or whatever is needing a periodic update like this - like for HP regen, etc. Doesn't need to be centralized necessarily.
         private void doHeartbeat(object state)
         {
-            // Do heartbeat updates.
-            foreach (Player currentPlayer in Players)
+            // Do heartbeat updates. Iterate a snapshot so players added or removed during the tick
+            // cannot break enumeration, and catch per player so one failure cannot stop the timer.
+            foreach (Player currentPlayer in Players.ToList())
             {
-                currentPlayer.DoHeartbeat();
+                try
+                {
+                    currentPlayer.DoHeartbeat();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(string.Format("Exception encountered during heartbeat for {0}: {1}", currentPlayer.PlayerName, ex));
+                }
             }
         }
     }

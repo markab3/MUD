@@ -67,7 +67,7 @@ namespace MUD.Core.GameObjects
 
         public void TellRoom(string message, Living[] exclusionList = null)
         {
-            var recipients = _occupants;
+            var recipients = _occupants.ToList();
             if (exclusionList != null)
             {
                 recipients = recipients.Where(p => !exclusionList.Contains(p)).ToList();
@@ -222,10 +222,10 @@ namespace MUD.Core.GameObjects
             {
                 exitLine = string.Format("There are {0} obvious exits: {1}", Exits.Count.GetExactNumberText(), Exits.Select(e => e.Name).GetListText());
             }
-            exitLine = string.Format("%^{0}%^{1}%^{2}%^", EFormatOptions.Green, exitLine, EFormatOptions.Reset) + "/r/n";
+            exitLine = string.Format("%^{0}%^{1}%^{2}%^", EFormatOptions.Green, exitLine, EFormatOptions.Reset) + "\r\n";
 
             string occupantsLine = null;
-            var otherOccupants = _occupants.Where(p => p != examiner).ToList();
+            var otherOccupants = _occupants.ToList().Where(p => p != examiner).ToList();
             if (otherOccupants.Count == 1)
             {
                 occupantsLine = otherOccupants.Select(o => o.ShortDescription).GetListText() + " is here.\r\n";
