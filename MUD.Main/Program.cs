@@ -119,7 +119,7 @@ namespace MUD.Main
 
                 var database = dbClient.GetDatabase("testmud"); // This creates the database if it doesn't otherwise exist?
                 if (database == null) { Console.WriteLine("Database not found!"); }
-                var collection = database.GetCollection<BsonDocument>("players"); // Check that the collection is there. If it is not, then the collection exists in memory and is created on the actual DB when needed.
+                var collection = database.GetCollection<BsonDocument>("player"); // Check that the collection is there. If it is not, then the collection exists in memory and is created on the actual DB when needed.
                 var testFind = collection.AsQueryable().FirstOrDefault();
                 // collection = database.GetCollection<BsonDocument>("rooms"); // Check that the collection is there.
                 // collection.InsertOne(BsonDocument.Parse(jsonContent)); // The BSON object will have _id and it will be set by the insert call.

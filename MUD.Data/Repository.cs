@@ -33,7 +33,7 @@ namespace MUD.Data
         public bool Update(TModel model)
         {
             var result = _collection.ReplaceOne<TModel>((m => m.Id == model.Id), model);
-            var success = (result != null && result.IsModifiedCountAvailable && result.ModifiedCount == 1);
+            var success = (result != null && result.IsAcknowledged && result.MatchedCount == 1);
 
             if (success && !_modelCache.ContainsKey(model.Id))
             {

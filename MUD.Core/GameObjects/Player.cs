@@ -105,7 +105,7 @@ namespace MUD.Core.GameObjects
 
             if (ConnectionStatus == PlayerConnectionStatuses.LoggedIn)
             {
-                if (DateTime.Now.Subtract(_lastSave).Minutes >= 10)
+                if (DateTime.Now.Subtract(_lastSave).TotalMinutes >= 10)
                 {
                     Save();
                 }

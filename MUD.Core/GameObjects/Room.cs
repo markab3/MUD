@@ -29,6 +29,7 @@ namespace MUD.Core.GameObjects
             }
         }
 
+        [BsonIgnore]
         public List<Living> Occupants { get { return _occupants; } }
 
         private CommandSource _roomCommandSource = null;
