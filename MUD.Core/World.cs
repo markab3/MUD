@@ -37,8 +37,11 @@ namespace MUD.Core
 
         private CommandQueue _commandQueue;
 
-        public World(IMongoClient dbClient)
+        private WorldSettings _settings;
+
+        public World(IMongoClient dbClient, WorldSettings settings)
         {
+            _settings = settings;
             _serviceProvider = LoadTypes(dbClient);
 
             List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
@@ -96,7 +99,8 @@ namespace MUD.Core
 
                 // Load up the mongo client
                 .AddSingleton<IMongoClient>(dbClient)
-                .AddSingleton<IMongoDatabase>(dbClient.GetDatabase("testmud"))
+                .AddSingleton<WorldSettings>(_settings)
+                .AddSingleton<IMongoDatabase>(dbClient.GetDatabase(_settings.DatabaseName))
 
                 // Load utility stuff?
                 .AddSingleton<CommandQueue>()
@@ -219,7 +223,7 @@ namespace MUD.Core
                 newPlayer.ShortDescription = userName;
                 newPlayer.Password = password;
                 newPlayer.Race = "human";
-                newPlayer.CurrentLocationId = "5f6e27f20c1fdd24b4b18b1a";
+                newPlayer.CurrentLocationId = _settings.StartRoomKey;
                 newPlayer.SelectedTerm = "Default"; // Or just do the subnegotiation to get a value for this...
                 newPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
                 newPlayer.Connection = connectingClient;
@@ -228,6 +232,19 @@ namespace MUD.Core
                 return true;
             }
             return false;
+        }
+
+        // Imports every area file in the configured content directory (no-op when none is configured).
+        public void ImportContent()
+        {
+            if (string.IsNullOrWhiteSpace(_settings.ContentDirectory) || !_settings.ImportOnStartup) { return; }
+
+            var store = new MUD.Core.Import.RoomRepositoryImportStore(_serviceProvider.GetService<IRoomRepository>());
+            var service = new MUD.Core.Import.AreaFileService(new MUD.Core.Import.AreaImporter(store), _settings.ContentDirectory);
+            foreach (var line in service.ImportAll())
+            {
+                Console.WriteLine(line);
+            }
         }
 
         public Room GetRoom(string roomId)

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
@@ -9,6 +9,9 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.4.3" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\MUD.Core\MUD.Core.csproj" />
+    <ProjectReference Include="..\MUD.Data\MUD.Data.csproj" />
+    <ProjectReference Include="..\MUD.PlanarRealms\MUD.PlanarRealms.csproj" />
     <ProjectReference Include="..\MUD.Telnet\MUD.Telnet.csproj" />
   </ItemGroup>
 </Project>
