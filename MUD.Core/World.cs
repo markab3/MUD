@@ -228,6 +228,12 @@ namespace MUD.Core
                 newPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
                 newPlayer.Connection = connectingClient;
 
+                if (!newPlayer.Save())
+                {
+                    connectingClient.Send("Unable to create your character right now. Please try again later.\r\n");
+                    return false;
+                }
+
                 AddPlayer(newPlayer);
                 return true;
             }
