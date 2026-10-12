@@ -27,6 +27,12 @@ namespace MUD.Core.GameObjects
             return LongDescription;
         }
 
+        // Examination by a particular Living. Defaults to Examine() so existing overrides keep working.
+        public virtual string Examine(Living examiner)
+        {
+            return Examine();
+        }
+
         public virtual bool IsPluralMatchForString(string input)
         {
             var results = new List<string>();
