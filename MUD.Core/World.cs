@@ -37,8 +37,11 @@ namespace MUD.Core
 
         private CommandQueue _commandQueue;
 
-        public World(IMongoClient dbClient)
+        private WorldSettings _settings;
+
+        public World(IMongoClient dbClient, WorldSettings settings)
         {
+            _settings = settings;
             _serviceProvider = LoadTypes(dbClient);
 
             List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
@@ -64,7 +67,7 @@ namespace MUD.Core
             {
                 try
                 {
-                    var loadedAssembly = System.Reflection.Assembly.LoadFrom(currentDirectory + "\\" + currentAssembly);
+                    var loadedAssembly = System.Reflection.Assembly.LoadFrom(Path.Combine(currentDirectory, currentAssembly));
                     if (loadedAssembly != null)
                     {
                         libAssemblies.Add(loadedAssembly);
@@ -96,7 +99,8 @@ namespace MUD.Core
 
                 // Load up the mongo client
                 .AddSingleton<IMongoClient>(dbClient)
-                .AddSingleton<IMongoDatabase>(dbClient.GetDatabase("testmud"))
+                .AddSingleton<WorldSettings>(_settings)
+                .AddSingleton<IMongoDatabase>(dbClient.GetDatabase(_settings.DatabaseName))
 
                 // Load utility stuff?
                 .AddSingleton<CommandQueue>()
@@ -219,15 +223,34 @@ namespace MUD.Core
                 newPlayer.ShortDescription = userName;
                 newPlayer.Password = password;
                 newPlayer.Race = "human";
-                newPlayer.CurrentLocationId = "5f6e27f20c1fdd24b4b18b1a";
+                newPlayer.CurrentLocationId = _settings.StartRoomKey;
                 newPlayer.SelectedTerm = "Default"; // Or just do the subnegotiation to get a value for this...
                 newPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
                 newPlayer.Connection = connectingClient;
+
+                if (!newPlayer.Save())
+                {
+                    connectingClient.Send("Unable to create your character right now. Please try again later.\r\n");
+                    return false;
+                }
 
                 AddPlayer(newPlayer);
                 return true;
             }
             return false;
+        }
+
+        // Imports every area file in the configured content directory (no-op when none is configured).
+        public void ImportContent()
+        {
+            if (string.IsNullOrWhiteSpace(_settings.ContentDirectory) || !_settings.ImportOnStartup) { return; }
+
+            var store = new MUD.Core.Import.RoomRepositoryImportStore(_serviceProvider.GetService<IRoomRepository>());
+            var service = new MUD.Core.Import.AreaFileService(new MUD.Core.Import.AreaImporter(store), _settings.ContentDirectory);
+            foreach (var line in service.ImportAll())
+            {
+                Console.WriteLine(line);
+            }
         }
 
         public Room GetRoom(string roomId)
@@ -241,10 +264,18 @@ namespace MUD.Core
         // Might want this on the living object or whatever is needing a periodic update like this - like for HP regen, etc. Doesn't need to be centralized necessarily.
         private void doHeartbeat(object state)
         {
-            // Do heartbeat updates.
-            foreach (Player currentPlayer in Players)
+            // Do heartbeat updates. Iterate a snapshot so players added or removed during the tick
+            // cannot break enumeration, and catch per player so one failure cannot stop the timer.
+            foreach (Player currentPlayer in Players.ToList())
             {
-                currentPlayer.DoHeartbeat();
+                try
+                {
+                    currentPlayer.DoHeartbeat();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(string.Format("Exception encountered during heartbeat for {0}: {1}", currentPlayer.PlayerName, ex));
+                }
             }
         }
     }

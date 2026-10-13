@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [hermes]
+  push:
+    branches: [hermes]
+
+jobs:
+  build-and-test:
+    name: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # All projects target net8.0.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore MUD.sln
+
+      - name: Build
+        run: dotnet build MUD.sln --no-restore
+
+      # hermes has no test project yet. Skip tests only until one exists
+      # (a project referencing Microsoft.NET.Test.Sdk); remove this guard once tests merge.
+      - name: Detect test projects
+        id: tests
+        run: |
+          if grep -rlq "Microsoft.NET.Test.Sdk" --include=*.csproj .; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No test project found; skipping dotnet test."
+          fi
+
+      - name: Test
+        if: steps.tests.outputs.found == 'true'
+        run: dotnet test MUD.sln --no-build

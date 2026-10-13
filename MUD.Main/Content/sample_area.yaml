@@ -1,0 +1,59 @@
+# Sample area file. Format: specs/ROOM_FILES.md.
+# Import with the creator command:  import sample_area
+# (Content directory is set by WorldSettings:ContentDirectory; see appsettings.json.)
+area:
+  schema_version: 1
+  prefix: sample_area
+  name: "Sample Area"
+  description: "A tiny area demonstrating exits, reverse exits, features and a search property."
+  defaults:
+    coords:
+      z: 0
+
+rooms:
+  - key: hall
+    short: "a small stone hall"
+    long: |
+      Pale light spills through a high window onto a worn stone floor.
+      A heavy oak table stands against the far wall.
+    handles: [hall]
+    coords: {x: 0, y: 0}
+    exits:
+      - dir: north
+        to: study
+        reverse: south
+      - dir: up
+        to: landing
+        reverse: down
+    features:
+      - short: "a heavy oak table"
+        long: "A heavy oak table, scarred by years of use. Something might be hidden on it."
+        room_line: "A heavy oak table stands against the far wall."
+        detail: "The table is scarred by years of use. Something might be hidden on it."
+        handles: [table]
+        adjectives: [heavy, oak]
+        plurals: [tables]
+    properties:
+      - behavior: search
+        id: table_search
+        params:
+          target: table
+          refresh_ms: 600000
+          reward:
+            short: "a really cool sword"
+            long: "A sword that is really, truly cool."
+            handles: [sword]
+            adjectives: [cool]
+            plurals: [swords]
+
+  - key: study
+    short: "a cluttered study"
+    long: >
+      Books lie in drifts on every surface. A narrow window overlooks
+      the astral void.
+    coords: {x: 0, y: 1}
+
+  - key: landing
+    short: "a drafty landing"
+    long: "A small landing at the top of a spiral stair. The air is cold here."
+    coords: {x: 0, y: 0, z: 1}
