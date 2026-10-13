@@ -1,6 +1,6 @@
 # Single Game Thread Loop (design spec)
 
-Status: DRAFT for review. Docs only; no code changes accompany this spec.
+Status: DRAFT for review (round 2: based on hermes 97304c8). Docs only; no code changes accompany this spec.
 
 ## 1. Goals and decisions (fixed by the owner)
 
@@ -19,35 +19,69 @@ Status: DRAFT for review. Docs only; no code changes accompany this spec.
 
 ## 2. Current state (what is being replaced)
 
-Observed in the code on branch `gameloop-spec` (cf8b7df):
+Observed in the code on branch `hermes` at 97304c8 (gameloop-spec has hermes merged in; this
+spec is the only difference). File references below are to that tree.
 
 - `World.Start()` (MUD.Core/World.cs) creates a `System.Threading.Timer` (2 s) that runs
   `doHeartbeat` on a threadpool thread, then spins `while (_isRunning) _commandQueue.ExecuteAllCommands();`
-  with no blocking: a busy loop burning one core.
+  with no blocking: a busy loop burning one core. `World.Stop()` calls `_heartbeatTimer.Change`
+  and sets a plain bool from another thread. `doHeartbeat` already iterates `Players.ToList()` and
+  catches per player, but it still runs on the timer thread.
 - `CommandQueue` (MUD.Core/Commands/CommandQueue.cs) keeps a per-`Living`
   `ConcurrentQueue<CommandExecution>`. `ExecuteAllCommands` starts each command with
-  `Task.Run`, guarded by `IsBusy`. So commands run on arbitrary threadpool threads, concurrently
-  across players, and concurrently with the heartbeat timer. `IsBusy` is a plain
-  bool, not a memory-safe handshake. "stop" clears a queue.
-- `Player.DataReceivedHandler` runs on the socket callback thread. It calls
-  `ResolveCommand` (reads world/room/player state) and constructs `CommandExecution`,
-  which calls `ParseCommand` (also reads state), before enqueueing.
-- `Client.Send` calls `Socket.BeginSend` directly from whatever thread calls it.
-  Concurrent `BeginSend` on one socket can interleave or reorder data. `sendCallback` can
-  call `Disconnect()`, which raises `ClientDisconnected` on the I/O thread.
-  `Client.readCallback` raises `DataReceived` inline on the receive thread.
-- `Player.Save()` calls `_playerRepository.Insert/Update` synchronously on the calling
-  thread (command thread, heartbeat thread, or disconnect callback thread). `Player.Quit()`
-  saves, then `World.RemovePlayer`, then `Connection.Disconnect()`.
-  `ClientDisconnectedHandler` calls `Quit()` directly on the socket thread.
-- `Player.DoHeartbeat()` triggers a `Save()` every 10 minutes using `DateTime.Now`.
-  (Note: `TimeSpan.Minutes` is the minutes component, not total; see Risks.)
+  `Task.Run`, guarded by `Living.IsBusy` (a plain `bool`, Living.cs). So commands run on arbitrary
+  threadpool threads, concurrently across players and with the heartbeat timer. "stop" clears a
+  queue; "Command queued." is sent when the issuer is busy.
+- `Player.DataReceivedHandler` (MUD.Core/GameObjects/Player.cs) runs on the socket callback thread.
+  It calls `ResolveCommand` (reads world/room/player state) and constructs `CommandExecution`,
+  which calls `ParseCommand` (also reads state), before enqueueing. `World.AddPlayer` also calls
+  `DataReceivedHandler(null, "look")` directly.
+- `Client.Send(byte[])` (MUD.Telnet/Client.cs) calls `Socket.BeginSend` directly from whatever thread
+  calls it. Concurrent `BeginSend` on one socket can interleave or reorder data. `sendCallback` and
+  `Read` failures call `Disconnect()`. `Disconnect()` is now idempotent (`Interlocked.Exchange`)
+  and raises `ClientDisconnected` once, but it raises it inline on whichever thread called it.
+  `readCallback` -> `ProcessReceivedBytes` raises `DataReceived` inline on the receive thread.
+  `Send(string)` now normalises line endings correctly and escapes IAC.
+- `Server` (MUD.Telnet/Server.cs) keeps `_clients` under `_clientsLock`. `Stop()` closes the
+  listener, then for each client snapshot sends the shutdown text with `Send` and calls
+  `Disconnect()` immediately (no flush: the text races the socket close).
+  `handleClientDisconnect` removes the client and re-raises `ClientDisconnected`.
+- `Player.Save()` calls `_playerRepository.Insert/Update` synchronously on the calling thread
+  (command task, heartbeat thread, or disconnect callback thread) and returns a bool.
+  `Player.Quit()` guards re-entry with `_isQuitting`, sends "Thanks for playing!", sets
+  Offline, calls `Save()`, and only if that succeeds calls `World.RemovePlayer` and
+  `Connection.Disconnect()`; on failure it clears `_isQuitting` and leaves the player in
+  the world. `ClientDisconnectedHandler` calls `Quit()` on the socket thread.
+- `Player.DoHeartbeat()` calls `Save()` when `DateTime.Now.Subtract(_lastSave).TotalMinutes >= 10`.
+  `Living.DoHeartbeat` iterates `ExtendedProperties.OfType<IHeartbeat>()`.
+- Write-through persistence (specs/RUNTIME_STATE.md): `GetCommand`/`DropCommand` call
+  `Player.Save(true)` and `Room.SaveState()` from the command, synchronously. `Room.SaveState`
+  calls `IRepository.UpdateFields` (field-level `$set` of `Items`); `Room.Save()` is a whole-document
+  upsert used by Build/Terraform. `Repository<T>` guards its cache and every collection call
+  with one lock (`_sync`) held across the Mongo round trip. Its own comment says live entities
+  are NOT locked and "game logic is expected to mutate them from the command-queue thread",
+  which is exactly what this spec turns into a hard single-thread rule.
+- `Repository.Update` is an upsert whose success is `MatchedCount == 1 || UpsertedId != null`
+  (an unchanged document is a success). The cache is never evicted except on Delete, and
+  the cached instance is the live game object (rooms hold occupants).
 - `World.Players` is a plain `List<Player>` mutated from login (socket thread via
-  `Program.messageReceived` -> `DoLogin`/`DoCreateUser` -> `AddPlayer`), quit, and read by
-  heartbeat and `who`. `Program.messageReceived` (pre-login handler) also reads it on socket threads.
-- `SearchCommand` calls `Thread.Sleep(3000)`, which is currently "tolerated" because every
-  command has its own task. Under a single game thread it would freeze the world.
-  `Living.IsBusy` is only touched in `CommandQueue`.
+  `Program.messageReceived` -> `World.DoLogin`/`DoCreateUser` -> `AddPlayer`), quit, and read by
+  heartbeat and by the pre-login `who` on socket threads.
+- `World.DoLogin`/`DoCreateUser` do `playerRepository.Search` (a DB read) and `Player.Save()` on the
+  calling socket thread. `Living.CurrentLocation` lazily calls `World.GetRoom` -> `Repository.Get`
+  (DB read on a cache miss) from whichever thread touches it first.
+- `SearchCommand.DoCommand` (MUD.Core/Commands/Player/SearchCommand.cs) calls `Thread.Sleep(3000)`,
+  which is tolerated today only because every command has its own task. Under a single game thread
+  it would freeze the world. It is the only `Sleep` in non-test code. `IsBusy` is only touched in
+  `CommandQueue` and declared on `Living`.
+- `Program.Main` (MUD.Main/Program.cs) starts `gameWorldThread` (`_gameWorld.Start`), then the server
+  thread, then waits for console 'q' and calls `_gameWorld.Stop()` then `_serverInstance.Stop()`.
+  `Program.messageReceived` (connect/create/who/quit pre-login handler) runs on socket threads and
+  is unsubscribed (`DataReceived -=`) once login succeeds.
+- Existing tests that pin current behaviour and will need deliberate, reviewed updates as the
+  migration lands (do not edit them just to pass): MUD.Tests/ConcurrencySafetyTests.cs,
+  PlayerQuitTests.cs, ServerLifecycleTests.cs, TelnetClientTests.cs, RuntimeStateTests.cs,
+  PersistenceFixesTests.cs.
 
 ## 3. Thread model
 
@@ -87,8 +121,8 @@ Rule: only the game thread reads or writes `World`, `Room`, `Living`, `Inventory
 
 Inbound (socket -> game): one `Channel<InboundItem>` created with
 `Channel.CreateUnbounded` (single reader, multiple writers) — or `BlockingCollection<InboundItem>`
-if the project prefers it. Projects on this branch target netcoreapp3.1 (a `dotnet8` branch exists), which
-ships System.Threading.Channels; `BlockingCollection` is equally available.
+if the project prefers it. All projects on hermes target net8.0 (MUD.*.csproj), which ships System.Threading.Channels;
+`BlockingCollection` is equally available.
 `InboundItem` is a small record/struct: `{ Client Client; InboundKind Kind; string Line }`
 where Kind is `Line`, `Connected`, `Disconnected`, or `WorldEvent` (persistence completion,
 admin action, shutdown request). Using one queue for all kinds keeps ordering simple:
@@ -200,18 +234,19 @@ pseudo-command. This is flagged as part of migration step 6 and open question Q6
   channel. They never touch the socket directly. A single writer loop per client reads the
   channel and performs `SendAsync`/`BeginSend` sequentially, awaiting each completion
   before the next. Ordering is the queue order. There is never more than one send in flight.
-- Line-ending normalization is done in `Enqueue` (note: the current `Send(string)` computes
-  `data.Replace(...)` and discards the result, so normalization currently does nothing; fixing that is a
-  behavior change and is flagged, not folded in. Q7).
+- Line-ending normalization and IAC escaping (already correct in `Send(string)` on hermes) are done in
+  `Enqueue`, unchanged, so the writer loop only deals in final bytes.
 - Write failure: the writer logs, marks the client dead, completes the channel and
   requests disconnect through the inbound queue as a `Disconnected` item, not by raising events from the
   writer thread.
-- `Disconnect()` becomes idempotent (guarded with `Interlocked.Exchange`) and its
-  `ClientDisconnected` event is not raised on the game thread's stack; the I/O layer posts
-  a `Disconnected` item and the game thread performs the logout (section 8.3).
+- `Disconnect()` is already idempotent (`Interlocked.Exchange`, raises `ClientDisconnected` once); keep
+  that. What changes is that `ClientDisconnected` no longer runs `Player.Quit` on the I/O thread: the
+  I/O layer posts a `Disconnected` item and the game thread performs the logout (section 8.4).
+  `Server.handleClientDisconnect` (removal from `_clients`) stays on the I/O side.
 - Graceful close: `Disconnect(flush: true)` completes the outbound channel for writing, lets
   the writer drain remaining items (bounded by a timeout, proposed 2 s), then shuts down the socket.
-  This is how "Thanks for playing!" reliably reaches the client before close.
+  This is how "Thanks for playing!" and the `Server.Stop` shutdown text reliably reach the client
+  before close (today both race `Disconnect()`).
 - Only `Client`s and the writer loop live in MUD.Telnet; the telnet project must not
   reference MUD.Core. Terminal-handler resolution (`ResolveOutput`) stays in `Player.ReceiveMessage`
   on the game thread, producing the final string before enqueue.
@@ -224,10 +259,12 @@ The game thread builds a `BsonDocument` for the entity (serialize the Player via
 `ToBsonDocument()` or the class map; includes inventory) — a CPU-only, in-memory operation —
 and posts `PersistRequest { string Collection; string Id; BsonDocument Doc; long Version; Reason; bool IsInsert }`.
 The worker performs only `ReplaceOne/InsertOne` (upsert by `_id`) against Mongo.
-Cache updates in the repository (currently `Repository._modelCache`, a non-thread-safe
-`Dictionary`; note branch `runtimestate` makes Repository thread-safe) are not the worker's
-job: the game thread already holds the live object and the cache is updated on the
-game thread when an entity is created/loaded. The worker never touches live entities.
+`Repository<T>` is thread-safe (one `_sync` lock around cache and collection) and its cache holds the
+live entity, so the worker must not call `Repository.Update/Insert` with a live entity (that would
+serialise the live object off the game thread). It needs a snapshot-based write method on the
+repository (for example `ReplaceDocument(id, BsonDocument)`, plus the existing `UpdateFields(id, BsonDocument)`
+which already takes a BsonDocument) that does not touch the cache. The cache entry is created when the
+game thread creates or loads the entity, as today. The worker never touches live entities.
 
 Snapshot cost: serializing a Player on the game thread is the accepted price for no locks;
 it should be measured (Q3) and, if heavy, snapshot incrementally.
@@ -235,10 +272,36 @@ it should be measured (Q3) and, if heavy, snapshot incrementally.
 ### 8.2 Autosave
 
 Scheduling lives on the game thread: each player has `NextAutosaveAt` (replaces
-`_lastSave` + `DateTime.Now.Subtract(...).Minutes >= 10`). The heartbeat tick checks it and
+`_lastSave` + `DateTime.Now.Subtract(_lastSave).TotalMinutes >= 10`, now using the injected clock). The heartbeat tick checks it and
 posts a snapshot. Interval stays 10 minutes (config value). `Save` no longer prints
 "Saving..." synchronously about completion; the message is sent when the request is enqueued
 (Q8 on whether to also confirm on completion).
+
+### 8.2a Write-through mutations (specs/RUNTIME_STATE.md)
+
+RUNTIME_STATE.md sets a policy of write-through: get/drop save immediately, via `Player.Save(true)`
+(whole-document replace) and `Room.SaveState()` (field-level `$set` of `Items`). Those calls are made
+synchronously from commands today, which breaks the "no DB writes on the game thread" decision.
+Proposed mapping, preserving the policy's intent (every mutation is handed to persistence immediately, no
+debounce, nothing held back for a timer):
+
+- `Player.Save(quiet)` and `Room.SaveState()` become "snapshot and post" calls. The post happens in the
+  same command, in the same order as today (get: player then room; drop: room then player). Because the
+  single worker is FIFO, the persisted order is the same, so the "crash can duplicate but never destroy"
+  property is kept. It does NOT hold if the process dies with requests still queued (a short window, as with
+  any async write). This weakens RUNTIME_STATE.md section 1 ("nothing is lost if the process is killed")
+  and needs owner sign-off (Q16).
+- `PersistRequest` needs two kinds: `Replace` (whole document, upsert) and `SetFields` (field-level `$set`;
+  falls back to `Replace` on the worker if `MatchedCount == 0`, as `Room.SaveState` falls back to `Save`
+  today, which needs a snapshot of the whole entity captured at post time). Coalescing (8.3) applies per
+  `(collection, id, kind)`; a `Replace` supersedes earlier queued `SetFields` for the same id, but a
+  `SetFields` never supersedes a queued `Replace` (it is applied after it).
+- `Room.Save()` used by Build/Terraform (definition edits) is a `Replace` request. Importer
+  `UpsertFields` runs from the creator import command and from startup `World.ImportContent`
+  (before the game thread exists); the in-game path is a blocking-I/O command (rule 6.2, Q5).
+- Callers that use the bool result of `Save()` (`World.DoCreateUser`, `TerraformCommand`,
+  `Player.Quit`, `PromoteCommand` via `recipient.Save()`) can no longer branch on the DB outcome
+  synchronously. The migration must decide per call site (Q12, Q16).
 
 ### 8.3 Coalescing, ordering, failure and retry
 
@@ -247,7 +310,7 @@ posts a snapshot. Interval stays 10 minutes (config value). `Save` no longer pri
 - Coalescing: if a request for entity X is queued and a newer one arrives before the older
   one starts, the worker may skip the older one (keep latest per `(collection, id)`), except for
   requests flagged `Final` (logout), which are never dropped and always applied last.
-- Failure: a failed write (exception or `ModifiedCount == 0` on an existing id) is retried by the worker
+- Failure: a failed write (exception, or not acknowledged / no match and no upsert) is retried by the worker
   with exponential backoff (proposed 1 s, 2 s, 4 s ... capped at 30 s) up to a max attempts or max age
   (proposed: retry indefinitely for `Final` requests while the process runs; non-final
   requests are superseded by the next snapshot anyway, so after 5 attempts they are
@@ -256,9 +319,9 @@ posts a snapshot. Interval stays 10 minutes (config value). `Save` no longer pri
 - Failure surfacing: after the first failure for an entity the worker posts a `WorldEvent`
   (`PersistFailed(id, attempt)`) to the game thread, which may warn the player/admins once.
   On success after failures, a `PersistRecovered` event is posted.
-- Existing quirk to carry over: `Update` reports success only when `IsModifiedCountAvailable
-  && ModifiedCount == 1`, so saving an unchanged document reports failure. The worker must treat
-  `MatchedCount == 1` as success. This is a fix flagged for the implementer, Q9.
+- Success criterion: acknowledged and (`MatchedCount == 1 || UpsertedId != null`), as in
+  `Repository.Update` on hermes (an unchanged document counts as success). A raw `ReplaceOne` in the
+  worker must use the same rule.
 - Process exit: pending requests are flushed during shutdown (section 9). If the DB is down
   at exit, unsaved snapshots are written to a local spool file (proposed
   `<data dir>/unsaved/<collection>-<id>.json`, extended JSON) and replayed at next start (Q10).
@@ -281,8 +344,8 @@ For a player quit or disconnect, on the game thread, in this order:
    and later overwrite newer data. (If the repository cache keeps the live object, the cache
    must be updated or invalidated consistently; Q11.)
 
-Note: today `Quit()` only disconnects if `Save()` succeeded and otherwise leaves the player
-logged in with a disconnected socket (an "Uh oh!" stub). In the new model disconnect never waits on the DB; the
+Note: today `Quit()` (guarded by `_isQuitting`) only removes the player and disconnects if `Save()`
+succeeded; otherwise it leaves the player in the world, clears `_isQuitting` and allows another quit attempt. In the new model disconnect never waits on the DB; the
 fate of a failed final save is handled by retry plus the spool file. Behavior change; Q12.
 
 Net-dead handling (keeping the player in the world after a lost connection) is not part
@@ -310,8 +373,9 @@ Shutdown (triggered by console 'q', SIGTERM or an admin command; all just post a
 7. `Program.Main` joins game thread, then persistence worker, then exits.
 
 `Program.Main` currently calls `_gameWorld.Stop()` then `_serverInstance.Stop()`, where `World.Stop()`
-changes the timer and sets a bool from another thread, and `Server.Stop()` sends and
-disconnects inline. These become requests that return after the sequence above completes (join with timeout).
+changes the timer and sets a bool from another thread, and `Server.Stop()` closes the listener then does
+`Send` + `Disconnect()` per client inline, with no flush. `Disconnect()` raises `ClientDisconnected`, which
+runs `Player.Quit` (and its synchronous `Save`) on the stopping thread, concurrent with the game thread. These become requests that return after the sequence above completes (join with timeout).
 A second shutdown request while draining is ignored.
 
 Unhandled exceptions on the game thread: caught at the top of each item/tick, logged,
@@ -328,9 +392,8 @@ are additive.
    inside). `World.Start` runs `GameLoop.Run` on the existing thread created in `Program.Main`.
    Remove the busy `while` in `World.Start`.
 2. Replace the heartbeat Timer: delete `_heartbeatTimer` (World.cs, `Start`/`Stop`), call
-   `doHeartbeat` from the tick every `HeartbeatEvery` ticks. `World.Stop` posts the shutdown item.
-   Note that `Living.DoHeartbeat` filter `p.GetType().IsSubclassOf(typeof(IHeartbeat))` is wrong for an interface
-   (it is never true, so property heartbeats never fire). Do not fix it silently: flag it (see Risks).
+   `doHeartbeat` from the tick every `HeartbeatEvery` ticks (keep its per-player try/catch and
+   `ToList()` snapshot). `World.Stop` posts the shutdown item.
 3. Replace `CommandQueue`: delete `Task.Run` and the concurrent dictionary; move per-living queue into
    `Living` (game-thread only); `IsBusy` -> `NextActionAt`; keep `StopCommand` semantics and the "Command queued."
    message. Keep the class name `CommandQueue` if less churn is wanted (it can still be DI-registered at
@@ -352,15 +415,17 @@ are additive.
    at first, flagged as a known violation of rule 6.2, and file a follow-up.
 7. `Player.Save/Quit`: `Save()` becomes "build snapshot and post to persistence worker" and returns void
    (or a Task-less handle); `Quit()` implements 8.4. `ClientDisconnectedHandler` is removed
-   (replaced by `Disconnected` inbound items). Add `NextAutosaveAt`, drop `_lastSave` and the
-   `.Minutes` check.
+   (replaced by `Disconnected` inbound items). Add `NextAutosaveAt`, drop `_lastSave` and its `TotalMinutes` check. Keep the intent of the
+   `_isQuitting` guard (logout runs once per session) as a game-thread flag. Re-point the get/drop/terraform/
+   promote/create call sites per 8.2a.
 8. Add the persistence worker (MUD.Data or MUD.Core) with retry/spool, and shutdown drain (section 9).
    Wire `Program.Main` shutdown.
 9. Convert `SearchCommand` (remove `Thread.Sleep`) and audit all commands for blocking
    (grep for `Sleep`, `.Wait(`, `.Result`, repository calls, file I/O). Creator import/export/terraform
    commands: either accept bounded sync file I/O initially (flag it) or move to the worker.
 10. Remove now-dead code (`CommandQueue` dictionary, `IsBusy`) and thread-safety patches that
-    become unnecessary (repository locking may stay since the worker thread also reads/writes).
+    become unnecessary. `Repository` locking stays: the worker thread and the game thread both use it.
+    Update the Repository.cs comment that says live entities are mutated "from the command-queue thread".
 
 ## 11. Test strategy
 
@@ -402,16 +467,17 @@ are additive.
 - Snapshot serialization on the game thread may be expensive for large inventories (Q3).
 - Behavior change in logout: connection loss no longer depends on the DB write succeeding.
   Mitigation: retry plus spool, and the re-login guard (8.4).
-- Login while final save pending, plus the repository's model cache: the cache may hand
-  a stale object to a new session. Needs a decision on cache ownership (Q11).
-- Latent bugs found in current code that this migration will expose or interact with
-  (document only; not fixed in this spec): `Living.DoHeartbeat` uses
-  `IsSubclassOf(typeof(IHeartbeat))` (always false for interfaces), `Player.DoHeartbeat` uses
-  `TimeSpan.Minutes` (component, not total minutes; autosave could trigger at wrong times),
-  `Client.Send(string)` discards the result of the line-ending `Replace`,
-  `Repository.Update` treats an unchanged document as failure, `World.Players` iterated while mutated,
-  `Server.Stop` message typo ("closeed"), `Program.messageReceived` `message.Substring(8)` fails
-  for a bare "connect". Recommend separate backlog cards.
+- Login while final save pending, plus the repository's model cache (never evicted, holds the live
+  object): `Search` maps results onto the cached instance, so a re-login receives the old live
+  `Player` object, not a fresh load. Needs a decision on cache ownership (Q11).
+- Existing-code issues still present on hermes that interact with this work (document only; none fixed
+  here): `SearchCommand` `Thread.Sleep(3000)`; `World.Players` is an unsynchronised `List<Player>` read
+  by pre-login `who` on socket threads; `Living.CurrentLocation` lazy DB read from arbitrary threads;
+  `Server.Stop` has no flush. Problems reported in an earlier draft (IHeartbeat filter, `Minutes` vs
+  `TotalMinutes`, discarded `Replace`, `ModifiedCount` success rule, repository thread safety, bare
+  `connect` `Substring`) are fixed on hermes and not repeated here.
+- Write-through weakening: moving get/drop saves off-thread (8.2a) means a kill -9 can lose the last
+  few queued writes that RUNTIME_STATE.md currently guarantees are durable. Needs owner sign-off (Q16).
 - Large mechanical diff in Client and Program touches shared hot files (Client.cs, Player.cs, World.cs);
   steps should land as small PRs in order to avoid conflicts with sibling branches.
 - Unbounded inbound queue plus flooding clients: mitigated by per-client caps (Q4).
@@ -421,7 +487,7 @@ are additive.
 
 ## 13. Open questions
 
-Q1. `Channel<T>` vs `BlockingCollection<T>` for inbound. Both are available on netcoreapp3.1. Proposal: `BlockingCollection` for the simplest timeout read, unless Channels are already in use.
+Q1. `Channel<T>` vs `BlockingCollection<T>` for inbound. Both are available on net8.0. Proposal: `BlockingCollection` for the simplest timeout read, unless Channels are already in use.
 Q2. Tick interval: 100 ms proposed; heartbeat stays 2 s. Confirm or give another value.
 Q3. Acceptable snapshot cost on the game thread; do we need incremental/dirty-flag snapshots?
 Q4. Inbound flood limits (line length 1024, 20 queued lines per client): confirm values and the penalty.
@@ -429,13 +495,17 @@ Q5. Login/creation and other DB reads (room lazy load via `World.GetRoom`, creat
     go through the persistence worker asynchronously now, or is synchronous read on the game thread acceptable
     as an interim step? The card says DB *writes* never run on the game thread; reads are not specified.
 Q6. Interim handling of `SearchCommand` (3 s delay) before a scheduled-event queue exists.
-Q7. Fix `Client.Send` line-ending normalization as part of this work, or separately (behavior change)?
+Q7. (Withdrawn: line-ending normalisation is already fixed on hermes.)
 Q8. Should "Saving..." be followed by a completion/failure message to the player?
-Q9. Treat `MatchedCount == 1` as save success (fixing the unchanged-document false failure)?
+Q9. (Withdrawn: `Repository.Update` already treats an unchanged document as success.)
 Q10. Local spool file on shutdown with DB unavailable: acceptable, and where does it live?
-Q11. Who owns the repository model cache (it holds live entities shared with the game thread)? Should the
-    worker bypass it entirely (proposed) and what happens to cached Player objects after logout?
+Q11. Who owns the repository model cache (live entities, never evicted, `Search` maps onto them)? Should the
+    worker bypass it entirely (proposed, 8.1) and should a Player be evicted after its Final write completes
+    so a re-login reloads it?
 Q12. Accept the logout behavior change (disconnect no longer waits on a successful save)?
 Q13. On a fatal game-loop error: attempt orderly shutdown/save (proposed) or crash fast?
 Q14. Is net-dead/linkdead handling (player stays in world after disconnect) wanted soon? It affects 8.4.
 Q15. Single persistence worker thread, or one per collection if throughput demands it?
+Q16. RUNTIME_STATE.md says every mutation is saved immediately and nothing is lost if the process is killed.
+    Moving those saves to the worker (8.2a) weakens that to "queued, flushed on clean shutdown". Accept, or keep a
+    narrow synchronous exception for get/drop?
