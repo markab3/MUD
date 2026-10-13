@@ -23,6 +23,9 @@ namespace MUD.Core.GameObjects
 
         public string PlayerName { get; set; }
 
+        // Lowercase, trimmed PlayerName. Login and create match on this by exact equality; a unique index guards it.
+        public string NameKey { get; set; }
+
         public string Password { get; set; }
 
         public string SelectedTerm { get; set; }

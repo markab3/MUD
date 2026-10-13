@@ -239,6 +239,14 @@ namespace MUD.Main
             {
                 Console.WriteLine("Content import failed: " + ex.Message);
             }
+            try
+            {
+                _gameWorld.PreparePlayerAccounts();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Player account preparation failed: " + ex.Message);
+            }
             Thread gameWorldThread = new Thread(_gameWorld.Start);
             gameWorldThread.Start();
             Console.WriteLine("done.");
@@ -412,8 +420,7 @@ namespace MUD.Main
                 }
                 else
                 {
-                    // Player not found.
-                    client.Send(String.Format("There is already someone by the name of {0}.", username));
+                    // World.DoCreateUser has already told the client why (invalid, taken or save failure).
                     return;
                 }
             }

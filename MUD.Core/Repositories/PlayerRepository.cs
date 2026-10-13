@@ -7,5 +7,10 @@ namespace MUD.Core.Repositories {
     public class PlayerRepository : Repository<Player>, IPlayerRepository
     {
         public PlayerRepository(IMongoClient dbClient, WorldSettings settings) : base(dbClient, settings.DatabaseName, "player") { }
+
+        public void CreateNameKeyIndex()
+        {
+            CreateUniqueStringIndex("NameKey", "NameKey_unique");
+        }
     }
 }
