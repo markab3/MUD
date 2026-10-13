@@ -7,6 +7,7 @@ using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using Microsoft.Extensions.DependencyInjection;
 using MUD.Telnet;
+using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Core.GameObjects;
 using MUD.Data;
@@ -192,18 +193,14 @@ namespace MUD.Core
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
 
-            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
-            var foundPlayer = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+            var foundPlayer = GetPlayerAccounts().Authenticate(userName, password);
 
             if (foundPlayer != null)
             {
-                if (foundPlayer.Password == password)
-                {
-                    foundPlayer.Connection = client;
-                    foundPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
-                    AddPlayer(foundPlayer);
-                    return true;
-                }
+                foundPlayer.Connection = client;
+                foundPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
+                AddPlayer(foundPlayer);
+                return true;
             }
             return false;
         }
@@ -212,14 +209,23 @@ namespace MUD.Core
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
 
-            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
-            var foundUser = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+            // Every failure is reported to the client here; the caller only needs to know it did not succeed.
+            var accounts = GetPlayerAccounts();
+            userName = PlayerAccounts.Clean(userName);
 
-            if (foundUser == null)
+            string nameProblem = PlayerAccounts.ValidateName(userName);
+            if (nameProblem != null)
+            {
+                connectingClient.Send(nameProblem);
+                return false;
+            }
+
+            if (accounts.FindByName(userName) == null)
             {
                 Player newPlayer = _serviceProvider.GetService<Player>();
 
                 newPlayer.PlayerName = userName;
+                newPlayer.NameKey = PlayerAccounts.Normalize(userName);
                 newPlayer.ShortDescription = userName;
                 newPlayer.Password = password;
                 newPlayer.Race = "human";
@@ -228,7 +234,14 @@ namespace MUD.Core
                 newPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
                 newPlayer.Connection = connectingClient;
 
-                if (!newPlayer.Save())
+                // The unique index decides under concurrent creates: a duplicate-key error on save means the name is taken.
+                var saved = accounts.TrySave(newPlayer);
+                if (saved == PlayerSaveResult.NameTaken)
+                {
+                    connectingClient.Send(string.Format("There is already someone by the name of {0}.", userName));
+                    return false;
+                }
+                if (saved != PlayerSaveResult.Saved)
                 {
                     connectingClient.Send("Unable to create your character right now. Please try again later.\r\n");
                     return false;
@@ -237,7 +250,20 @@ namespace MUD.Core
                 AddPlayer(newPlayer);
                 return true;
             }
+            connectingClient.Send(string.Format("There is already someone by the name of {0}.", userName));
             return false;
+        }
+
+        // Backfills Player.NameKey for stored players and creates the unique NameKey index. Never throws:
+        // problems are logged and startup continues (without the index if it cannot be created).
+        public void PreparePlayerAccounts()
+        {
+            GetPlayerAccounts().Initialize();
+        }
+
+        private PlayerAccounts GetPlayerAccounts()
+        {
+            return new PlayerAccounts(_serviceProvider.GetService<IPlayerRepository>(), Console.WriteLine);
         }
 
         // Imports every area file in the configured content directory (no-op when none is configured).

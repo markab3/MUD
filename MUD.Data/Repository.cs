@@ -38,7 +38,14 @@ namespace MUD.Data
 
             lock (_sync)
             {
-                _collection.InsertOne(model);
+                try
+                {
+                    _collection.InsertOne(model);
+                }
+                catch (Exception ex) when (DuplicateKeyException.IsDuplicateKey(ex))
+                {
+                    throw new DuplicateKeyException(ex);
+                }
 
                 if (!_modelCache.ContainsKey(model.Id))
                 {
@@ -54,7 +61,15 @@ namespace MUD.Data
             lock (_sync)
             {
                 // Entities always carry an Id (generated or authored key), so a first save arrives here too: upsert.
-                var result = _collection.ReplaceOne<TModel>((m => m.Id == model.Id), model, new ReplaceOptions { IsUpsert = true });
+                ReplaceOneResult result;
+                try
+                {
+                    result = _collection.ReplaceOne<TModel>((m => m.Id == model.Id), model, new ReplaceOptions { IsUpsert = true });
+                }
+                catch (Exception ex) when (DuplicateKeyException.IsDuplicateKey(ex))
+                {
+                    throw new DuplicateKeyException(ex);
+                }
                 // Not ModifiedCount: saving an unchanged document modifies nothing but still succeeds.
                 var success = (result != null && result.IsAcknowledged && (result.MatchedCount == 1 || result.UpsertedId != null));
 
@@ -71,6 +86,23 @@ namespace MUD.Data
         // Unlike Update this never replaces the document, so fields written by the importer are never
         // overwritten with a stale in-memory copy. Returns false when the document does not exist.
         // The cache is not touched: the live object is the source of the values.
+        // Idempotent: creating an index that already exists with the same definition is a no-op.
+        // Documents where the field is missing, null or not a string are left out of the index (partial index),
+        // so unkeyed legacy records never collide with each other. Throws if the server refuses the index.
+        protected void CreateUniqueStringIndex(string fieldName, string indexName)
+        {
+            var options = new CreateIndexOptions<TModel>
+            {
+                Unique = true,
+                Name = indexName,
+                PartialFilterExpression = new MongoDB.Bson.BsonDocument(fieldName, new MongoDB.Bson.BsonDocument("$type", "string"))
+            };
+            lock (_sync)
+            {
+                _collection.Indexes.CreateOne(new CreateIndexModel<TModel>(new MongoDB.Bson.BsonDocument(fieldName, 1), options));
+            }
+        }
+
         public bool UpdateFields(string id, MongoDB.Bson.BsonDocument set)
         {
             if (string.IsNullOrWhiteSpace(id) || set == null || set.ElementCount == 0) { return false; }
