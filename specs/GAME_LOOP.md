@@ -87,8 +87,8 @@ Rule: only the game thread reads or writes `World`, `Room`, `Living`, `Inventory
 
 Inbound (socket -> game): one `Channel<InboundItem>` created with
 `Channel.CreateUnbounded` (single reader, multiple writers) — or `BlockingCollection<InboundItem>`
-if the project prefers it. Target framework is .NET 8 per the `dotnet8` branch; if the
-framework in use cannot provide System.Threading.Channels, `BlockingCollection` is the fallback.
+if the project prefers it. Projects on this branch target netcoreapp3.1 (a `dotnet8` branch exists), which
+ships System.Threading.Channels; `BlockingCollection` is equally available.
 `InboundItem` is a small record/struct: `{ Client Client; InboundKind Kind; string Line }`
 where Kind is `Line`, `Connected`, `Disconnected`, or `WorldEvent` (persistence completion,
 admin action, shutdown request). Using one queue for all kinds keeps ordering simple:
@@ -415,16 +415,13 @@ are additive.
 - Large mechanical diff in Client and Program touches shared hot files (Client.cs, Player.cs, World.cs);
   steps should land as small PRs in order to avoid conflicts with sibling branches.
 - Unbounded inbound queue plus flooding clients: mitigated by per-client caps (Q4).
-- .NET target: if the project is still on a framework lacking `System.Threading.Channels`, add the package
-  or use `BlockingCollection` (Q1).
 - Single core ceiling for all game logic. Accepted by the owner; revisit if tick time grows.
 - Subtle: events (`ClientDisconnected`) currently fire on I/O threads while holding user code; moving to
   queue-based delivery changes ordering guarantees for anything else subscribed (Server events used in `Program.Main`).
 
 ## 13. Open questions
 
-Q1. `Channel<T>` vs `BlockingCollection<T>` for inbound. Which target framework applies (net8 per branch
-    `dotnet8`)? Proposal: `BlockingCollection` for the simplest timeout read, unless Channels are already in use.
+Q1. `Channel<T>` vs `BlockingCollection<T>` for inbound. Both are available on netcoreapp3.1. Proposal: `BlockingCollection` for the simplest timeout read, unless Channels are already in use.
 Q2. Tick interval: 100 ms proposed; heartbeat stays 2 s. Confirm or give another value.
 Q3. Acceptable snapshot cost on the game thread; do we need incremental/dirty-flag snapshots?
 Q4. Inbound flood limits (line length 1024, 20 queued lines per client): confirm values and the penalty.
