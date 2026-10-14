@@ -12,6 +12,7 @@ commit `ce8f7b9`).
 | [API.md](API.md) | Key interfaces: ICommand, telnet Server/Client, IRepository, ITerminalHandler, entity extension points, World |
 | [CONFIGURATION.md](CONFIGURATION.md) | Runtime config (environment, appsettings), build, local dev |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | systemd user unit, `scripts/deploy.sh`, rollback, triggering deploys |
+| [WEB.md](WEB.md) | MUD.Web site: config, routes, cookie auth model, plaintext password caveat |
 
 Convention: these are lightweight living documents — update the relevant
 file when the behavior they describe changes.
