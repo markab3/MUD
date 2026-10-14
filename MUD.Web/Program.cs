@@ -28,7 +28,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     .AddCookie(o =>
     {
         o.LoginPath = "/Login";
-        o.AccessDeniedPath = "/Login";
+        o.AccessDeniedPath = "/access-denied";
         o.Cookie.Name = "mud.auth";
         o.Cookie.HttpOnly = true;
         o.Cookie.SameSite = SameSiteMode.Lax;
@@ -36,12 +36,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         o.ExpireTimeSpan = TimeSpan.FromHours(8);
     });
 
-builder.Services.AddAuthorization(o =>
-{
-    o.AddPolicy(WebPolicies.CreatorOrAdmin, p => p
-        .RequireAuthenticatedUser()
-        .RequireClaim(ClaimTypes.Role, nameof(AccountRole.Creator), nameof(AccountRole.Admin)));
-});
+builder.Services.AddAuthorization(WebPolicies.Configure);
+builder.Services.AddSingleton<IRoomCreationService, StubRoomCreationService>();
 
 builder.Services.AddRazorPages();
 
@@ -56,4 +52,9 @@ return 0;
 public static class WebPolicies
 {
     public const string CreatorOrAdmin = "CreatorOrAdmin";
+
+    public static void Configure(Microsoft.AspNetCore.Authorization.AuthorizationOptions o) =>
+        o.AddPolicy(CreatorOrAdmin, p => p
+            .RequireAuthenticatedUser()
+            .RequireClaim(ClaimTypes.Role, nameof(AccountRole.Creator), nameof(AccountRole.Admin)));
 }

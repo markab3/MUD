@@ -1,0 +1,32 @@
+@page "/creator"
+@model CreatorModel
+@{ ViewData["Title"] = "Creator"; }
+<h1>Creator</h1>
+@if (Model.NotImplemented)
+{
+    <p role="status">Room creation is not implemented yet.</p>
+}
+<form method="post" novalidate>
+    @Html.AntiForgeryToken()
+    @if (!ModelState.IsValid)
+    {
+        <div role="alert" asp-validation-summary="All"></div>
+    }
+    <div><label>Room key <input asp-for="Form.Key" maxlength="64" required /></label> <span asp-validation-for="Form.Key"></span></div>
+    <div><label>Short description <input asp-for="Form.Short" maxlength="100" required /></label> <span asp-validation-for="Form.Short"></span></div>
+    <div><label>Long description <textarea asp-for="Form.Long" maxlength="4000" rows="6" required></textarea></label> <span asp-validation-for="Form.Long"></span></div>
+    <div><label>Area prefix <input asp-for="Form.Area" maxlength="128" required /></label> <span asp-validation-for="Form.Area"></span></div>
+    <fieldset>
+        <legend>Exits (direction and target room key)</legend>
+        @for (var i = 0; i < Model.Form.Exits.Count; i++)
+        {
+            <div>
+                <input asp-for="Form.Exits[i].Dir" maxlength="32" placeholder="north" aria-label="Exit direction" />
+                <input asp-for="Form.Exits[i].To" maxlength="128" placeholder="area.room" aria-label="Exit target room key" />
+                <span asp-validation-for="Form.Exits[i].Dir"></span>
+                <span asp-validation-for="Form.Exits[i].To"></span>
+            </div>
+        }
+    </fieldset>
+    <button type="submit">Create room</button>
+</form>

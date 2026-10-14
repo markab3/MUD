@@ -25,7 +25,20 @@ Run: `MUD_MONGO_URI=... dotnet run --project MUD.Web`.
 | `/character` | signed in | `Hello (<PlayerName>)!`, HTML-encoded |
 
 The nav shows a `/creator` link only when the `CreatorOrAdmin` policy passes.
-The creator page itself is not part of this change (the link 404s until it exists).
+
+## Creator page (stub)
+
+`/creator` is protected by the `CreatorOrAdmin` policy (admin implies creator). Anonymous users are
+redirected to `/login`; signed-in players get a 403 page at `/access-denied` (no redirect loop).
+
+- The form has fields named after `specs/ROOM_FILES.md`: `Key` (local room key), `Short`, `Long`,
+  `Area` (area prefix) and up to 4 exit rows `Dir` + `To` (target room key). Exit rows are static
+  for now; there is no add/remove-row script.
+- POST validates server side (required, length limits, key patterns from ROOM_FILES.md section 3,
+  half-filled exit rows rejected) with antiforgery, then calls `IRoomCreationService.Create`.
+- `StubRoomCreationService` (registered in DI) returns `NotImplemented` and writes nothing. The page
+  then shows "Room creation is not implemented yet." and echoes none of the submitted values.
+  The real implementation replaces the DI registration; no Mongo access exists in this path.
 
 ## Auth model
 
