@@ -52,3 +52,25 @@ also changes the telnet game; it is out of scope here.
 
 `MUD.Web.Tests` (xunit) uses a fake `IAccountStore`; no Mongo needed. CI builds and tests
 `MUD.sln`, which includes both projects.
+
+## Seeding
+
+`scripts/seed-admin.sh` creates (or repairs) an admin character in the local MongoDB so the same
+login works for telnet and the web. Defaults: name `maurlorn`, password `moocow`.
+
+    scripts/seed-admin.sh
+    MUD_SEED_NAME=someone MUD_SEED_PASSWORD=secret scripts/seed-admin.sh
+
+- Connection: `MUD_MONGO_URI` from the environment, else from `~/.config/mud/mongo.env`. It is never
+  printed. Uses `mongosh` if installed, otherwise the legacy `mongo` shell.
+- Other overrides: `MUD_SEED_DATABASE` (default `testmud`), `MUD_SEED_START_ROOM` (default
+  `WorldSettings:StartRoomKey` from `MUD.Main/appsettings.json`; only used for a new character).
+- Idempotent. If no player with that `NameKey` exists, a full `Player` document is inserted (string `_id`,
+  `PlayerName`, `NameKey` = lowercase name, `Password`, `Race` human, `CurrentLocationId`, `ExtendedProperties`
+  with `CreatorProperty` and `AdminProperty` and their `_t` discriminators). If it exists, only the password
+  and any missing Creator/Admin property are ensured; nothing else is reset.
+- It ensures the unique index `NameKey_unique` on `player` (same definition as the game's
+  `CreateUniqueStringIndex`: unique, partial on string `NameKey`).
+- MongoDB is schemaless: the `player` collection and that index are all the website needs. No other
+  collections are required at this stage.
+- The password is stored in plaintext because the game stores and compares plaintext today.
