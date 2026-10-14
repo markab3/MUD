@@ -15,6 +15,13 @@ directly through the Mongo driver.
 
 Run: `MUD_MONGO_URI=... dotnet run --project MUD.Web`.
 
+## Deployment
+
+`scripts/deploy.sh` publishes the site into `web/` of each release and the systemd user unit
+`planar-realms-web.service` runs it, reading `~/.config/mud/mongo.env` and the optional
+`~/.config/mud/web.env` (`MUD_WEB_URL`). Default bind is `127.0.0.1:5080`. Install steps and
+rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Routes
 
 | Route | Access | Behaviour |
