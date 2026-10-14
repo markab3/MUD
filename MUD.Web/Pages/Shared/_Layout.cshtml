@@ -1,0 +1,29 @@
+@using Microsoft.AspNetCore.Authorization
+@inject IAuthorizationService Authz
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ViewData["Title"] - Planar Realms</title>
+</head>
+<body>
+    <nav>
+        @if (User.Identity?.IsAuthenticated == true)
+        {
+            <a href="/character">Character</a>
+            @if ((await Authz.AuthorizeAsync(User, WebPolicies.CreatorOrAdmin)).Succeeded)
+            {
+                <a href="/creator">Creator</a>
+            }
+            <form method="post" action="/logout" style="display:inline">
+                @Html.AntiForgeryToken()
+                <button type="submit">Log out</button>
+            </form>
+        }
+    </nav>
+    <main>
+        @RenderBody()
+    </main>
+</body>
+</html>

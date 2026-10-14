@@ -1,0 +1,13 @@
+@page "/login"
+@model LoginModel
+@{ ViewData["Title"] = "Log in"; }
+<h1>Log in</h1>
+@if (Model.Error != null)
+{
+    <p role="alert">@Model.Error</p>
+}
+<form method="post">
+    <div><label>Character name <input name="Name" autocomplete="username" maxlength="64" required /></label></div>
+    <div><label>Password <input name="Password" type="password" autocomplete="current-password" required /></label></div>
+    <button type="submit">Log in</button>
+</form>
