@@ -7,6 +7,7 @@ using MongoDB.Driver;
 using MUD.Core;
 using System.Linq;
 using System.Threading;
+using System.Runtime.CompilerServices;
 using MUD.Core.Formatting;
 using MongoDB.Bson.Serialization;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +20,9 @@ namespace MUD.Main
     {
         private static World _gameWorld;
         private static Server _serverInstance;
+        private static TelnetLimits _telnetLimits = TelnetLimits.FromEnvironment();
+        private static readonly ConditionalWeakTable<Client, LoginSession> _loginSessions = new ConditionalWeakTable<Client, LoginSession>();
+        private static LoginThrottle _loginThrottle = new LoginThrottle(_telnetLimits.LoginMaxFailures, _telnetLimits.LoginThrottleDuration);
         private static string alternateMessage =
 @"
 
@@ -33,8 +37,11 @@ namespace MUD.Main
                                                                  |___/ 
 
 --------------------------------------------------------------------------------
-    Use 'connect <username> <password>' to connect to an existing player.
-    Use 'create <username> <password>' to create a new player.
+    Use 'connect' to log in to an existing player. You will be prompted for a
+    name and password; the password is not echoed.
+    Use 'create' to create a new player (name, password and confirmation).
+    Scripted clients may use 'connect <username> <password>' and
+    'create <username> <password>', but then the password is visible.
     Use 'who' to see who is currently online.
     Use 'quit' to disconnect.
 --------------------------------------------------------------------------------";
@@ -55,8 +62,11 @@ namespace MUD.Main
                         |_|  \_\___|\__,_|_|_| |_| |_|___/
                                                                                 |
 --------------------------------------------------------------------------------
-    Use 'connect <username> <password>' to connect to an existing player.
-    Use 'create <username> <password>' to create a new player.
+    Use 'connect' to log in to an existing player. You will be prompted for a
+    name and password; the password is not echoed.
+    Use 'create' to create a new player (name, password and confirmation).
+    Scripted clients may use 'connect <username> <password>' and
+    'create <username> <password>', but then the password is visible.
     Use 'who' to see who is currently online.
     Use 'quit' to disconnect.
 --------------------------------------------------------------------------------";
@@ -255,7 +265,7 @@ namespace MUD.Main
             IPAddress ipAddress = null;
             if (!IPAddress.TryParse(ip, out ipAddress)) { ipAddress = IPAddress.Any; }
 
-            _serverInstance = new Server(ipAddress, port.Value);
+            _serverInstance = new Server(ipAddress, port.Value, _telnetLimits);
             _serverInstance.ClientConnected += clientConnected;
             _serverInstance.ClientDisconnected += clientDisconnected;
 
@@ -347,13 +357,16 @@ namespace MUD.Main
             Client client = (Client)sender;
             message = message.TrimEnd('\n').TrimEnd('\r');
 
-            // Do not log connect/create lines: they carry credentials.
-            if (!Client.IsCredentialCommand(message))
-            {
-                Console.WriteLine("MESSAGE: length {0} from {1}", message.Length, client.RemoteAddress);
-            }
+            LoginSession session = _loginSessions.GetValue(client, k => new LoginSession(k, new WorldLoginHandler(_gameWorld, k), _loginThrottle));
 
-            if (message == "quit" || message.StartsWith("quit "))
+            // Never log a line that may contain a password.
+            Console.WriteLine("MESSAGE: " + session.Loggable(message));
+
+            if (session.State != LoginState.Idle)
+            {
+                session.HandleLine(message);
+            }
+            else if (message == "quit" || message.StartsWith("quit "))
             {
                 client.Disconnect();
             }
@@ -373,56 +386,9 @@ namespace MUD.Main
                     client.Send(String.Format("{0} are logged on.", _gameWorld.Players.Select(p => p.PlayerName).GetListText()));
                 }
             }
-            else if (message == "connect" || message.StartsWith("connect "))
+            else if (session.HandleLine(message))
             {
-                string[] args = message.Length > 8 ? message.Substring(8).Split(' ') : new string[0];
-
-                if (args.Length != 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
-                {
-                    // bad input. 
-                    client.Send("Please provide a username and password to connect. Format: connect <username> <password>");
-                    return;
-                }
-
-                string username = args[0];
-                string password = args[1];
-
-                // begin login attempt.
-                if (_gameWorld.DoLogin(username, password, client))
-                {
-                    client.DataReceived -= messageReceived;
-                }
-                else
-                {
-                    // Player not found.
-                    client.Send(String.Format("Login failed for {0}.", username));
-                    return;
-                }
-            }
-            else if (message == "create" || message.StartsWith("create "))
-            {
-                string[] args = message.Length > 7 ? message.Substring(7).Split(' ') : new string[0];
-
-                if (args.Length != 2 || string.IsNullOrWhiteSpace(args[0]) || string.IsNullOrWhiteSpace(args[1]))
-                {
-                    // bad input. 
-                    client.Send("Please provide a username and password to create a new account. Format: create <username> <password>");
-                    return;
-                }
-
-                string username = args[0];
-                string password = args[1];
-
-                // begin character creation attempt.
-                if (_gameWorld.DoCreateUser(username, password, client))
-                {
-                    client.DataReceived -= messageReceived;
-                }
-                else
-                {
-                    // World.DoCreateUser has already told the client why (invalid, taken or save failure).
-                    return;
-                }
+                // Consumed by the login flow.
             }
             else
             {
@@ -432,6 +398,34 @@ namespace MUD.Main
                     message = message.Substring(0, message.IndexOf(" "));
                 }
                 client.Send(string.Format("Command {0} was not recognized.", commandString));
+            }
+
+            if (session.IsLoggedIn)
+            {
+                client.DataReceived -= messageReceived;
+                client.IsLoggedIn = true;
+            }
+        }
+
+        private class WorldLoginHandler : ILoginHandler
+        {
+            private readonly World _world;
+            private readonly Client _client;
+
+            public WorldLoginHandler(World world, Client client)
+            {
+                _world = world;
+                _client = client;
+            }
+
+            public bool Login(string name, string password)
+            {
+                return _world.DoLogin(name, password, _client);
+            }
+
+            public bool Create(string name, string password)
+            {
+                return _world.DoCreateUser(name, password, _client);
             }
         }
     }

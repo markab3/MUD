@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -28,6 +29,12 @@ namespace MUD.Telnet
 
         private List<Client> _clients;
 
+        private readonly TelnetLimits _limits;
+
+        private readonly ConnectionTracker _connectionTracker;
+
+        private Timer _idleTimer;
+
         private readonly object _clientsLock = new object();
 
         // The listening socket, kept so Stop() can close it.
@@ -39,11 +46,36 @@ namespace MUD.Telnet
 
         public event EventHandler<Client> ClientDisconnected;
 
-        public Server(IPAddress ipAddress, int port)
+        public Server(IPAddress ipAddress, int port) : this(ipAddress, port, null)
+        {
+        }
+
+        public Server(IPAddress ipAddress, int port, TelnetLimits limits)
         {
             _ip = ipAddress;
             _port = port;
             _clients = new List<Client>();
+            _limits = limits ?? new TelnetLimits();
+            _connectionTracker = new ConnectionTracker(_limits.MaxConnectionsPerIp, _limits.MaxTotalConnections);
+        }
+
+        public TelnetLimits Limits { get { return _limits; } }
+
+        private static string addressKey(Client client)
+        {
+            IPAddress address = client.RemoteAddress?.Address;
+            if (address == null) { return string.Empty; }
+            return (address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address).ToString();
+        }
+
+        private void checkIdleClients(object state)
+        {
+            DateTime now = DateTime.UtcNow;
+            foreach (Client currentClient in snapshotClients())
+            {
+                try { currentClient.CheckIdle(now); }
+                catch (Exception e) { Console.WriteLine(e.ToString()); }
+            }
         }
 
         public void Start()
@@ -62,6 +94,9 @@ namespace MUD.Telnet
                 listener.Bind(localEP);
                 listener.Listen(10);
 
+                // Sweep for idle connections every few seconds.
+                _idleTimer = new Timer(checkIdleClients, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+
                 while (_isAcceptingConnections)
                 {
                     _allDone.Reset();
@@ -77,6 +112,7 @@ namespace MUD.Telnet
                 Console.WriteLine(e.ToString());
             }
 
+            _idleTimer?.Dispose();
             Console.WriteLine("Closing the listener...");
             ServerStopped?.Invoke(this, null);
         }
@@ -141,14 +177,29 @@ namespace MUD.Telnet
                 Socket handler = listener.EndAccept(ar);
 
                 // Create the client connection object  
-                Client client = new Client(handler);
-                client.ClientDisconnected += handleClientDisconnect;
-                client.Read();
+                Client client = new Client(handler, _limits, null);
 
+                // Enforce connection caps before the client is announced to the rest of the system.
+                string key = addressKey(client);
+                if (!_connectionTracker.TryAdd(key))
+                {
+                    Console.WriteLine("REFUSED (connection limit): " + key);
+                    try
+                    {
+                        handler.Send(System.Text.Encoding.ASCII.GetBytes("Too many connections. Please try again later.\r\n"));
+                        handler.Shutdown(SocketShutdown.Both);
+                    }
+                    catch (Exception) { }
+                    finally { handler.Close(); }
+                    return;
+                }
+
+                client.ClientDisconnected += handleClientDisconnect;
                 lock (_clientsLock)
                 {
                     _clients.Add(client);
                 }
+                client.Read();
 
                 //client.Send(new byte[] {(byte) CommandCode.IAC, (byte) CommandCode.DO, (byte) OptionCode.TerminalType});
 
@@ -162,10 +213,12 @@ namespace MUD.Telnet
 
         private void handleClientDisconnect(object sender, Client client)
         {
+            bool wasTracked;
             lock (_clientsLock)
             {
-                _clients.Remove(client);
+                wasTracked = _clients.Remove(client);
             }
+            if (wasTracked) { _connectionTracker.Remove(addressKey(client)); }
             ClientDisconnected?.Invoke(this, client);
         }
     }
