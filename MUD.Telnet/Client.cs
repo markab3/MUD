@@ -115,13 +115,25 @@ namespace MUD.Telnet
         public void Send(String data)
         {
             // Unify line endings to be consistent with the client.
-            data.Replace("\n", "\r").Replace("\r\r", "\r").Replace("\r", _lineEnding);
+            data = data.Replace("\n", "\r").Replace("\r\r", "\r").Replace("\r", _lineEnding);
 
             // Ensure that it ends with line ending
             if (!data.EndsWith(_lineEnding)) { data = data + _lineEnding; }
 
             // Convert the string data to byte data using the client's encoding.  
             byte[] byteData = _clientEncoding.GetBytes(data);
+
+            // A literal 0xFF data byte must be escaped as IAC IAC.
+            if (Array.IndexOf(byteData, (byte)CommandCode.IAC) >= 0)
+            {
+                List<byte> escaped = new List<byte>(byteData.Length + 1);
+                foreach (byte b in byteData)
+                {
+                    escaped.Add(b);
+                    if (b == (byte)CommandCode.IAC) { escaped.Add(b); }
+                }
+                byteData = escaped.ToArray();
+            }
 
             Send(byteData);
         }
