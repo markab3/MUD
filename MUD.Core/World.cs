@@ -30,6 +30,9 @@ namespace MUD.Core
 
         public List<ITerminalHandler> TerminalHandlers;
 
+        // Shared with the pre-login flow so wrong passwords typed into in-game commands count too. May be null.
+        public LoginThrottle LoginThrottle { get; set; }
+
         private IServiceProvider _serviceProvider;
 
         private Timer _heartbeatTimer;

@@ -12,5 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\MUD.Web\MUD.Web.csproj" />
+    <!-- Only for PasswordRuleParityTests: the web and game password rules must stay identical. -->
+    <ProjectReference Include="..\MUD.Core\MUD.Core.csproj" />
   </ItemGroup>
 </Project>

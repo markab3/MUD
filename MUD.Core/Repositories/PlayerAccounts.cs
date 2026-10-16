@@ -20,6 +20,8 @@ namespace MUD.Core.Repositories
     {
         public const int MinNameLength = 3;
         public const int MaxNameLength = 16;
+        public const int MinPasswordLength = 6;
+        public const int MaxPasswordLength = 64;
 
         private static readonly HashSet<string> ReservedNames = new HashSet<string>
         {
@@ -66,6 +68,22 @@ namespace MUD.Core.Repositories
             return null;
         }
 
+        // Returns null when the password is acceptable for a password change, otherwise a message for the player.
+        // MUD.Web/Services/PasswordRules.cs holds the same rules and the same messages; keep them in step
+        // (PasswordRuleParityTests checks it).
+        public static string ValidatePassword(string password)
+        {
+            if (password == null || password.Length < MinPasswordLength || password.Length > MaxPasswordLength)
+            {
+                return string.Format("Passwords must be {0} to {1} characters long.", MinPasswordLength, MaxPasswordLength);
+            }
+            if (password.Any(char.IsControl))
+            {
+                return "Passwords may not contain control characters.";
+            }
+            return null;
+        }
+
         // Exact match on NameKey, never a substring match.
         public Player FindByName(string typedName)
         {
@@ -77,6 +95,11 @@ namespace MUD.Core.Repositories
         public Player Authenticate(string typedName, string password)
         {
             var player = FindByName(typedName);
+            if (player != null)
+            {
+                // The cached live player can predate a password change made elsewhere (the website).
+                player.SyncPasswordFromStore();
+            }
             return player != null && player.Password == password ? player : null;
         }
 
