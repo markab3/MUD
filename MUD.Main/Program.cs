@@ -265,7 +265,7 @@ namespace MUD.Main
             IPAddress ipAddress = null;
             if (!IPAddress.TryParse(ip, out ipAddress)) { ipAddress = IPAddress.Any; }
 
-            _serverInstance = new Server(ipAddress, port, _telnetLimits);
+            _serverInstance = new Server(ipAddress, port.Value, _telnetLimits);
             _serverInstance.ClientConnected += clientConnected;
             _serverInstance.ClientDisconnected += clientDisconnected;
 
