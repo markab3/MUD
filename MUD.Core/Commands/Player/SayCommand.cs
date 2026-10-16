@@ -26,8 +26,11 @@ namespace MUD.Core.Commands
                 return;
             }
 
-            string roomSayMessage = string.Format("{0} says: {1}", commandIssuer.ShortDescription, (string)commandArgs[0]);
-            string mySayMessage = string.Format("You say: {0}", (string)commandArgs[0]);
+            string text;
+            bool shortened = CommandExtensions.TruncateMessage((string)commandArgs[0], out text);
+
+            string roomSayMessage = string.Format("{0} says: {1}", commandIssuer.ShortDescription, text);
+            string mySayMessage = string.Format("You say: {0}", text);
 
             Room currentRoom = commandIssuer.CurrentLocation;
             if (currentRoom != null)
@@ -35,6 +38,7 @@ namespace MUD.Core.Commands
                 currentRoom.TellRoom(roomSayMessage, new Living[] { commandIssuer });
             }
             commandIssuer.ReceiveMessage(mySayMessage);
+            if (shortened) { commandIssuer.ReceiveMessage(CommandExtensions.MessageShortenedNotice); }
         }
     }
 }

@@ -48,11 +48,15 @@ namespace MUD.Core.Commands
                 return;
             }
 
-            string recipientMessage = string.Format("{0} tells you: {1}", commandIssuer.ShortDescription, (string)commandArgs[1]);
-            string myMessage = string.Format("You tell {0}: {1}", recipient.ShortDescription, (string)commandArgs[1]);
+            string text;
+            bool shortened = CommandExtensions.TruncateMessage((string)commandArgs[1], out text);
+
+            string recipientMessage = string.Format("{0} tells you: {1}", commandIssuer.ShortDescription, text);
+            string myMessage = string.Format("You tell {0}: {1}", recipient.ShortDescription, text);
 
             recipient.ReceiveMessage(recipientMessage);
             commandIssuer.ReceiveMessage(myMessage);
+            if (shortened) { commandIssuer.ReceiveMessage(CommandExtensions.MessageShortenedNotice); }
         }
     }
 }

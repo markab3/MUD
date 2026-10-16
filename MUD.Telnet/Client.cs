@@ -327,6 +327,9 @@ namespace MUD.Telnet
                             return;
                         }
 
+                        // Telnet negotiation was consumed above; drop control characters from the text.
+                        currentLine = StripControlCharacters(currentLine);
+
                         DataReceived?.Invoke(this, currentLine);
 
                         // A handler may have disconnected us (e.g. quit).
@@ -356,6 +359,22 @@ namespace MUD.Telnet
                 Console.WriteLine(ex.ToString());
                 Disconnect();
             }
+        }
+
+        /// <summary>
+        /// Removes C0 control characters (except tab), DEL (0x7F) and CSI (0x9B) from received text, so escape
+        /// sequences, BEL, backspace, NUL etc. never reach the game or other players.
+        /// </summary>
+        public static string StripControlCharacters(string text)
+        {
+            if (text == null) { return text; }
+            var sb = new StringBuilder(text.Length);
+            foreach (char c in text)
+            {
+                if ((c < 0x20 && c != '\t') || c == 0x7F || c == 0x9B) { continue; }
+                sb.Append(c);
+            }
+            return sb.ToString();
         }
 
         private void rejectOverlongLine()

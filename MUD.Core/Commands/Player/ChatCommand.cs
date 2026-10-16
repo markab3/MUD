@@ -31,10 +31,14 @@ namespace MUD.Core.Commands
                 return;
             }
 
+            string text;
+            bool shortened = CommandExtensions.TruncateMessage((string)commandArgs[0], out text);
+
             foreach (Player currentPlayer in _world.Players)
             {
-                currentPlayer.ReceiveMessage(string.Format("(Chat) {0}: {1}", ((Player)commandIssuer).PlayerName, (string)commandArgs[0]));
+                currentPlayer.ReceiveMessage(string.Format("(Chat) {0}: {1}", ((Player)commandIssuer).PlayerName, text));
             }
+            if (shortened) { commandIssuer.ReceiveMessage(CommandExtensions.MessageShortenedNotice); }
         }
     }
 }
