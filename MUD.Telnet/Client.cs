@@ -8,7 +8,7 @@ using System.Threading;
 
 namespace MUD.Telnet
 {
-    public class Client
+    public class Client : ILoginConnection
     {
         // Captured at construction: the socket cannot be queried once it has been closed.
         private readonly IPEndPoint _remoteAddress;
@@ -49,6 +49,32 @@ namespace MUD.Telnet
         public bool IsRemoteEcho { get; set; }
 
         public bool IsEchoSupressed { get; set; }
+
+        // Set while we have told the client we will echo (WILL ECHO) so it stops local echo; the client's
+        // DO ECHO reply is then an acknowledgement, not a request for us to echo its input.
+        private volatile bool _echoHidden;
+
+        public string RemoteKey { get { return _remoteAddress?.Address.ToString() ?? string.Empty; } }
+
+        /// <summary>
+        /// Hides (IAC WILL ECHO) or restores (IAC WONT ECHO) client-side echo, e.g. around a password prompt.
+        /// While hidden the server does not echo input lines either.
+        /// </summary>
+        public void SetEchoHidden(bool hidden)
+        {
+            if (_echoHidden == hidden) { return; }
+            _echoHidden = hidden;
+            IsEchoSupressed = hidden;
+            Send(new byte[] { (byte)CommandCode.IAC, (byte)(hidden ? CommandCode.WILL : CommandCode.WONT), (byte)OptionCode.Echo });
+        }
+
+        /// <summary>
+        /// Sends text with no line ending appended (for prompts).
+        /// </summary>
+        public void SendPrompt(string text)
+        {
+            Send(_clientEncoding.GetBytes(text));
+        }
 
         /// <summary>
         /// True once the connection has logged in; selects the (longer) logged-in idle timeout.
@@ -281,6 +307,9 @@ namespace MUD.Telnet
                     // Peel off each line, treating a newline as the terminator for the command.                 
                     while (newlineIndex > -1)
                     {
+                        // Decide on echo before handlers run: a handler may change echo state (e.g. after a password).
+                        bool echoLine = IsRemoteEcho && !IsEchoSupressed;
+
                         // TODO: Handle TelnetCommands
                         currentLine = _receivedData.Substring(0, newlineIndex);
                         _receivedData = _receivedData.Substring(newlineIndex + 1);
@@ -303,11 +332,11 @@ namespace MUD.Telnet
                         // A handler may have disconnected us (e.g. quit).
                         if (_disconnected != 0) { return; }
 
-                        //  Display it on the console.  
-                        Console.WriteLine("Line received: {0}\r", currentLine);
+                        // Display receipt on the console. Content is not logged: it may be a password.
+                        Console.WriteLine("Line received ({0} chars)", currentLine.Length);
 
                         // Echo the data back to the client.  
-                        if (IsRemoteEcho && !IsEchoSupressed) { Send(currentLine); }
+                        if (echoLine) { Send(currentLine); }
 
                         newlineIndex = _receivedData.IndexOf("\r");
                     }
@@ -349,7 +378,8 @@ namespace MUD.Telnet
                     switch (command.Option.GetValueOrDefault())
                     {
                         case OptionCode.Echo:
-                            IsRemoteEcho = true;
+                            // A reply to our WILL ECHO is an acknowledgement, not a request for server echo.
+                            if (!_echoHidden) { IsRemoteEcho = true; }
                             break;
                         default:
                             // Unsupported option: refuse once with WONT (RFC 854), never repeat.
