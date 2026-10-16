@@ -18,6 +18,8 @@ namespace MUD.Main
     {
         private static World _gameWorld;
         private static Server _serverInstance;
+        private static TelnetLimits _telnetLimits = TelnetLimits.FromEnvironment();
+        private static LoginThrottle _loginThrottle = new LoginThrottle(_telnetLimits.LoginMaxFailures, _telnetLimits.LoginThrottleDuration);
         private static string alternateMessage =
 @"
 
@@ -198,7 +200,7 @@ namespace MUD.Main
             IPAddress ipAddress = null;
             if (!IPAddress.TryParse(ip, out ipAddress)) { ipAddress = IPAddress.Any; }
 
-            _serverInstance = new Server(ipAddress, port);
+            _serverInstance = new Server(ipAddress, port, _telnetLimits);
             _serverInstance.ClientConnected += clientConnected;
             _serverInstance.ClientDisconnected += clientDisconnected;
 
@@ -327,13 +329,22 @@ namespace MUD.Main
                 string password = args[1];
 
                 // begin login attempt.
+                string remoteKey = client.RemoteAddress?.Address.ToString() ?? string.Empty;
+                if (_loginThrottle.IsBlocked(remoteKey))
+                {
+                    client.DisconnectWithMessage("Too many failed login attempts. Please try again later.");
+                    return;
+                }
                 if (_gameWorld.DoLogin(username, password, client))
                 {
                     client.DataReceived -= messageReceived;
+                    client.IsLoggedIn = true;
+                    _loginThrottle.RecordSuccess(remoteKey);
                 }
                 else
                 {
                     // Player not found.
+                    _loginThrottle.RecordFailure(remoteKey);
                     client.Send(String.Format("Login failed for {0}.", username));
                     return;
                 }
@@ -356,6 +367,7 @@ namespace MUD.Main
                 if (_gameWorld.DoCreateUser(username, password, client))
                 {
                     client.DataReceived -= messageReceived;
+                    client.IsLoggedIn = true;
                 }
                 else
                 {
