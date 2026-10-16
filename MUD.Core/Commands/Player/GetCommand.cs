@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using MUD.Core.Formatting;
@@ -23,20 +24,37 @@ namespace MUD.Core.Commands
             if (string.IsNullOrWhiteSpace((string)commandArgs[0]))
             {
                 commandIssuer.ReceiveMessage("Get what? Syntax: get <object>");
+                return;
             }
             // Resolve the object(s) given the player's context.
             var matchedObjects = commandIssuer.MatchObjects(((string)commandArgs[0]).ToLower(), false, true, false, false);
             if (matchedObjects != null && matchedObjects.Length > 0)
             {
+                // Only move items that were actually removed from the room.
+                var movedObjects = new List<GameObject>();
                 foreach (GameObject currentItem in matchedObjects)
                 {
-                    commandIssuer.CurrentLocation.Items.Remove((InventoryItem)currentItem);
-                    commandIssuer.Inventory.Add((InventoryItem)currentItem);
+                    if (commandIssuer.CurrentLocation.Items.Remove((InventoryItem)currentItem))
+                    {
+                        commandIssuer.Inventory.Add((InventoryItem)currentItem);
+                        movedObjects.Add(currentItem);
+                    }
                 }
 
-                string itemList = matchedObjects.Select(ob => ob.ShortDescription).GetListText();
-                commandIssuer.ReceiveMessage(string.Format("You get {0}.", itemList));
-                commandIssuer.CurrentLocation.TellRoom(string.Format("{0} gets {1}.", commandIssuer.ShortDescription, matchedObjects.Select(ob => ob.ShortDescription).GetListText()), new Living[] { commandIssuer });
+                if (movedObjects.Count > 0)
+                {
+                    // Write-through. Player first, then room: a crash between the two duplicates the item rather than losing it.
+                    (commandIssuer as Player)?.Save(true);
+                    commandIssuer.CurrentLocation.SaveState();
+
+                    string itemList = movedObjects.Select(ob => ob.ShortDescription).GetListText();
+                    commandIssuer.ReceiveMessage(string.Format("You get {0}.", itemList));
+                    commandIssuer.CurrentLocation.TellRoom(string.Format("{0} gets {1}.", commandIssuer.ShortDescription, itemList), new Living[] { commandIssuer });
+                }
+                else
+                {
+                    commandIssuer.ReceiveMessage(string.Format("You can't get any {0}.", (string)commandArgs[0]));
+                }
             }
             else
             {

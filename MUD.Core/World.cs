@@ -7,6 +7,7 @@ using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using Microsoft.Extensions.DependencyInjection;
 using MUD.Telnet;
+using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Core.GameObjects;
 using MUD.Data;
@@ -37,8 +38,11 @@ namespace MUD.Core
 
         private CommandQueue _commandQueue;
 
-        public World(IMongoClient dbClient)
+        private WorldSettings _settings;
+
+        public World(IMongoClient dbClient, WorldSettings settings)
         {
+            _settings = settings;
             _serviceProvider = LoadTypes(dbClient);
 
             List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
@@ -64,7 +68,7 @@ namespace MUD.Core
             {
                 try
                 {
-                    var loadedAssembly = System.Reflection.Assembly.LoadFrom(currentDirectory + "\\" + currentAssembly);
+                    var loadedAssembly = System.Reflection.Assembly.LoadFrom(Path.Combine(currentDirectory, currentAssembly));
                     if (loadedAssembly != null)
                     {
                         libAssemblies.Add(loadedAssembly);
@@ -96,7 +100,8 @@ namespace MUD.Core
 
                 // Load up the mongo client
                 .AddSingleton<IMongoClient>(dbClient)
-                .AddSingleton<IMongoDatabase>(dbClient.GetDatabase("testmud"))
+                .AddSingleton<WorldSettings>(_settings)
+                .AddSingleton<IMongoDatabase>(dbClient.GetDatabase(_settings.DatabaseName))
 
                 // Load utility stuff?
                 .AddSingleton<CommandQueue>()
@@ -188,18 +193,14 @@ namespace MUD.Core
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
 
-            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
-            var foundPlayer = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+            var foundPlayer = GetPlayerAccounts().Authenticate(userName, password);
 
             if (foundPlayer != null)
             {
-                if (foundPlayer.Password == password)
-                {
-                    foundPlayer.Connection = client;
-                    foundPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
-                    AddPlayer(foundPlayer);
-                    return true;
-                }
+                foundPlayer.Connection = client;
+                foundPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
+                AddPlayer(foundPlayer);
+                return true;
             }
             return false;
         }
@@ -208,26 +209,74 @@ namespace MUD.Core
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
 
-            var playerRepository = _serviceProvider.GetService<IPlayerRepository>();
-            var foundUser = playerRepository.Search(p => p.PlayerName.ToLower().Contains(userName)).FirstOrDefault();
+            // Every failure is reported to the client here; the caller only needs to know it did not succeed.
+            var accounts = GetPlayerAccounts();
+            userName = PlayerAccounts.Clean(userName);
 
-            if (foundUser == null)
+            string nameProblem = PlayerAccounts.ValidateName(userName);
+            if (nameProblem != null)
+            {
+                connectingClient.Send(nameProblem);
+                return false;
+            }
+
+            if (accounts.FindByName(userName) == null)
             {
                 Player newPlayer = _serviceProvider.GetService<Player>();
 
                 newPlayer.PlayerName = userName;
+                newPlayer.NameKey = PlayerAccounts.Normalize(userName);
                 newPlayer.ShortDescription = userName;
                 newPlayer.Password = password;
                 newPlayer.Race = "human";
-                newPlayer.CurrentLocationId = "5f6e27f20c1fdd24b4b18b1a";
+                newPlayer.CurrentLocationId = _settings.StartRoomKey;
                 newPlayer.SelectedTerm = "Default"; // Or just do the subnegotiation to get a value for this...
                 newPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
                 newPlayer.Connection = connectingClient;
 
+                // The unique index decides under concurrent creates: a duplicate-key error on save means the name is taken.
+                var saved = accounts.TrySave(newPlayer);
+                if (saved == PlayerSaveResult.NameTaken)
+                {
+                    connectingClient.Send(string.Format("There is already someone by the name of {0}.", userName));
+                    return false;
+                }
+                if (saved != PlayerSaveResult.Saved)
+                {
+                    connectingClient.Send("Unable to create your character right now. Please try again later.\r\n");
+                    return false;
+                }
+
                 AddPlayer(newPlayer);
                 return true;
             }
+            connectingClient.Send(string.Format("There is already someone by the name of {0}.", userName));
             return false;
+        }
+
+        // Backfills Player.NameKey for stored players and creates the unique NameKey index. Never throws:
+        // problems are logged and startup continues (without the index if it cannot be created).
+        public void PreparePlayerAccounts()
+        {
+            GetPlayerAccounts().Initialize();
+        }
+
+        private PlayerAccounts GetPlayerAccounts()
+        {
+            return new PlayerAccounts(_serviceProvider.GetService<IPlayerRepository>(), Console.WriteLine);
+        }
+
+        // Imports every area file in the configured content directory (no-op when none is configured).
+        public void ImportContent()
+        {
+            if (string.IsNullOrWhiteSpace(_settings.ContentDirectory) || !_settings.ImportOnStartup) { return; }
+
+            var store = new MUD.Core.Import.RoomRepositoryImportStore(_serviceProvider.GetService<IRoomRepository>());
+            var service = new MUD.Core.Import.AreaFileService(new MUD.Core.Import.AreaImporter(store), _settings.ContentDirectory);
+            foreach (var line in service.ImportAll())
+            {
+                Console.WriteLine(line);
+            }
         }
 
         public Room GetRoom(string roomId)
@@ -241,10 +290,18 @@ namespace MUD.Core
         // Might want this on the living object or whatever is needing a periodic update like this - like for HP regen, etc. Doesn't need to be centralized necessarily.
         private void doHeartbeat(object state)
         {
-            // Do heartbeat updates.
-            foreach (Player currentPlayer in Players)
+            // Do heartbeat updates. Iterate a snapshot so players added or removed during the tick
+            // cannot break enumeration, and catch per player so one failure cannot stop the timer.
+            foreach (Player currentPlayer in Players.ToList())
             {
-                currentPlayer.DoHeartbeat();
+                try
+                {
+                    currentPlayer.DoHeartbeat();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(string.Format("Exception encountered during heartbeat for {0}: {1}", currentPlayer.PlayerName, ex));
+                }
             }
         }
     }

@@ -1,0 +1,29 @@
+# Planar Realms website (MUD.Web) - systemd USER unit. No secrets belong in this file.
+# Install:  mkdir -p ~/.config/systemd/user && cp planar-realms-web.service ~/.config/systemd/user/
+#           systemctl --user daemon-reload && systemctl --user enable --now planar-realms-web
+# See specs/DEPLOYMENT.md.
+[Unit]
+Description=Planar Realms Website
+After=network-online.target mongod.service
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Release layout is managed by scripts/deploy.sh: current -> releases/<id>; the site is in web/.
+WorkingDirectory=%h/.local/share/mud/current/web
+ExecStart=%h/.local/share/mud/current/web/MUD.Web
+
+# Default listen URL (localhost only); override MUD_WEB_URL in ~/.config/mud/web.env.
+Environment=MUD_WEB_URL=http://127.0.0.1:5080
+# Required: provides MUD_MONGO_URI (created by the maintainer's install script, mode 600).
+EnvironmentFile=%h/.config/mud/mongo.env
+# Optional overrides (MUD_WEB_URL); the leading '-' tolerates a missing file.
+EnvironmentFile=-%h/.config/mud/web.env
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

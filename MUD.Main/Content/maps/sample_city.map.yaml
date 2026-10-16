@@ -1,0 +1,68 @@
+# Sample ASCII map for the area generator.  Use:  genmap sample_city   then   import sample_city
+# Format is documented in MUD.Core/Generation/MapGenerator.cs.
+# The first grid row is the NORTH edge; the bottom-left cell is generator.origin (x east, y north).
+generator:
+  prefix: sample_city
+  name: "Sample City"
+  description: "A small generated city: a plaza, streets, walls and one hand-authored landmark."
+  seed: "sample-city-1"
+  z: 0
+
+grid:
+  - "#########"
+  - "#.......#"
+  - "#.#.P.#.#"
+  - "#...P...#"
+  - "#.#.P.#.#"
+  - "#...P...#"
+  - "####G####"
+
+legend:
+  "#": wall
+  ".": street
+  P: plaza
+  G: gate
+
+templates:
+  wall:
+    walkable: false
+  street:
+    short:
+      - "a cobbled street"
+      - "a narrow street"
+      - "a winding lane"
+    long:
+      - - "Worn cobblestones run between leaning buildings."
+        - "The street is paved with uneven grey stones."
+        - "Ruts left by countless carts mark the road."
+      - - "A cold wind funnels along the way."
+        - "Shutters bang somewhere overhead."
+        - "The smell of woodsmoke hangs in the air."
+  plaza:
+    short:
+      - "the city plaza"
+      - "a broad plaza"
+    long:
+      - - "A wide open square of pale flagstones spreads out here."
+        - "Pigeons wheel above a broad, paved square."
+      - - "Stalls and carts crowd the edges."
+        - "Townsfolk cross the square in every direction."
+    handles: [plaza, square]
+  gate:
+    short: "the city gate"
+    long:
+      - - "A heavy arch of dark stone pierces the city wall here."
+      - - "Guards watch the road beyond."
+
+overrides:
+  # A hand-authored landmark: replaces the generated text and adds a feature.
+  - at: {x: 4, y: 3}
+    short: "the heart of the plaza"
+    long: "A weathered stone fountain stands at the centre of the plaza, water trickling from the mouth of a carved fish."
+    handles: [plaza, centre]
+    features:
+      - short: "a stone fountain"
+        long: "A carved stone fountain. Coins glint beneath the water."
+        handles: [fountain]
+        adjectives: [stone, carved]
+        plurals: [fountains]

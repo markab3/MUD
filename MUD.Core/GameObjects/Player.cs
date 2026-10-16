@@ -18,7 +18,13 @@ namespace MUD.Core.GameObjects
 
         private CommandQueue _commandQueue;
 
+        // True once Quit() has started for the current connection; cleared when a new connection is attached.
+        private bool _isQuitting;
+
         public string PlayerName { get; set; }
+
+        // Lowercase, trimmed PlayerName. Login and create match on this by exact equality; a unique index guards it.
+        public string NameKey { get; set; }
 
         public string Password { get; set; }
 
@@ -35,6 +41,10 @@ namespace MUD.Core.GameObjects
                 {
                     _connection.DataReceived -= DataReceivedHandler;
                     _connection.ClientDisconnected -= ClientDisconnectedHandler;
+                }
+                if (value != null && value != _connection)
+                {
+                    _isQuitting = false; // a new connection starts a new session
                 }
                 _connection = value;
                 if (value != null)
@@ -54,9 +64,9 @@ namespace MUD.Core.GameObjects
             _playerRepository = playerRepository;
         }
 
-        public bool Save()
+        public bool Save(bool quiet = false)
         {
-            ReceiveMessage("%^Bold%^%^Yellow%^Saving...%^Reset%^");
+            if (!quiet) { ReceiveMessage("%^Bold%^%^Yellow%^Saving...%^Reset%^"); }
             if (string.IsNullOrWhiteSpace(Id))
             {
                 _playerRepository.Insert(this);
@@ -76,6 +86,10 @@ namespace MUD.Core.GameObjects
 
         public void Quit()
         {
+            // Connection.Disconnect() re-enters through ClientDisconnectedHandler, so run the sequence once per session.
+            if (_isQuitting) { return; }
+            _isQuitting = true;
+
             ReceiveMessage("Thanks for playing!");
             ConnectionStatus = PlayerConnectionStatuses.Offline;
             if (Save())
@@ -86,6 +100,8 @@ namespace MUD.Core.GameObjects
             else
             {
                 // Uh oh!
+                // Save failed, so the player is still online: allow another quit attempt.
+                _isQuitting = false;
             }
         }
 
@@ -105,7 +121,7 @@ namespace MUD.Core.GameObjects
 
             if (ConnectionStatus == PlayerConnectionStatuses.LoggedIn)
             {
-                if (DateTime.Now.Subtract(_lastSave).Minutes >= 10)
+                if (DateTime.Now.Subtract(_lastSave).TotalMinutes >= 10)
                 {
                     Save();
                 }

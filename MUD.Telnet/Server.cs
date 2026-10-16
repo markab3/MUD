@@ -35,6 +35,11 @@ namespace MUD.Telnet
 
         private Timer _idleTimer;
 
+        private readonly object _clientsLock = new object();
+
+        // The listening socket, kept so Stop() can close it.
+        private Socket _listener;
+
         public event EventHandler ServerStopped;
 
         public event EventHandler<Client> ClientConnected;
@@ -55,11 +60,6 @@ namespace MUD.Telnet
         }
 
         public TelnetLimits Limits { get { return _limits; } }
-
-        private List<Client> snapshotClients()
-        {
-            lock (_clients) { return _clients.ToList(); }
-        }
 
         private static string addressKey(Client client)
         {
@@ -87,6 +87,7 @@ namespace MUD.Telnet
             Console.WriteLine($"Local address and port : {localEP.ToString()}");
 
             Socket listener = new Socket(localEP.Address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            _listener = listener;
 
             try
             {
@@ -121,9 +122,17 @@ namespace MUD.Telnet
             _isAcceptingConnections = false;
             _allDone.Set();
 
+            // Closing the listener stops new connections being accepted.
+            Socket listener = _listener;
+            if (listener != null)
+            {
+                listener.Close();
+            }
+
+            // Iterate over a snapshot: Disconnect() removes the client from _clients.
             foreach (Client currentClient in snapshotClients())
             {
-                currentClient.Send("The server is shutting down and your connection will now be closeed.");
+                currentClient.Send("The server is shutting down and your connection will now be closed.");
                 currentClient.Disconnect();
             }
         }
@@ -149,44 +158,66 @@ namespace MUD.Telnet
             }
         }
 
+        private List<Client> snapshotClients()
+        {
+            lock (_clientsLock)
+            {
+                return new List<Client>(_clients);
+            }
+        }
+
         private void acceptCallback(IAsyncResult ar)
         {
+            // Release the accept loop first so it always re-arms BeginAccept, even if this callback fails.
             _allDone.Set();
 
-            Socket listener = (Socket)ar.AsyncState;
-            Socket handler = listener.EndAccept(ar);
-
-            // Create the client connection object  
-            Client client = new Client(handler, _limits, null);
-
-            // Enforce connection caps before the client is announced to the rest of the system.
-            string key = addressKey(client);
-            if (!_connectionTracker.TryAdd(key))
+            try
             {
-                Console.WriteLine("REFUSED (connection limit): " + key);
-                try
+                Socket listener = (Socket)ar.AsyncState;
+                Socket handler = listener.EndAccept(ar);
+
+                // Create the client connection object  
+                Client client = new Client(handler, _limits, null);
+
+                // Enforce connection caps before the client is announced to the rest of the system.
+                string key = addressKey(client);
+                if (!_connectionTracker.TryAdd(key))
                 {
-                    handler.Send(System.Text.Encoding.ASCII.GetBytes("Too many connections. Please try again later.\r\n"));
-                    handler.Shutdown(SocketShutdown.Both);
+                    Console.WriteLine("REFUSED (connection limit): " + key);
+                    try
+                    {
+                        handler.Send(System.Text.Encoding.ASCII.GetBytes("Too many connections. Please try again later.\r\n"));
+                        handler.Shutdown(SocketShutdown.Both);
+                    }
+                    catch (Exception) { }
+                    finally { handler.Close(); }
+                    return;
                 }
-                catch (Exception) { }
-                finally { handler.Close(); }
-                return;
+
+                client.ClientDisconnected += handleClientDisconnect;
+                lock (_clientsLock)
+                {
+                    _clients.Add(client);
+                }
+                client.Read();
+
+                //client.Send(new byte[] {(byte) CommandCode.IAC, (byte) CommandCode.DO, (byte) OptionCode.TerminalType});
+
+                ClientConnected?.Invoke(this, client);
             }
-
-            client.ClientDisconnected += handleClientDisconnect;
-            lock (_clients) { _clients.Add(client); }
-            client.Read();
-
-            //client.Send(new byte[] {(byte) CommandCode.IAC, (byte) CommandCode.DO, (byte) OptionCode.TerminalType});
-
-            ClientConnected?.Invoke(this, client);
+            catch (Exception e)
+            {
+                Console.WriteLine("Failed to accept a client connection: " + e.ToString());
+            }
         }
 
         private void handleClientDisconnect(object sender, Client client)
         {
             bool wasTracked;
-            lock (_clients) { wasTracked = _clients.Remove(client); }
+            lock (_clientsLock)
+            {
+                wasTracked = _clients.Remove(client);
+            }
             if (wasTracked) { _connectionTracker.Remove(addressKey(client)); }
             ClientDisconnected?.Invoke(this, client);
         }

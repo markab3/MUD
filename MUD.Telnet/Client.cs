@@ -41,6 +41,9 @@ namespace MUD.Telnet
 
         private readonly OptionRefusals _optionRefusals = new OptionRefusals();
 
+        // True when the last data byte consumed was a CR (used to handle CR LF / CR NUL split across reads).
+        private bool _lastDataByteWasCR = false;
+
         private DateTime _lastActivity;
 
         // 0 = open, 1 = disconnected. Makes Disconnect idempotent so ClientDisconnected fires exactly once.
@@ -241,124 +244,159 @@ namespace MUD.Telnet
                     return;
                 }
 
-                if (bytesRead > 0)
-                {
-                    _lastActivity = _clock();
+                _lastActivity = _clock();
 
-                    // Grab raw data.
-                    byte[] receivedData = _buffer.Take(bytesRead).ToArray();
+                // Stop reading if a limit closed the connection.
+                if (!ProcessReceivedBytes(_buffer, bytesRead)) { return; }
 
-                    // Decode.
-                    string receivedMessage = string.Empty;
-
-                    // Handle telnet commands.
-                    foreach (byte currentByte in receivedData)
-                    {
-                        if (_currentCommand != null)
-                        {
-                            bool consumed = _currentCommand.ProccessByte(currentByte);
-                            if (consumed && !_currentCommand.IsComplete)
-                            {
-                                continue;
-                            }
-                            else
-                            {
-                                handleTelnetCommand(_currentCommand);
-                                _currentCommand = null;
-
-                                // The final byte of IAC <WILL|WONT|DO|DONT> <option> is the option itself;
-                                // it must not also be treated as input text.
-                                if (consumed) { continue; }
-                            }
-                        }
-
-                        if (currentByte == (byte)CommandCode.IAC)
-                        {
-                            _currentCommand = new TelnetCommand();
-                            continue;
-                        }
-                        receivedMessage += _clientEncoding.GetString(new byte[] { currentByte }); // hmm...
-                    }
-
-                    // Get last used line ending..
-                    if (receivedMessage.Contains("\r\n"))
-                    {
-                        _lineEnding = "\r\n";
-                    }
-                    else if (receivedMessage.Contains("\r"))
-                    {
-                        _lineEnding = "\r";
-                    }
-                    else if (receivedMessage.Contains("\n"))
-                    {
-                        _lineEnding = "\n";
-                    }
-
-                    // Unify the line endings.
-                    receivedMessage = receivedMessage.Replace("\n", "\r").Replace("\r\r", "\r");
-
-                    // There might be more data, so store the data received so far.  
-                    _receivedData = _receivedData + receivedMessage;
-
-                    int newlineIndex = _receivedData.IndexOf("\r");
-
-                    string currentLine = string.Empty;
-
-                    // Peel off each line, treating a newline as the terminator for the command.                 
-                    while (newlineIndex > -1)
-                    {
-                        // Decide on echo before handlers run: a handler may change echo state (e.g. after a password).
-                        bool echoLine = IsRemoteEcho && !IsEchoSupressed;
-
-                        // TODO: Handle TelnetCommands
-                        currentLine = _receivedData.Substring(0, newlineIndex);
-                        _receivedData = _receivedData.Substring(newlineIndex + 1);
-
-                        if (currentLine.Length > _limits.MaxLineLength)
-                        {
-                            rejectOverlongLine();
-                            return;
-                        }
-
-                        if (!_rateLimiter.TryAcquire(_clock()))
-                        {
-                            _receivedData = String.Empty;
-                            DisconnectWithMessage("You are sending commands too quickly. Goodbye.");
-                            return;
-                        }
-
-                        // Telnet negotiation was consumed above; drop control characters from the text.
-                        currentLine = StripControlCharacters(currentLine);
-
-                        DataReceived?.Invoke(this, currentLine);
-
-                        // A handler may have disconnected us (e.g. quit).
-                        if (_disconnected != 0) { return; }
-
-                        // Display receipt on the console. Content is not logged: it may be a password.
-                        Console.WriteLine("Line received ({0} chars)", currentLine.Length);
-
-                        // Echo the data back to the client.  
-                        if (echoLine) { Send(currentLine); }
-
-                        newlineIndex = _receivedData.IndexOf("\r");
-                    }
-
-                    // Whatever is left is an unterminated line; never buffer an over-long one.
-                    if (_receivedData.Length > _limits.MaxLineLength)
-                    {
-                        rejectOverlongLine();
-                        return;
-                    }
-
-                    Read();
-                }
+                Read();
             }
             catch (Exception ex)
             {
                 Console.WriteLine(ex.ToString());
                 Disconnect();
             }
+        }
+
+        /// <summary>
+        /// Parses raw bytes received from the remote end: handles telnet commands, enforces the input limits,
+        /// strips control characters and raises DataReceived for each complete line of text.
+        /// Returns false if the connection was closed and reading should stop.
+        /// </summary>
+        internal bool ProcessReceivedBytes(byte[] buffer, int count)
+        {
+            // Decode.
+            string receivedMessage = string.Empty;
+            bool previousWasCR = _lastDataByteWasCR;
+
+            // Handle telnet commands.
+            for (int i = 0; i < count; i++)
+            {
+                byte currentByte = buffer[i];
+
+                if (_currentCommand != null)
+                {
+                    if (_currentCommand.Command == null && currentByte == (byte)CommandCode.IAC)
+                    {
+                        // IAC IAC is a literal 0xFF data byte.
+                        _currentCommand = null;
+                        receivedMessage += _clientEncoding.GetString(new byte[] { currentByte });
+                        previousWasCR = false;
+                        continue;
+                    }
+
+                    if (_currentCommand.ProccessByte(currentByte))
+                    {
+                        if (!_currentCommand.IsComplete) { continue; }
+
+                        // This byte (the option) completed the command; it is consumed, not text.
+                        handleTelnetCommand(_currentCommand);
+                        _currentCommand = null;
+                        continue;
+                    }
+
+                    handleTelnetCommand(_currentCommand);
+                    _currentCommand = null;
+                }
+
+                if (currentByte == (byte)CommandCode.IAC)
+                {
+                    _currentCommand = new TelnetCommand();
+                    continue;
+                }
+
+                if (previousWasCR && currentByte == 0)
+                {
+                    // CR NUL is a bare CR; drop the NUL.
+                    previousWasCR = false;
+                    continue;
+                }
+
+                if (previousWasCR && currentByte == (byte)'\n' && receivedMessage.Length == 0)
+                {
+                    // LF completing a CRLF whose CR arrived in an earlier read; that line was already delivered.
+                    _lineEnding = "\r\n";
+                    previousWasCR = false;
+                    continue;
+                }
+
+                previousWasCR = currentByte == (byte)'\r';
+                receivedMessage += _clientEncoding.GetString(new byte[] { currentByte }); // hmm...
+            }
+
+            _lastDataByteWasCR = previousWasCR;
+
+            // Get last used line ending..
+            if (receivedMessage.Contains("\r\n"))
+            {
+                _lineEnding = "\r\n";
+            }
+            else if (receivedMessage.Contains("\r"))
+            {
+                _lineEnding = "\r";
+            }
+            else if (receivedMessage.Contains("\n"))
+            {
+                _lineEnding = "\n";
+            }
+
+            // Unify the line endings.
+            receivedMessage = receivedMessage.Replace("\n", "\r").Replace("\r\r", "\r");
+
+            // There might be more data, so store the data received so far.  
+            _receivedData = _receivedData + receivedMessage;
+
+            int newlineIndex = _receivedData.IndexOf("\r");
+
+            string currentLine = string.Empty;
+
+            // Peel off each line, treating a newline as the terminator for the command.                 
+            while (newlineIndex > -1)
+            {
+                // Decide on echo before handlers run: a handler may change echo state (e.g. after a password).
+                bool echoLine = IsRemoteEcho && !IsEchoSupressed;
+
+                currentLine = _receivedData.Substring(0, newlineIndex);
+                _receivedData = _receivedData.Substring(newlineIndex + 1);
+
+                if (currentLine.Length > _limits.MaxLineLength)
+                {
+                    rejectOverlongLine();
+                    return false;
+                }
+
+                if (!_rateLimiter.TryAcquire(_clock()))
+                {
+                    _receivedData = String.Empty;
+                    DisconnectWithMessage("You are sending commands too quickly. Goodbye.");
+                    return false;
+                }
+
+                // Telnet negotiation was consumed above; drop control characters from the text.
+                currentLine = StripControlCharacters(currentLine);
+
+                DataReceived?.Invoke(this, currentLine);
+
+                // A handler may have disconnected us (e.g. quit).
+                if (_disconnected != 0) { return false; }
+
+                // Display receipt on the console. Content is not logged: it may be a password.
+                Console.WriteLine("Line received ({0} chars)", currentLine.Length);
+
+                // Echo the data back to the client.  
+                if (echoLine) { Send(currentLine); }
+
+                newlineIndex = _receivedData.IndexOf("\r");
+            }
+
+            // Whatever is left is an unterminated line; never buffer an over-long one.
+            if (_receivedData.Length > _limits.MaxLineLength)
+            {
+                rejectOverlongLine();
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>
