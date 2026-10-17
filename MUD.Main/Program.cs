@@ -7,6 +7,7 @@ using MongoDB.Driver;
 using MUD.Core;
 using System.Linq;
 using System.Threading;
+using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using MUD.Core.Formatting;
 using MongoDB.Bson.Serialization;
@@ -70,6 +71,22 @@ namespace MUD.Main
     Use 'who' to see who is currently online.
     Use 'quit' to disconnect.
 --------------------------------------------------------------------------------";
+
+        private static ShutdownCoordinator _shutdown;
+
+        private static readonly ManualResetEventSlim _shutdownRequested = new ManualResetEventSlim(false);
+
+        // Runs the shutdown sequence off the signal thread, then exits the process. Used by the signal handlers.
+        private static void shutdownAndExit(string reason)
+        {
+            Console.WriteLine("SHUTDOWN requested: " + reason);
+            _shutdownRequested.Set();
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                if (_shutdown != null) { _shutdown.Run(); }
+                Environment.Exit(0);
+            });
+        }
 
         static void Main(string ip = null, int? port = null)
         {
@@ -282,8 +299,33 @@ namespace MUD.Main
 
             Console.WriteLine("SERVER STARTED: " + DateTime.Now);
 
+            // Graceful shutdown: stop accepting, tell clients, save every online player through the persistence
+            // worker and drain it, then close connections. Bounded: after 10 s it exits anyway and logs what
+            // was not saved. The World's own drain deadline is shorter so it can spool before this one fires.
+            _shutdown = new ShutdownCoordinator(
+                () => _serverInstance.StopAccepting(),
+                () => _serverInstance.SendMessageToAll("The server is shutting down."),
+                () => _gameWorld.Stop(),
+                () => _serverInstance.Stop(),
+                () => _gameWorld.DescribeUnsaved(),
+                Console.WriteLine);
+            _gameWorld.ShutdownTimeout = _shutdown.Timeout - TimeSpan.FromSeconds(2);
+
+            // SIGTERM (systemd stop), Ctrl+C / SIGINT, and process exit.
+            PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; shutdownAndExit("SIGTERM"); });
+            PosixSignalRegistration.Create(PosixSignal.SIGINT, context => { context.Cancel = true; shutdownAndExit("SIGINT"); });
+            Console.CancelKeyPress += (s, e) => { e.Cancel = true; shutdownAndExit("Ctrl+C"); };
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => _shutdown.Run();
+
             char read2 = ' ';
-            bool isInteractive = true;
+            bool isInteractive = !Console.IsInputRedirected;
+            if (!isInteractive)
+            {
+                // Under systemd stdin is not a terminal: block until a shutdown is requested instead of spinning.
+                _shutdownRequested.Wait();
+                _shutdown.Run();
+                return;
+            }
 
             while (read2 != 'q')
             {
@@ -328,14 +370,14 @@ namespace MUD.Main
                     }
                     catch (InvalidOperationException)
                     {
-                        // Can't accept console input.
-                        isInteractive = false;
+                        // Can't accept console input: wait for a shutdown signal instead.
+                        _shutdownRequested.Wait();
+                        break;
                     }
                 }
             }
 
-            _gameWorld.Stop();
-            _serverInstance.Stop();
+            _shutdown.Run();
         }
 
         private static void clientConnected(object sender, Client client)
