@@ -95,6 +95,7 @@ namespace MUD.Tests
     {
         public bool UpdateResult = true;
         public int Inserts, Updates;
+        public void CreateNameKeyIndex() { }
         public void Insert(Player model) { Inserts++; }
         public bool Update(Player model) { Updates++; return UpdateResult; }
         public bool Delete(Player model) { return true; }

@@ -42,7 +42,10 @@ namespace MUD.Tests
 
     public class FakeRoomRepo : FakeRepo<Room>, IRoomRepository { }
 
-    public class FakePlayerRepo : FakeRepo<Player>, IPlayerRepository { }
+    public class FakePlayerRepo : FakeRepo<Player>, IPlayerRepository
+    {
+        public void CreateNameKeyIndex() { }
+    }
 
     public class QuietPlayer : Player
     {
