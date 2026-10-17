@@ -2,12 +2,17 @@
 
 Companion to ROOM_FILES.md (definition vs state fields).
 
-## 1. Policy: write-through, no deferred queue
+## 1. Policy: write-through to the persistence worker, flushed on clean shutdown
 
-Every mutation of persistent state is saved immediately by the code that makes
-it. There is no debounce queue, so there is nothing to flush on shutdown and
-nothing is lost if the process is killed. (Heartbeat autosave of players every
-10 minutes remains as a safety net only.)
+Every mutation of persistent state is handed to the persistence worker
+immediately by the code that makes it: the game thread takes a snapshot and
+queues it (specs/GAME_LOOP.md section 8). There is no debounce timer. The
+worker writes in order and retries failures; on a clean shutdown the queue is
+flushed, and anything that cannot be written is spooled to disk and replayed at
+next start. Writes are therefore "queued, flushed on clean shutdown": a
+process that is killed (kill -9, power loss) can lose the few writes still
+queued. (Heartbeat autosave of players every 10 minutes remains as a safety
+net only.)
 
 | Mutation                         | Where saved                                   | Write type                       |
 |----------------------------------|-----------------------------------------------|----------------------------------|

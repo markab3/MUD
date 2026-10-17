@@ -13,6 +13,15 @@ public class FakeAccountStore : IAccountStore
         return this;
     }
     public StoredAccount? FindByNameKey(string nameKey) => _byKey.TryGetValue(nameKey, out var a) ? a : null;
+    public List<(string Key, string Password)> Updates { get; } = new();
+    public bool UpdateResult { get; set; } = true;
+    public bool UpdatePassword(string nameKey, string newPassword)
+    {
+        Updates.Add((nameKey, newPassword));
+        if (!UpdateResult || !_byKey.TryGetValue(nameKey, out var a)) { return false; }
+        _byKey[nameKey] = a with { Password = newPassword };
+        return true;
+    }
 }
 
 public class AccountServiceTests

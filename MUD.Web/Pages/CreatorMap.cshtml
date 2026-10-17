@@ -1,0 +1,107 @@
+@page "/creator/map"
+@model CreatorMapModel
+@using System.Globalization
+@functions {
+    static string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+    static string Pts(IReadOnlyList<(double X, double Y)> p) => string.Join(" ", p.Select(t => N(t.X) + "," + N(t.Y)));
+    static string Clip(string s, int n) => s.Length <= n ? s : s.Substring(0, n - 1) + "\u2026";
+}
+@{ ViewData["Title"] = "Room map"; }
+<h1>Room map</h1>
+@if (Model.Areas.Count == 0)
+{
+    <p>There are no rooms.</p>
+}
+else
+{
+    var map = Model.Map!;
+    <form method="get" action="/creator/map">
+        <label>Area
+            <select name="area">
+                @foreach (var a in Model.Areas)
+                {
+                    <option value="@a" selected="@(a == Model.Area)">@(a.Length == 0 ? "(no area)" : a)</option>
+                }
+            </select>
+        </label>
+        <label>Level (Z)
+            <select name="z">
+                @if (Model.Levels.Count == 0)
+                {
+                    <option value="0" selected="selected">0</option>
+                }
+                @foreach (var l in Model.Levels)
+                {
+                    <option value="@l" selected="@(l == Model.Z)">@l</option>
+                }
+            </select>
+        </label>
+        <button type="submit">Show</button>
+    </form>
+    <p>North is up. Arrowheads show direction; a line with arrowheads at both ends is a two-way exit.</p>
+    @if (map.Rects.Count == 0)
+    {
+        <p>No placed rooms on this level.</p>
+    }
+    else
+    {
+        <svg xmlns="http://www.w3.org/2000/svg" width="@N(map.Width)" height="@N(map.Height)" viewBox="0 0 @N(map.Width) @N(map.Height)" role="img" aria-label="Room map">
+            <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke" /></marker>
+            </defs>
+            @foreach (var l in map.Lines)
+            {
+                <polyline points="@Pts(l.Points)" fill="none" stroke="@(l.Warning ? "#d97706" : "#333")" stroke-width="2"
+                          stroke-dasharray="@(l.Warning ? "6 4" : null)" marker-end="@(l.ArrowEnd ? "url(#arrow)" : null)"
+                          marker-start="@(l.ArrowStart ? "url(#arrow)" : null)"><title>@l.FromKey → @l.ToKey</title></polyline>
+            }
+            @foreach (var s in map.Stubs)
+            {
+                var color = s.Missing ? "#dc2626" : "#666";
+                <polyline points="@Pts(s.Points)" fill="none" stroke="@color" stroke-width="2" marker-end="url(#arrow)" />
+                @:<text x="@N(s.LabelX)" y="@N(s.LabelY)" font-size="10" fill="@color" text-anchor="middle">@Clip(s.Target, 28)</text>
+            }
+            @foreach (var r in map.Rects)
+            {
+                <a href="@CreatorMapModel.RoomUrl(r.Key)">
+                    <rect x="@N(r.X)" y="@N(r.Y)" width="@N(r.W)" height="@N(r.H)" fill="#f5f5f4" stroke="#111" stroke-width="1.5"><title>@r.Key</title></rect>
+                    <text x="@N(r.X + r.W / 2)" y="@N(r.Y + 28)" font-size="11" text-anchor="middle">@Clip(r.Short, 20)</text>
+                    <text x="@N(r.X + r.W / 2)" y="@N(r.Y + 44)" font-size="9" text-anchor="middle" fill="#555">@Clip(r.Key, 24)</text>
+                </a>
+            }
+            @foreach (var b in map.Badges)
+            {
+                @:<text x="@N(b.X + 6)" y="@N(b.Y)" font-size="10" fill="@(b.Missing ? "#dc2626" : "#1d4ed8")">@b.Text @Clip(b.Target, 16)<title>@b.Text → @b.Target</title></text>
+            }
+        </svg>
+    }
+    @if (map.Mismatches.Count > 0)
+    {
+        <section>
+            <h2>Direction mismatches</h2>
+            <p>The room coordinates disagree with the exit direction. Exits are the truth; these lines are dashed.</p>
+            <ul>
+                @foreach (var m in map.Mismatches)
+                {
+                    <li>@m.FromKey @m.Direction → @m.ToKey</li>
+                }
+            </ul>
+        </section>
+    }
+    <section>
+        <h2>Unplaced rooms</h2>
+        @if (map.Unplaced.Count == 0)
+        {
+            <p>None.</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var u in map.Unplaced)
+                {
+                    <li><a href="@CreatorMapModel.RoomUrl(u.Key)">@u.Key</a> @u.Short</li>
+                }
+            </ul>
+        }
+    </section>
+}

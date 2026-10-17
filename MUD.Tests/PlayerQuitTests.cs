@@ -9,6 +9,7 @@ using Xunit;
 
 namespace MUD.Tests
 {
+    [Collection("World construction")] // World registers BSON class maps; constructing it in parallel races
     public class PlayerQuitTests
     {
         private static World NewWorld()
@@ -40,7 +41,8 @@ namespace MUD.Tests
             var player = new Player(world, null, repo) { Id = "p.tester", PlayerName = "tester", Password = "x" };
             var client = NewConnectedClient(out TcpClient peer);
             int clientDisconnects = 0;
-            client.ClientDisconnected += (s, c) => clientDisconnects++;
+            var disconnected = new System.Threading.ManualResetEventSlim(false);
+            client.ClientDisconnected += (s, c) => { System.Threading.Interlocked.Increment(ref clientDisconnects); disconnected.Set(); };
 
             try
             {
@@ -50,7 +52,8 @@ namespace MUD.Tests
                 player.Quit();
                 player.Quit();
 
-                // Quit's own Disconnect() re-enters Quit through ClientDisconnectedHandler; that re-entry must be a no-op.
+                // Quit disconnects with a flush (the farewell is written first), so the close completes shortly after.
+                Assert.True(disconnected.Wait(5000), "the connection was not closed after Quit");
                 Assert.Equal(1, repo.ReplaceCount);
                 Assert.Equal(1, clientDisconnects);
                 Assert.DoesNotContain(player, world.Players);

@@ -151,10 +151,40 @@ namespace MUD.Core.GameObjects
             RebuildExitCommands();
         }
 
+        // The persistence sink for rooms, or null when saves are written synchronously (startup, plain fakes in tests).
+        private MUD.Data.IPersistSink Sink
+        {
+            get
+            {
+                var snapshots = _roomRepository as MUD.Data.ISnapshotRepository;
+                return snapshots == null ? null : snapshots.Sink;
+            }
+        }
+
+        // Snapshots this room and hands it to the persistence worker (specs/GAME_LOOP.md 8.2a). Game thread only.
+        private void Post(MUD.Data.PersistKind kind, MongoDB.Bson.BsonDocument document, MongoDB.Bson.BsonDocument fallback)
+        {
+            Sink.Post(new MUD.Data.PersistRequest
+            {
+                Collection = ((MUD.Data.ISnapshotRepository)_roomRepository).CollectionName,
+                Id = Id,
+                Kind = kind,
+                Doc = document,
+                Fallback = fallback,
+                Reason = kind == MUD.Data.PersistKind.Replace ? "room save" : "room state"
+            });
+        }
+
+        // With a persistence sink this only queues the write and returns true; otherwise it writes now.
         public bool Save()
         {
             try
             {
+                if (Sink != null && !string.IsNullOrWhiteSpace(Id))
+                {
+                    Post(MUD.Data.PersistKind.Replace, MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this), null);
+                    return true;
+                }
                 if (string.IsNullOrWhiteSpace(Id))
                 {
                     _roomRepository.Insert(this);
@@ -184,7 +214,14 @@ namespace MUD.Core.GameObjects
             {
                 if (string.IsNullOrWhiteSpace(Id)) { return Save(); }
 
-                var state = new MongoDB.Bson.BsonDocument("Items", MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this)["Items"]);
+                var whole = MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this);
+                var state = new MongoDB.Bson.BsonDocument("Items", whole["Items"]);
+                if (Sink != null)
+                {
+                    // The worker falls back to replacing the whole document if no stored document matches.
+                    Post(MUD.Data.PersistKind.SetFields, state, whole);
+                    return true;
+                }
                 if (_roomRepository.UpdateFields(Id, state)) { return true; }
                 return Save();
             }
