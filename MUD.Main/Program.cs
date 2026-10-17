@@ -165,6 +165,11 @@ namespace MUD.Main
                 if (database == null) { Console.WriteLine("Database not found!"); }
                 var collection = database.GetCollection<BsonDocument>("player"); // Check that the collection is there. If it is not, then the collection exists in memory and is created on the actual DB when needed.
                 var testFind = collection.AsQueryable().FirstOrDefault();
+                foreach (var legacyCollection in new[] { "room", "player" })
+                {
+                    var count = MUD.Data.ObjectIdMigration.MigrateCollection(database.GetCollection<BsonDocument>(legacyCollection), Console.WriteLine);
+                    if (count > 0) { Console.WriteLine(string.Format("Migrated {0} legacy ObjectId documents in '{1}'.", count, legacyCollection)); }
+                }
                 // collection = database.GetCollection<BsonDocument>("rooms"); // Check that the collection is there.
                 // collection.InsertOne(BsonDocument.Parse(jsonContent)); // The BSON object will have _id and it will be set by the insert call.
 
