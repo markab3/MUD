@@ -33,8 +33,9 @@ namespace MUD.Core.GameObjects
 
         public List<InventoryItem> HeldItems { get; set; } = new List<InventoryItem>();
 
+        // Game time before which this living may not act (see CommandQueue). Replaces the old IsBusy flag.
         [BsonIgnore]
-        public bool IsBusy { get; set; } = false;
+        public System.DateTime NextActionAt { get; set; } = System.DateTime.MinValue;
 
         [BsonIgnore]
         public Room CurrentLocation

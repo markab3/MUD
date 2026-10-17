@@ -258,6 +258,7 @@ namespace MUD.Main
                 Console.WriteLine("Player account preparation failed: " + ex.Message);
             }
             _gameWorld.LoginThrottle = _loginThrottle;
+            _gameWorld.PreLoginHandler = (connection, line) => messageReceived(connection, line);
             Thread gameWorldThread = new Thread(_gameWorld.Start);
             gameWorldThread.Start();
             Console.WriteLine("done.");
@@ -336,15 +337,19 @@ namespace MUD.Main
         {
             Console.WriteLine("CONNECTED: " + client);
 
-            client.DataReceived += messageReceived;
+            client.DataReceived += (s, line) => _gameWorld.EnqueueLine(client, line);
             client.Send(welcomeMessage);
-            messageReceived(client, "who");
-            client.Send("");
+            // Pre-login handling reads world state, so it runs on the game thread, after the welcome text.
+            _gameWorld.Post(() =>
+            {
+                messageReceived(client, "who");
+                client.Send("");
+            });
         }
 
         private static void clientDisconnected(object sender, Client client)
         {
-            client.DataReceived -= messageReceived;
+            _gameWorld.EnqueueDisconnect(client);
             Console.WriteLine("DISCONNECTED: " + client);
         }
 
@@ -403,7 +408,7 @@ namespace MUD.Main
 
             if (session.IsLoggedIn)
             {
-                client.DataReceived -= messageReceived;
+                // Lines from now on go to the player (World routes by connection).
                 client.IsLoggedIn = true;
             }
         }

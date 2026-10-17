@@ -133,7 +133,7 @@ namespace MUD.Telnet
             foreach (Client currentClient in snapshotClients())
             {
                 currentClient.Send("The server is shutting down and your connection will now be closed.");
-                currentClient.Disconnect();
+                currentClient.Disconnect(true);
             }
         }
 

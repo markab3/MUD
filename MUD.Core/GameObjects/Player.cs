@@ -6,6 +6,7 @@ using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using MUD.Core.Repositories.Interfaces;
+using MUD.Data;
 using MUD.Telnet;
 using System.Threading;
 
@@ -15,9 +16,16 @@ namespace MUD.Core.GameObjects
     {
         private IPlayerRepository _playerRepository;
 
-        private Client _connection;
+        private IClientConnection _connection;
 
         private CommandQueue _commandQueue;
+
+        // Autosave interval (specs/GAME_LOOP.md 8.2).
+        private static readonly TimeSpan AutosaveInterval = TimeSpan.FromMinutes(10);
+
+        // Password writes handed to the persistence worker and not yet confirmed. While any are outstanding the
+        // stored password is older than the in-memory one, so SyncPasswordFromStore must not "adopt" it.
+        private int _unconfirmedPasswordWrites;
 
         // True once Quit() has started for the current connection; cleared when a new connection is attached.
         private bool _isQuitting;
@@ -40,28 +48,19 @@ namespace MUD.Core.GameObjects
 
         public string SelectedTerm { get; set; }
 
+        // Input and disconnects reach the player through the game loop (World routes lines to
+        // DataReceivedHandler and calls Quit on a Disconnected item), so no event handlers are attached here.
         [BsonIgnore]
-        public Client Connection
+        public IClientConnection Connection
         {
             get { return _connection; }
             set
             {
-                // If connection is changing, drop event handlers for the old one.
-                if (_connection != null && value != _connection)
-                {
-                    _connection.DataReceived -= DataReceivedHandler;
-                    _connection.ClientDisconnected -= ClientDisconnectedHandler;
-                }
                 if (value != null && value != _connection)
                 {
                     _isQuitting = false; // a new connection starts a new session
                 }
                 _connection = value;
-                if (value != null)
-                {
-                    _connection.DataReceived += DataReceivedHandler;
-                    _connection.ClientDisconnected += ClientDisconnectedHandler;
-                }
             }
         }
 
@@ -95,9 +94,89 @@ namespace MUD.Core.GameObjects
             _promptHandler = null;
         }
 
+        private IClock Clock { get { return _world != null ? _world.Clock : SystemClock.Instance; } }
+
+        // The persistence sink for this player's collection, or null when saves are written synchronously
+        // (before the game thread exists, and in tests that use a plain fake repository).
+        private IPersistSink Sink
+        {
+            get
+            {
+                var snapshots = _playerRepository as ISnapshotRepository;
+                return snapshots == null ? null : snapshots.Sink;
+            }
+        }
+
+        /// <summary>
+        /// Saves the player. With a persistence sink (normal operation) this snapshots the player and hands it to
+        /// the worker without touching the database, and returns true meaning "queued"; the outcome is reported to
+        /// the player later. Without a sink the write happens here and the result is the database's.
+        /// </summary>
         public bool Save(bool quiet = false)
         {
+            return SavePlayer(quiet, false, false);
+        }
+
+        private bool SavePlayer(bool quiet, bool final, bool passwordChange)
+        {
             if (!quiet) { ReceiveMessage("%^Bold%^%^Yellow%^Saving...%^Reset%^"); }
+            if (Sink != null) { return PostSnapshot(quiet, final, passwordChange); }
+            return SaveSynchronously();
+        }
+
+        private bool PostSnapshot(bool quiet, bool final, bool passwordChange)
+        {
+            BsonDocument snapshot;
+            lock (_saveLock)
+            {
+                // Replace writes the whole document, so first make sure the Password it carries is not older
+                // than the stored one (the website may have changed it since this player was loaded).
+                SyncPasswordFromStore();
+                snapshot = this.ToBsonDocument();
+                if (passwordChange) { _unconfirmedPasswordWrites++; }
+            }
+            _lastSave = Clock.Now;
+
+            var request = new PersistRequest
+            {
+                Collection = ((ISnapshotRepository)_playerRepository).CollectionName,
+                Id = Id,
+                Kind = PersistKind.Replace,
+                Doc = snapshot,
+                Final = final,
+                Reason = final ? "logout" : "player save"
+            };
+            if (passwordChange)
+            {
+                request.OnCompleted = persisted => { lock (_saveLock) { _unconfirmedPasswordWrites--; } };
+            }
+            if (!quiet)
+            {
+                request.OnFailed = attempts => Notify("%^Bold%^%^Red%^Saving failed; it will be retried.%^Reset%^");
+                request.OnCompleted = Chain(request.OnCompleted, persisted =>
+                {
+                    if (persisted) { Notify("%^Bold%^%^Yellow%^Saved.%^Reset%^"); }
+                });
+            }
+            if (final && _world != null) { _world.BeginFinalSave(this, request); }
+            Sink.Post(request);
+            return true;
+        }
+
+        private static Action<bool> Chain(Action<bool> first, Action<bool> second)
+        {
+            if (first == null) { return second; }
+            return v => { first(v); second(v); };
+        }
+
+        // Tells a still-connected player about a persistence outcome (callbacks arrive on the game thread).
+        private void Notify(string message)
+        {
+            if (ConnectionStatus == PlayerConnectionStatuses.LoggedIn && _connection != null) { ReceiveMessage(message); }
+        }
+
+        private bool SaveSynchronously()
+        {
             lock (_saveLock)
             {
                 if (string.IsNullOrWhiteSpace(Id))
@@ -130,7 +209,7 @@ namespace MUD.Core.GameObjects
         {
             lock (_saveLock)
             {
-                if (_passwordChangePending || string.IsNullOrWhiteSpace(Id)) { return false; }
+                if (_passwordChangePending || _unconfirmedPasswordWrites > 0 || string.IsNullOrWhiteSpace(Id)) { return false; }
                 try
                 {
                     BsonDocument stored = _playerRepository.GetRawDocument(Id);
@@ -160,7 +239,7 @@ namespace MUD.Core.GameObjects
                 bool saved = false;
                 try
                 {
-                    saved = Save(true);
+                    saved = SavePlayer(true, false, Sink != null);
                 }
                 finally
                 {
@@ -171,26 +250,24 @@ namespace MUD.Core.GameObjects
             }
         }
 
+        /// <summary>
+        /// Logout (specs/GAME_LOOP.md 8.4), on the game thread, once per session: farewell, leave the world,
+        /// final snapshot to the persistence worker, then a flushing disconnect so the farewell reaches the client.
+        /// Logout never waits on the database: a failed final save is retried by the worker (and spooled).
+        /// </summary>
         public void Quit()
         {
-            // Connection.Disconnect() re-enters through ClientDisconnectedHandler, so run the sequence once per session.
             if (_isQuitting) { return; }
             _isQuitting = true;
             _promptHandler = null;
+            if (_commandQueue != null) { _commandQueue.Clear(this); }
 
             ReceiveMessage("Thanks for playing!");
             ConnectionStatus = PlayerConnectionStatuses.Offline;
-            if (Save())
-            {
-                _world.RemovePlayer(this);
-                Connection.Disconnect();
-            }
-            else
-            {
-                // Uh oh!
-                // Save failed, so the player is still online: allow another quit attempt.
-                _isQuitting = false;
-            }
+            if (_world != null) { _world.RemovePlayer(this); }
+            SavePlayer(true, true, false);
+            if (_world != null) { _world.RetireConnection(_connection); }
+            _connection.Disconnect(true);
         }
 
         public override void ReceiveMessage(string message)
@@ -209,13 +286,17 @@ namespace MUD.Core.GameObjects
 
             if (ConnectionStatus == PlayerConnectionStatuses.LoggedIn)
             {
-                if (DateTime.Now.Subtract(_lastSave).TotalMinutes >= 10)
+                if (Clock.Now.Subtract(_lastSave).TotalMinutes >= AutosaveInterval.TotalMinutes)
                 {
                     Save();
                 }
             }
         }
 
+        /// <summary>
+        /// Handles one input line from this player. Runs on the game thread (World routes lines here from the
+        /// inbound queue); it resolves and parses the command there, then queues it.
+        /// </summary>
         public void DataReceivedHandler(object sender, string message)
         {
             // check to see if this matches a command that the player has available.
@@ -247,17 +328,6 @@ namespace MUD.Core.GameObjects
             {
                 ReceiveMessage("Command not recognized.");
             }
-        }
-
-        private void ClientDisconnectedHandler(object sender, Client e)
-        {
-            // I think this is what we want for now... 
-            // I think in other muds the player object doesn't get removed unless you quit via the actual command. That way you can't just kill your connection and avoid death or whatever.
-            // We would need to add a timeout feature...
-            e.DataReceived -= DataReceivedHandler;
-            e.ClientDisconnected -= ClientDisconnectedHandler;
-            Quit();
-            //ConnectionStatus = EPlayerConnectionStatus.NetDead; // Maybe just online/offline? Not sure when net dead is a thing...
         }
     }
 }
