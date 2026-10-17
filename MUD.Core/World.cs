@@ -441,7 +441,31 @@ namespace MUD.Core
             }
         }
 
-        public bool DoLogin(string userName, string password, Client client)
+        /// <summary>
+        /// Duplicate login: moves a live player to a new connection (game thread). The old connection is told why and
+        /// closed WITHOUT Quit, and its session mapping is removed first so its later Disconnected item finds no
+        /// player and cannot quit or save-and-remove it. The player stays in the world.
+        /// </summary>
+        public void TakeOverSession(Player player, IClientConnection newConnection)
+        {
+            IClientConnection old = player.Connection;
+            bool replacing = old != null && old != newConnection;
+            if (replacing)
+            {
+                _sessions.Remove(old);
+                old.Send("You have been logged in from another location.");
+            }
+            player.ClearPromptHandler();
+            player.Connection = newConnection;
+            player.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
+            _sessions[newConnection] = player;
+            if (replacing) { old.Disconnect(true); }
+
+            player.ReceiveMessage("Reconnecting to your existing session.");
+            player.DataReceivedHandler(null, "look");
+        }
+
+        public bool DoLogin(string userName, string password, IClientConnection client)
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
 
@@ -452,6 +476,13 @@ namespace MUD.Core
                 // The previous session's logout save is still queued; logging in now could load stale data.
                 client.Send("Your previous session is still being saved, try again in a moment.");
                 return false;
+            }
+
+            if (foundPlayer != null && Players.Contains(foundPlayer))
+            {
+                // The account already has a live player: the new connection takes it over.
+                TakeOverSession(foundPlayer, client);
+                return true;
             }
 
             if (foundPlayer != null)
