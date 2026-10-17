@@ -3,7 +3,7 @@ using MongoDB.Driver;
 
 namespace MUD.Web.Services;
 
-// Read-only view of the game's `player` collection. Does not reference MUD.Core.
+// View of the game's `player` collection (reads, plus the single-field password update). Does not reference MUD.Core.
 public class MongoAccountStore : IAccountStore
 {
     private readonly IMongoCollection<BsonDocument> _players;
@@ -23,6 +23,23 @@ public class MongoAccountStore : IAccountStore
         if (!name.IsString) { return null; }
         var password = doc.GetValue("Password", BsonNull.Value);
         return new StoredAccount(name.AsString, password.IsString ? password.AsString : null, RoleFrom(doc));
+    }
+
+    // $set of Password only: never replaces the document, so nothing else the game wrote is touched.
+    public bool UpdatePassword(string nameKey, string newPassword)
+    {
+        if (string.IsNullOrEmpty(nameKey)) { return false; }
+        try
+        {
+            var result = _players.UpdateOne(
+                Builders<BsonDocument>.Filter.Eq("NameKey", nameKey),
+                Builders<BsonDocument>.Update.Set("Password", newPassword));
+            return result.IsAcknowledged && result.MatchedCount == 1;
+        }
+        catch (MongoException)
+        {
+            return false;
+        }
     }
 
     // Role from the BSON discriminators (_t) of ExtendedProperties. The discriminator may be a scalar or a

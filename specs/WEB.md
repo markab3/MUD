@@ -30,6 +30,7 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/login` | anyone | name + password form, antiforgery protected |
 | `/logout` | POST only | antiforgery protected sign-out; GET just redirects |
 | `/character` | signed in | `Hello (<PlayerName>)!`, HTML-encoded |
+| `/account/password` | signed in | change-password form (current, new, confirm), antiforgery protected; see below |
 
 The nav shows a `/creator` link only when the `CreatorOrAdmin` policy passes.
 
@@ -72,6 +73,20 @@ the first area and level 0), driven by the Area and Level selectors.
   the target key as a label (red when the room does not exist).
 - Rooms in the area with null X or Y are listed in the Unplaced panel and are still clickable.
 - The nav shows a `/creator/map` link under the same policy as the `/creator` link.
+
+## Password change (`/account/password`)
+
+- Anonymous users are redirected to `/login`. The nav shows a "Change password" link when signed in.
+- POST (antiforgery) fields: `Current`, `New`, `Confirm`. Rules match the game's `chpwd`: 6 to 64
+  characters, no control characters, new must equal confirm and differ from current
+  (`PasswordRules` here, `PlayerAccounts.ValidatePassword` in MUD.Core; `PasswordRuleParityTests` keeps them equal).
+- The current password is checked first, with the same constant-time compare as login. Wrong current shows one
+  generic error and counts toward the login throttle (shared `LoginThrottle`, per IP, plus the 500 ms delay);
+  a locked-out IP sees the same error.
+- The new password is stored through `IAccountStore.UpdatePassword(nameKey, newPassword)`, a `$set` of
+  `Password` only. Still plaintext (see the caveat below). The session stays signed in; a confirmation is shown.
+- Game side: a player online in the game holds a cached `Player`. `Player.Save` and `chpwd` re-read the stored
+  `Password` first and adopt it if it differs, so a later game save never writes back an older password.
 
 ## Auth model
 

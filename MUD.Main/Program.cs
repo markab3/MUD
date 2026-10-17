@@ -257,6 +257,7 @@ namespace MUD.Main
             {
                 Console.WriteLine("Player account preparation failed: " + ex.Message);
             }
+            _gameWorld.LoginThrottle = _loginThrottle;
             Thread gameWorldThread = new Thread(_gameWorld.Start);
             gameWorldThread.Start();
             Console.WriteLine("done.");
