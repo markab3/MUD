@@ -15,7 +15,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Creator; }
 
-        public string HelpText { get => "Build a room."; }
+        public string HelpText { get => "Build a room. 'build feature list|add|set|remove' edits the features of the room you are in."; }
 
         private WorldSettings _settings;
 
@@ -36,6 +36,13 @@ namespace MUD.Core.Commands
             if (creatorStatusObj == null)
             {
                 commandIssuer.ReceiveMessage("This is a creator only command. How did you get this?!");
+                return;
+            }
+
+            string subArgs = commandArgs != null && commandArgs.Length > 0 ? (commandArgs[0] as string ?? "").Trim() : "";
+            if (subArgs == "feature" || subArgs.StartsWith("feature "))
+            {
+                BuildFeatureEditor.Execute(commandIssuer, subArgs.Substring("feature".Length));
                 return;
             }
 
