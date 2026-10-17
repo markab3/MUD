@@ -193,7 +193,7 @@ namespace MUD.Core
                 if (!_classMapsRegistered)
                 {
                     var classMapManager = new MUD.Data.MongoDBClassMapManager(serviceProvider);
-                    classMapManager.ClearClassMaps();
+                    classMapManager.RegisterRootClassMap(typeof(MUD.Data.Entity));
 
                     // Add Things that go to the DB.
                     classMapManager.RegisterEntityClasses(libAssemblies);
