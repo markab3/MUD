@@ -509,3 +509,22 @@ Q15. Single persistence worker thread, or one per collection if throughput deman
 Q16. RUNTIME_STATE.md says every mutation is saved immediately and nothing is lost if the process is killed.
     Moving those saves to the worker (8.2a) weakens that to "queued, flushed on clean shutdown". Accept, or keep a
     narrow synchronous exception for get/drop?
+
+## 14. Owner decisions on open questions
+
+Recorded after owner review. These supersede the proposals in section 13.
+
+- Q1: inbound queue is `BlockingCollection<InboundItem>` (`TryTake` with a timeout until the next tick). Outbound and persistence queues stay `Channel<T>`.
+- Q2: tick interval 100 ms; heartbeat stays 2 s.
+- Q3: full snapshots on the game thread for now; dirty flags later if cost matters.
+- Q4: 1024-byte lines, 20 queued lines per client; excess lines are dropped with a warning, repeated abuse disconnects.
+- Q5: DB reads may run synchronously on the game thread as an interim step; writes never do.
+- Q6: SearchCommand's 3 s sleep is replaced by a NextActionAt timestamp.
+- Q8: "Saving..." is followed by a completion or failure message.
+- Q10: on shutdown with the DB unavailable, write a spool file under ~/.local/share/mud/spool/.
+- Q11: the persistence worker bypasses the repository model cache; a Player is evicted after its final write so a re-login reloads from the DB.
+- Q12: accepted; logout no longer waits on a successful save (failures are retried and logged).
+- Q13: on a fatal game-loop error attempt an orderly shutdown with a save.
+- Q14: net-dead handling is deferred and out of scope for this card.
+- Q15: a single persistence worker thread.
+- Q16: accepted; get/drop saves move to the worker. RUNTIME_STATE.md must be updated to say "queued, flushed on clean shutdown".
