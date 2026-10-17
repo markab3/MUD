@@ -21,6 +21,7 @@ builder.WebHost.UseUrls(string.IsNullOrWhiteSpace(url) ? "http://127.0.0.1:5080"
 
 builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoUri));
 builder.Services.AddSingleton<IAccountStore>(sp => new MongoAccountStore(sp.GetRequiredService<IMongoClient>(), databaseName));
+builder.Services.AddSingleton<IRoomReader>(sp => new MongoRoomReader(sp.GetRequiredService<IMongoClient>(), databaseName));
 builder.Services.AddSingleton<IAccountService, AccountService>();
 builder.Services.AddSingleton<LoginThrottle>();
 

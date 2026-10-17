@@ -48,6 +48,32 @@ redirected to `/login`; signed-in players get a 403 page at `/access-denied` (no
   then shows "Room creation is not implemented yet." and echoes none of the submitted values.
   The real implementation replaces the DI registration; no Mongo access exists in this path.
 
+## Room map (`/creator/map`)
+
+Read-only map of the `room` collection, protected by `CreatorOrAdmin` (anonymous -> `/login`, plain
+player -> `/access-denied`). Rooms come from `IRoomReader` (`MongoRoomReader` in production, a fake in
+tests); only definition fields are read (`ShortDescription`, `Area`, `X`, `Y`, `Z`, `Exits`). Nothing is
+written, and the page does not reference MUD.Core. Query string: `?area=<prefix>&z=<level>` (defaults to
+the first area and level 0), driven by the Area and Level selectors.
+
+- Layout lives in `RoomMapLayout` (pure; returns rects, polylines with arrowhead flags, stubs, badges,
+  mismatches and the unplaced list). The page renders it as inline SVG, no JavaScript or external requests.
+- Orientation per ROOM_FILES.md section 10: +x east, +y north, +z up. NORTH IS UP: screen y = -Y.
+- Each placed room (X and Y set, Z defaults to level 0) is a square showing its short description and key.
+  Clicking it goes to `/creator/rooms/{key}` (that edit page does not exist yet, so it is a 404 for now).
+- Compass exits (`north/n`, `northeast/ne`, `east/e`, `southeast/se`, `south/s`, `southwest/sw`,
+  `west/w`, `northwest/nw`) are lines from the matching side or corner, with an arrowhead at the
+  destination. An exit A->B plus a compass exit B->A in the opposite direction is one two-way line
+  (arrowheads at both ends); otherwise it is a one-way line with one arrowhead.
+- If the destination's coordinates disagree with the exit direction, the line is dashed in the warning
+  colour and listed under the map as a mismatch. Coordinates never create movement; exits are the truth.
+- `up`/`down` and non-compass exits (e.g. `enter hut`) cannot be placed on the grid: they appear as badges
+  on the square (up/down arrow or the exit name) with the destination key.
+- A compass exit to a missing room, another area, another level or an unplaced room is a short stub with
+  the target key as a label (red when the room does not exist).
+- Rooms in the area with null X or Y are listed in the Unplaced panel and are still clickable.
+- The nav shows a `/creator/map` link under the same policy as the `/creator` link.
+
 ## Password change (`/account/password`)
 
 - Anonymous users are redirected to `/login`. The nav shows a "Change password" link when signed in.

@@ -16,6 +16,7 @@
             @if ((await Authz.AuthorizeAsync(User, WebPolicies.CreatorOrAdmin)).Succeeded)
             {
                 <a href="/creator">Creator</a>
+                <a href="/creator/map">Map</a>
             }
             <form method="post" action="/logout" style="display:inline">
                 @Html.AntiForgeryToken()
