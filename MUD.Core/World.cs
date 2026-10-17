@@ -40,6 +40,10 @@ namespace MUD.Core
 
         private WorldSettings _settings;
 
+        private static readonly object _classMapLock = new object();
+
+        private static bool _classMapsRegistered;
+
         public World(IMongoClient dbClient, WorldSettings settings)
         {
             _settings = settings;
@@ -129,11 +133,20 @@ namespace MUD.Core
 
             // Make sure the classMaps are properly registered.
             // TODO: Do assembly scans here.
-            var classMapManager = new MUD.Data.MongoDBClassMapManager(serviceProvider);
-            classMapManager.ClearClassMaps();
+            // BSON class maps are process-global, so they are registered once, by the first World.
+            // Later Worlds must not clear them: that corrupts maps other threads are using.
+            lock (_classMapLock)
+            {
+                if (!_classMapsRegistered)
+                {
+                    var classMapManager = new MUD.Data.MongoDBClassMapManager(serviceProvider);
+                    classMapManager.ClearClassMaps();
 
-            // Add Things that go to the DB.
-            classMapManager.RegisterEntityClasses(libAssemblies);
+                    // Add Things that go to the DB.
+                    classMapManager.RegisterEntityClasses(libAssemblies);
+                    _classMapsRegistered = true;
+                }
+            }
 
             return serviceProvider;
         }
