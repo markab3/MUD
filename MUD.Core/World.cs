@@ -238,6 +238,20 @@ namespace MUD.Core
             _stopped.Wait(ShutdownTimeout + TimeSpan.FromSeconds(10));
         }
 
+        /// <summary>
+        /// Describes what a shutdown that ran out of time may have left unsaved: players still online or with a
+        /// final save pending, and snapshots still queued in the persistence worker. Safe from any thread (best
+        /// effort; the game thread may be mid-change).
+        /// </summary>
+        public string DescribeUnsaved()
+        {
+            var parts = new List<string>();
+            try { parts.AddRange(Players.ToList().Select(p => "player " + p.PlayerName + " (still online)")); } catch (Exception) { }
+            try { parts.AddRange(_finalSavesPending.ToList().Select(id => "player " + id + " (final save pending)")); } catch (Exception) { }
+            if (_persistence != null) { parts.Add(_persistence.PendingCount + " snapshot(s) queued in the persistence worker"); }
+            return string.Join("; ", parts);
+        }
+
         /// <summary>Queues a callback to run on the game thread. Safe from any thread; never blocks.</summary>
         public bool Post(Action action)
         {
