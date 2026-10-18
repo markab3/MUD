@@ -1,0 +1,39 @@
+@page "/creator/players"
+@model PlayerListModel
+@{ ViewData["Title"] = "Players"; }
+<h1>Players</h1>
+@if (Model.Error != null) { <p role="alert">@Model.Error</p> }
+<form method="get" action="/creator/players">
+    <label>Name contains <input name="q" value="@Model.Filter" maxlength="@PlayerListModel.MaxFilterLength" /></label>
+    <input type="hidden" name="sort" value="@(Model.Descending ? "desc" : "asc")" />
+    <button type="submit">Filter</button>
+</form>
+<table>
+    <thead>
+        <tr>
+            <th><a href="@Model.PageUrl(1, Model.Descending ? "asc" : "desc")">Name @(Model.Descending ? "(Z-A)" : "(A-Z)")</a></th>
+            <th>Race</th><th>Class</th><th>Gender</th><th>Location</th><th>Role</th><th>Online</th><th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var p in Model.Result.Items)
+    {
+        <tr>
+            <td><a href="@PlayerListModel.EditUrl(p.NameKey)">@p.Name</a></td>
+            <td>@p.Race</td><td>@p.Class</td><td>@p.Gender</td><td>@p.Location</td>
+            <td>@PlayerListModel.RoleText(p.Role)</td>
+            <td>@PlayerListModel.OnlineText(p)</td>
+            <td>@(p.Retired ? "Retired" : "Active")</td>
+        </tr>
+    }
+    @if (Model.Result.Items.Count == 0)
+    {
+        <tr><td colspan="8">No players found.</td></tr>
+    }
+    </tbody>
+</table>
+<p>
+    Page @Model.Result.Page of @Model.Result.PageCount (@Model.Result.Total players).
+    @if (Model.Result.Page > 1) { <a href="@Model.PageUrl(Model.Result.Page - 1)">Previous</a> }
+    @if (Model.Result.Page < Model.Result.PageCount) { <a href="@Model.PageUrl(Model.Result.Page + 1)">Next</a> }
+</p>

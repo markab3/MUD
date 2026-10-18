@@ -46,7 +46,14 @@ namespace MUD.Tests
             public Player Get(string id) { return null; }
             public IEnumerable<Player> GetAll() { return Players; }
             public IEnumerable<Player> Search(Expression<Func<Player, bool>> m) { return Players.Where(m.Compile()); }
-            public bool UpdateFields(string id, BsonDocument set) { return true; }
+            // $set semantics, as in Mongo: only the given fields change; false when nothing is stored.
+            public bool UpdateFields(string id, BsonDocument set)
+            {
+                if (!UpdateResult || !Docs.ContainsKey(id)) { return false; }
+                Updates++;
+                foreach (var e in set) { Docs[id][e.Name] = e.Value.DeepClone(); }
+                return true;
+            }
             public BsonDocument GetRawDocument(string id) { return Docs.ContainsKey(id) ? Docs[id].DeepClone().AsBsonDocument : null; }
             public List<string> GetIdsByField(string f, string v) { return new List<string>(); }
             public void UpsertFields(string id, BsonDocument set, BsonDocument setOnInsert) { }

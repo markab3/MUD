@@ -16,13 +16,14 @@ public class MongoAccountStore : IAccountStore
     public StoredAccount? FindByNameKey(string nameKey)
     {
         var doc = _players.Find(Builders<BsonDocument>.Filter.Eq("NameKey", nameKey))
-            .Project(Builders<BsonDocument>.Projection.Include("PlayerName").Include("Password").Include("ExtendedProperties"))
+            .Project(Builders<BsonDocument>.Projection.Include("PlayerName").Include("Password").Include("ExtendedProperties").Include("Retired"))
             .FirstOrDefault();
         if (doc == null) { return null; }
         var name = doc.GetValue("PlayerName", BsonNull.Value);
         if (!name.IsString) { return null; }
         var password = doc.GetValue("Password", BsonNull.Value);
-        return new StoredAccount(name.AsString, password.IsString ? password.AsString : null, RoleFrom(doc), doc.GetValue("_id", BsonNull.Value).IsBsonNull ? null : doc["_id"].ToString());
+        return new StoredAccount(name.AsString, password.IsString ? password.AsString : null, RoleFrom(doc), doc.GetValue("_id", BsonNull.Value).IsBsonNull ? null : doc["_id"].ToString(),
+            doc.GetValue("Retired", BsonNull.Value) is { IsBoolean: true } r && r.AsBoolean);
     }
 
     // $set of Password only: never replaces the document, so nothing else the game wrote is touched.

@@ -15,7 +15,7 @@ public class AccountService : IAccountService
     public Account? GetByName(string name)
     {
         var stored = Find(name);
-        return stored == null ? null : new Account(stored.PlayerName, stored.Role, stored.Id);
+        return stored == null ? null : new Account(stored.PlayerName, stored.Role, stored.Id, stored.Retired);
     }
 
     public Account? Authenticate(string name, string password)
@@ -25,7 +25,7 @@ public class AccountService : IAccountService
         {
             return null;
         }
-        return new Account(stored.PlayerName, stored.Role, stored.Id);
+        return new Account(stored.PlayerName, stored.Role, stored.Id, stored.Retired);
     }
 
     public PasswordChangeResult ChangePassword(string name, string currentPassword, string newPassword, string confirmPassword)

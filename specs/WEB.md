@@ -32,8 +32,10 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/logout` | POST only | antiforgery protected sign-out; GET just redirects |
 | `/character` | signed in | `Hello (<PlayerName>)!`, HTML-encoded |
 | `/account/password` | signed in | change-password form (current, new, confirm), antiforgery protected; see below |
+| `/creator/players` | `CreatorOrAdmin` | player list (see "Player pages") |
+| `/creator/players/{nameKey}` | `CreatorOrAdmin` | player edit page (see "Player pages") |
 
-The nav shows a `/creator` link only when the `CreatorOrAdmin` policy passes.
+The nav shows `/creator`, `/creator/map` and `/creator/players` links only when the `CreatorOrAdmin` policy passes.
 
 ## Creator page (room creation)
 
@@ -96,6 +98,56 @@ cannot roll a web edit back. Not done here (separate card): in-game Terraform/Bu
 No MongoDB in the build sandbox: the Mongo store (`MongoRoomEditStore`, `MongoAuditLog`, `Repository.GetRevisions`),
 the conditional `Rev` filter on a missing field, `$setOnInsert` upsert behaviour and the real poll have not been
 exercised against a mongod. Everything else is covered by fakes.
+
+## Player pages (`/creator/players`, `/creator/players/{nameKey}`)
+
+Implements `specs/WEB_EDITING.md` section 15 for players. Policy `CreatorOrAdmin` (anonymous -> `/login`, plain player
+-> `/access-denied`). The web cannot create, delete or rename players.
+
+- List: name, race, class, gender, current location, role (Player/Creator/Admin), online and status (Active/Retired).
+  Sortable by name (A-Z / Z-A), case-insensitive substring filter on the name (the text is regex-escaped), 50 per page.
+  "Online" always reads `unknown`: the website is a separate process with no link to the running game and the spec
+  defines none.
+- Edit: `ShortDescription`, `LongDescription`, `Race`, `Gender`, `Class` (free text, max 32 characters, no control
+  characters, no fixed vocabulary; descriptions follow the room rules), `Retired`, and the role. `CurrentLocationId` is NOT
+  editable (owner decision Q12). The name key comes from the route only. There is no password, name, inventory or
+  equipment field on the page model, and the store reads through an inclusion projection that does not list the password.
+- Authority is taken from the editor's CURRENT stored account (not the cookie), and a retired editor has none. You may
+  edit only players whose role is strictly lower than yours: a Creator edits Players; an Admin edits Creators and
+  Players; nobody edits an Admin through the web (Admin changes happen out of band, `scripts/seed-admin.sh`). Only an
+  Admin may change roles (Player <-> Creator; nobody grants a role above their own, and Admin is not grantable here) or
+  retire/un-retire another player. A defensive last-Admin check refuses lowering the only Admin. Controls the editor may
+  not use are not shown, and the server re-checks every change.
+- Save: `IPlayerWriter.Save` builds a field-level `$set` of only the changed allow-listed fields plus `WebUpdatedAt`, with
+  `$inc` of `Rev`, conditional on the `Rev` the form loaded. Roles rewrite only the Creator/Admin elements of
+  `ExtendedProperties`. Audit-first, as for rooms: one `audit` row per changed field (entity `player`, field `Role` for
+  roles) is written with `Applied:false` BEFORE the change and the edit is refused if that write fails. A stale `Rev`
+  writes nothing, keeps the user's input in the form and shows the current values.
+- Retirement: a retired character cannot log in on the web (`Login` shows "This character has been retired and can no
+  longer be played.", after the password was verified, so it is not revealed to anyone without it) or on telnet
+  (`World.DoLogin`, via `PlayerAccounts.IsRetired`, same text). An Admin can retire any player of lower role and only an
+  Admin can reverse it. A player retiring themselves (allowed by the owner decisions) has no control yet, neither on the web
+  nor in-game; that is a separate backlog card. An online player who is retired is told and disconnected through the normal quit/save path.
+
+### Game side (players)
+
+`PlayerWebSync` polls every 5 seconds: one query for the stored `Rev` of the ONLINE players (on a pool thread), then
+applies the result on the game thread (`Player.ApplyWebEdit`: descriptions, race, gender, class, `Retired`, and the
+Creator/Admin properties, plus `Rev`). The player is told "Something about you feels different..." for text changes and
+"Your status has changed." for role changes. `Player.Save` is now a field-level `$set` of the game-owned fields only
+(inventory, equipment, location, password, terminal, ...) and never writes `Rev`, `WebUpdatedAt`, the descriptions, race,
+gender, class, `Retired` or `ExtendedProperties` (`MUD.Data.PlayerFields` is the single list); the whole document is
+still written the first time a player is stored. An in-game promote (`PromoteCommand`) opts the next save in to
+writing `ExtendedProperties`. A login into a room that no longer exists moves the character to the default room
+(`WorldSettings:StartRoomKey`) with a short message.
+
+### Not run (players)
+
+No MongoDB in the build sandbox: `MongoPlayerEditStore` (the inclusion projection, the escaped name filter, the
+conditional `Rev` update on a missing field, `CountAdmins`), the real field-level `Player.Save` through the persistence
+worker and the real 5 second poll have not been exercised against a mongod, and no signed-in browser render was done.
+Everything else is covered by fakes. Re-import caveat: a later area re-import can overwrite web edits of rooms; the audit
+log holds the previous values.
 
 ## Room map (`/creator/map`)
 
