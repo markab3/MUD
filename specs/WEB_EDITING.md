@@ -1,6 +1,6 @@
 # Web Editing versus the Live Game (design spec)
 
-Status: DRAFT for owner decision. Docs only; no code accompanies this spec.
+Status: APPROVED with owner decisions (section 15). Docs only; no code accompanies this spec.
 Based on `hermes` at 599721a. `specs/GAME_LOOP.md` exists only on branch `gameloop-spec`
 (not yet merged to `hermes`); where this spec relies on it, it says so (assumption A1).
 
@@ -414,3 +414,34 @@ shows "skipped (locally modified)".
 - Poll delay means in-game players see old text for a few seconds; acceptable only if Q2 says so.
 - Plaintext passwords remain; this feature never reads, shows, logs or audits them but they are
   still stored and still cross HTTP; see Q19.
+
+## 15. Owner decisions (supersede sections 3 to 14 where different)
+
+All open questions in section 12 are answered. Where a decision differs from the recommendation, this section wins.
+
+Design
+- Q1: approved: allow-list `$set`, per-document `Rev`, audit, and a game-side poll that applies changes on the game thread.
+- Q2/Q7: poll interval 5 seconds; one per-tick budget for all changes.
+- Q11: one `Rev` per document.
+- Q17: no replica set planned.
+
+Rooms
+- Q3: Features, Handles/Adjectives/Plurals and ExtendedProperties are not web-editable.
+- Q4: the web can create and delete rooms. The default room (StartRoomKey) can never be deleted.
+- Deleting a room: before moving anything, verify the destination exists; if not, refuse the delete and move nothing. Everything inside (players, NPCs, floor items) moves to a RANDOM adjacent room (an exit whose destination exists and is not the deleted room); with none, to the default room. The destination is told: "A sudden draft of magical wind deposits <entity list> in the room!" Exits in remaining rooms that point at the deleted room are removed and recorded in the audit. An online player in a deleted room is moved the same way.
+- Updating a room: the room is told "Something feels different..."
+- Q13/Q14: no locally-modified flag in this work. A later area re-import may overwrite web edits; the audit log (per-field Old/New) is the recovery path. Q18: in-game edits and importer bumping `Rev` is a separate later card.
+- Q15: shared validation code lives in MUD.Data.
+
+Players
+- Q5: no renames. The web cannot create or delete players.
+- Q12: `CurrentLocationId` is NOT web-editable for now (removed from the player allow-list); the game writes it normally. Moving players is the in-game `trans` command (separate card). A login into a missing room, or a room deleted under an online player, moves the player (see above); login into a missing room goes to the default room with a flavourful message.
+- Q16: Race, Gender, Class are free text with length limits.
+- Retirement: a retired player cannot log in (telnet and web) and sees "This character has been retired and can no longer be played." An Admin can retire any player of lower role; a player can retire themselves; only an Admin can reverse a retirement. An Admin cannot retire another Admin. An online player who is retired is told and disconnected through the normal quit/save path.
+
+Roles and authority (supersedes section 5)
+- Roles are inclusive: Admin includes Creator. You cannot grant a role above your own. You may edit only players of strictly lower role (Creator edits Players; Admin edits Creators and Players; nobody edits an Admin through the web). Keep a defensive last-Admin check.
+
+Audit
+- Q9: audit-first: write the audit row (`Applied:false`) before applying; if that write fails, refuse the edit. Mark `Applied:true` afterwards.
+- Q10: the audit log is readable by Admins only; no automatic retention limit.
