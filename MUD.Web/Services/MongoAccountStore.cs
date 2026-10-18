@@ -22,7 +22,7 @@ public class MongoAccountStore : IAccountStore
         var name = doc.GetValue("PlayerName", BsonNull.Value);
         if (!name.IsString) { return null; }
         var password = doc.GetValue("Password", BsonNull.Value);
-        return new StoredAccount(name.AsString, password.IsString ? password.AsString : null, RoleFrom(doc));
+        return new StoredAccount(name.AsString, password.IsString ? password.AsString : null, RoleFrom(doc), doc.GetValue("_id", BsonNull.Value).IsBsonNull ? null : doc["_id"].ToString());
     }
 
     // $set of Password only: never replaces the document, so nothing else the game wrote is touched.

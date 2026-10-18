@@ -1,0 +1,72 @@
+@page "/creator/rooms/{key}"
+@model RoomEditModel
+@{ ViewData["Title"] = "Edit room"; }
+<h1>Edit room</h1>
+@if (Model.Missing)
+{
+    <p role="alert">@Model.Error</p>
+    <p><a href="/creator/map">Back to the map</a></p>
+}
+else
+{
+    <p>Room key: <code>@Model.Key</code> (read-only)</p>
+    @if (Model.Notice != null) { <p role="status">@Model.Notice</p> }
+    @if (Model.Error != null) { <p role="alert">@Model.Error</p> }
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div role="alert" asp-validation-summary="All"></div>
+    }
+    <form method="post" novalidate>
+        @Html.AntiForgeryToken()
+        <input type="hidden" asp-for="Rev" />
+        <div><label>Short description <input asp-for="Short" maxlength="100" required /></label></div>
+        <div><label>Long description <textarea asp-for="Long" maxlength="4000" rows="8" required></textarea></label></div>
+        <div><label>Area prefix <input asp-for="Area" maxlength="128" /></label></div>
+        <div>
+            <label>X <input asp-for="X" type="number" /></label>
+            <label>Y <input asp-for="Y" type="number" /></label>
+            <label>Z <input asp-for="Z" type="number" /></label>
+            (leave a field blank for an unplaced room; blank is not 0)
+        </div>
+        <fieldset>
+            <legend>Exits (direction and target room key)</legend>
+            @for (var i = 0; i < Model.Exits.Count; i++)
+            {
+                <div>
+                    <input asp-for="Exits[i].Dir" maxlength="32" placeholder="north" aria-label="Exit direction" />
+                    <input asp-for="Exits[i].To" maxlength="128" placeholder="area.room" aria-label="Exit target room key" />
+                    <button type="submit" formaction="@(RoomEditModel.RoomUrl(Model.Key))?handler=RemoveExit&amp;index=@i" formnovalidate>Remove</button>
+                </div>
+            }
+            <div><button type="submit" formaction="@(RoomEditModel.RoomUrl(Model.Key))?handler=AddExit" formnovalidate>Add exit</button></div>
+            <div><label><input asp-for="ConfirmDangling" type="checkbox" /> Save exits to rooms that do not exist</label></div>
+        </fieldset>
+        <button type="submit" formaction="@(RoomEditModel.RoomUrl(Model.Key))?handler=Save">Save room</button>
+    </form>
+
+    @if (Model.Conflict && Model.Current != null)
+    {
+        <section aria-label="Current stored values">
+            <h2>Current values</h2>
+            <dl>
+                <dt>Short</dt><dd>@Model.Current.Short</dd>
+                <dt>Long</dt><dd>@Model.Current.Long</dd>
+                <dt>Area</dt><dd>@Model.Current.Area</dd>
+                <dt>X, Y, Z</dt><dd>@(Model.Current.X?.ToString() ?? "unplaced"), @(Model.Current.Y?.ToString() ?? "unplaced"), @(Model.Current.Z?.ToString() ?? "unplaced")</dd>
+                <dt>Exits</dt>
+                <dd>
+                    @if (Model.Current.Exits.Count == 0) { <text>none</text> }
+                    else { <ul>@foreach (var e in Model.Current.Exits) { <li>@e.Name &rarr; @e.To</li> } </ul> }
+                </dd>
+            </dl>
+        </section>
+    }
+
+    <form method="post" action="@(RoomEditModel.RoomUrl(Model.Key))?handler=Delete">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="Rev" value="@Model.Rev" />
+        <button type="submit">Delete this room</button>
+        <small>Everything inside is moved to a neighbouring room, or to the default room. The default room cannot be deleted.</small>
+    </form>
+    <p><a href="/creator/map">Back to the map</a></p>
+}

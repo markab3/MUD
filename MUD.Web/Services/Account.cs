@@ -2,10 +2,10 @@ namespace MUD.Web.Services;
 
 public enum AccountRole { Player, Creator, Admin }
 
-public record Account(string PlayerName, AccountRole Role);
+public record Account(string PlayerName, AccountRole Role, string? Id = null);
 
 // What the store hands back for a player document. Password is plaintext today (see specs/WEB.md).
-public record StoredAccount(string PlayerName, string? Password, AccountRole Role);
+public record StoredAccount(string PlayerName, string? Password, AccountRole Role, string? Id = null);
 
 public interface IAccountStore
 {

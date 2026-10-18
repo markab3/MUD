@@ -20,6 +20,11 @@ namespace MUD.Core.GameObjects
 
         public int? Z { get; set; }
 
+        // Revision of the stored definition (absent = 0). Written only by the website's write path, which increments it on
+        // every web edit; the game adopts it when it applies a web change and never writes it back
+        // (specs/WEB_EDITING.md sections 6 and 8).
+        public int Rev { get; set; }
+
         public List<InventoryItem> Items { get; set; } = new List<InventoryItem>();
 
         public List<Feature> Features { get; set; } = new List<Feature>();
@@ -151,6 +156,48 @@ namespace MUD.Core.GameObjects
             RebuildExitCommands();
         }
 
+        // Applies a website edit from the raw stored document: ONLY the web allow-list (Short, Long, Area, X, Y, Z, Exits)
+        // plus Rev. Items, occupants, features, handles and every other field are left alone, so players and floor
+        // items in the room are undisturbed (specs/WEB_EDITING.md 6.2). Game thread only. Does not announce anything.
+        public void ApplyWebEdit(MongoDB.Bson.BsonDocument doc)
+        {
+            ShortDescription = doc.GetValue("ShortDescription", MongoDB.Bson.BsonNull.Value).IsString ? doc["ShortDescription"].AsString : ShortDescription;
+            LongDescription = doc.GetValue("LongDescription", MongoDB.Bson.BsonNull.Value).IsString ? doc["LongDescription"].AsString : LongDescription;
+            Area = doc.GetValue("Area", MongoDB.Bson.BsonNull.Value).IsString ? doc["Area"].AsString : null;
+            X = OptionalInt(doc, "X");
+            Y = OptionalInt(doc, "Y");
+            Z = OptionalInt(doc, "Z");
+
+            var exits = new List<Exit>();
+            MongoDB.Bson.BsonValue stored;
+            if (doc.TryGetValue("Exits", out stored) && stored.IsBsonArray)
+            {
+                foreach (var element in stored.AsBsonArray)
+                {
+                    if (!element.IsBsonDocument) { continue; }
+                    var exit = element.AsBsonDocument;
+                    var name = exit.GetValue("Name", MongoDB.Bson.BsonNull.Value);
+                    var to = exit.GetValue("DestinationId", MongoDB.Bson.BsonNull.Value);
+                    if (name.IsString && to.IsString) { exits.Add(new Exit { Name = name.AsString, DestinationId = to.AsString }); }
+                }
+            }
+            Exits = exits;
+            Rev = StoredRev(doc);
+            RebuildExitCommands();
+        }
+
+        public static int StoredRev(MongoDB.Bson.BsonDocument doc)
+        {
+            var rev = doc.GetValue("Rev", MongoDB.Bson.BsonNull.Value);
+            return rev.IsNumeric ? rev.ToInt32() : 0;
+        }
+
+        private static int? OptionalInt(MongoDB.Bson.BsonDocument doc, string field)
+        {
+            var value = doc.GetValue(field, MongoDB.Bson.BsonNull.Value);
+            return value.IsNumeric ? value.ToInt32() : (int?)null;
+        }
+
         // The persistence sink for rooms, or null when saves are written synchronously (startup, plain fakes in tests).
         private MUD.Data.IPersistSink Sink
         {
@@ -175,14 +222,30 @@ namespace MUD.Core.GameObjects
             });
         }
 
+        // The stored document without the fields only the website's write path may change (Rev, and WebUpdatedAt which the
+        // game does not model), so an in-game save can never roll the revision back.
+        private MongoDB.Bson.BsonDocument WithoutWebBookkeeping(MongoDB.Bson.BsonDocument whole)
+        {
+            var set = new MongoDB.Bson.BsonDocument();
+            foreach (var element in whole)
+            {
+                if (element.Name == "_id" || element.Name == "Rev" || element.Name == "WebUpdatedAt") { continue; }
+                set[element.Name] = element.Value;
+            }
+            return set;
+        }
+
         // With a persistence sink this only queues the write and returns true; otherwise it writes now.
+        // An existing stored document gets a field-level $set that leaves Rev alone; the whole document is only
+        // written when nothing is stored yet.
         public bool Save()
         {
             try
             {
                 if (Sink != null && !string.IsNullOrWhiteSpace(Id))
                 {
-                    Post(MUD.Data.PersistKind.Replace, MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this), null);
+                    var whole = MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this);
+                    Post(MUD.Data.PersistKind.SetFields, WithoutWebBookkeeping(whole), whole);
                     return true;
                 }
                 if (string.IsNullOrWhiteSpace(Id))
@@ -192,7 +255,8 @@ namespace MUD.Core.GameObjects
                 }
                 else
                 {
-                    if (_roomRepository.Update(this))
+                    var whole = MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this);
+                    if (_roomRepository.UpdateFields(Id, WithoutWebBookkeeping(whole)) || _roomRepository.Update(this))
                     {
                         return true;
                     }

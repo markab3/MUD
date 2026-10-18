@@ -43,7 +43,10 @@ namespace MUD.Tests
             Assert.Equal("stone table", f.ShortDescription);
             Assert.Equal(new[] { "table" }, f.Handles);
             Assert.Equal("t.hall#stone table", f.Id);
-            Assert.Equal(1, rig.Repo.ReplaceCount);
+            // DELIBERATE CHANGE (specs/WEB_EDITING.md section 9): Room.Save of a stored room is now a field-level $set that
+            // leaves Rev alone, instead of a whole-document replace that could roll back a website edit.
+            Assert.Equal(0, rig.Repo.ReplaceCount);
+            Assert.Equal(1, rig.Repo.FieldUpdateCount);
             Assert.Single(rig.Repo.Docs["t.hall"]["Features"].AsBsonArray);
         }
 

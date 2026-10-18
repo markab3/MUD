@@ -13,8 +13,9 @@ namespace MUD.Core.Import
     // than stopping at the first. Defaults are resolved here.
     public class AreaParser
     {
-        public static readonly Regex LocalKeyPattern = new Regex("^[a-z0-9_]+$");
-        public static readonly Regex PrefixPattern = new Regex("^[a-z0-9_]+(\\.[a-z0-9_]+)*$");
+        // The rules live in MUD.Data so the website applies the same ones (specs/WEB_EDITING.md section 10).
+        public static readonly Regex LocalKeyPattern = MUD.Data.RoomRules.LocalKeyPattern;
+        public static readonly Regex PrefixPattern = MUD.Data.RoomRules.PrefixPattern;
 
         private readonly List<string> _errors = new List<string>();
 
@@ -130,6 +131,16 @@ namespace MUD.Core.Import
             }
             room.Short = Text(node, "short", ctx, true);
             room.Long = Text(node, "long", ctx, true);
+            if (room.Short != null)
+            {
+                var problem = MUD.Data.RoomRules.CheckShort(room.Short);
+                if (problem != null) { _errors.Add(ctx + ": " + problem); }
+            }
+            if (room.Long != null)
+            {
+                var problem = MUD.Data.RoomRules.CheckLong(room.Long);
+                if (problem != null) { _errors.Add(ctx + ": " + problem); }
+            }
             room.Handles = StringList(node, "handles", ctx);
             room.Adjectives = StringList(node, "adjectives", ctx);
             room.Plurals = StringList(node, "plurals", ctx);
@@ -167,6 +178,16 @@ namespace MUD.Core.Import
                     Reverse = Scalar(exitMap, "reverse", ctx + ".exits", false)
                 };
                 if (exit.To != null && !exit.To.Contains(".") && prefix != null) { exit.To = prefix + "." + exit.To; }
+                if (exit.Dir != null)
+                {
+                    var dirProblem = MUD.Data.RoomRules.CheckDirection(exit.Dir);
+                    if (dirProblem != null) { _errors.Add(ctx + ": " + dirProblem); }
+                }
+                if (exit.To != null)
+                {
+                    var toProblem = MUD.Data.RoomRules.CheckRoomKeyReference(exit.To);
+                    if (toProblem != null) { _errors.Add(ctx + ": " + toProblem); }
+                }
                 room.Exits.Add(exit);
             }
 
@@ -296,8 +317,7 @@ namespace MUD.Core.Import
         // Spec section 11: trim trailing whitespace per line and overall, LF line endings.
         public static string NormalizeText(string value)
         {
-            var lines = value.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n').Select(l => l.TrimEnd());
-            return string.Join("\n", lines).Trim();
+            return MUD.Data.RoomRules.NormalizeText(value);
         }
 
         private int? Int(YamlMappingNode map, string key, string ctx)
