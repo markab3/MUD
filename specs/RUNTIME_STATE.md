@@ -17,7 +17,7 @@ net only.)
 | Mutation                         | Where saved                                   | Write type                       |
 |----------------------------------|-----------------------------------------------|----------------------------------|
 | get / drop (room Items)          | GetCommand / DropCommand -> Room.SaveState()  | field-level $set of `Items` only |
-| get / drop (player Inventory)    | GetCommand / DropCommand -> Player.Save(true) | whole-document replace (player)  |
+| get / drop (player Inventory)    | GetCommand / DropCommand -> Player.Save(true) | field-level $set of game-owned player fields (first save of a new player writes the whole document); never the web-owned fields, see WEB.md "Player pages" |
 | build / terraform (room edits)   | existing Room.Save() calls                    | whole-document upsert            |
 | import                           | Repository.UpsertFields                       | field-level $set / $setOnInsert  |
 

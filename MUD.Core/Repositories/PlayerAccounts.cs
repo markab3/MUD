@@ -103,6 +103,18 @@ namespace MUD.Core.Repositories
             return player != null && player.Password == password ? player : null;
         }
 
+        public const string RetiredMessage = "This character has been retired and can no longer be played.";
+
+        // True when the character was retired (by an Admin on the website, or by the player). Re-reads the stored
+        // website-owned fields first, because the cached live object can predate a retirement made elsewhere.
+        // Call only after the password has been verified, so retirement is not revealed to anyone without it.
+        public static bool IsRetired(Player player)
+        {
+            if (player == null) { return false; }
+            player.SyncWebFieldsFromStore();
+            return player.Retired;
+        }
+
         public PlayerSaveResult TrySave(Player player)
         {
             try

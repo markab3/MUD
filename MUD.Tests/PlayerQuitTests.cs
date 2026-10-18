@@ -83,7 +83,10 @@ namespace MUD.Tests
                 player.Connection = second;
                 player.Quit();
 
-                Assert.Equal(2, repo.ReplaceCount);
+                // First quit: the $set matched no stored document, so the whole document was written once.
+                // Second quit: the document exists, so only a field-level $set of the game-owned fields.
+                Assert.Equal(1, repo.ReplaceCount);
+                Assert.Equal(2, repo.FieldUpdateCount);
             }
             finally
             {

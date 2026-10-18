@@ -1,0 +1,77 @@
+@page "/creator/players/{nameKey}"
+@model PlayerEditModel
+@{ ViewData["Title"] = "Edit player"; }
+<h1>Edit player</h1>
+@if (Model.Missing)
+{
+    <p role="alert">@Model.Error</p>
+    <p><a href="/creator/players">Back to the player list</a></p>
+}
+else
+{
+    <p>Player: <strong>@Model.Current?.Name</strong> (read-only). Current role: @Model.Current?.Role</p>
+    @if (Model.Notice != null) { <p role="status">@Model.Notice</p> }
+    @if (Model.Error != null) { <p role="alert">@Model.Error</p> }
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div role="alert" asp-validation-summary="All"></div>
+    }
+    @if (!Model.CanEdit)
+    {
+        <p>You cannot edit this player: you may only edit players whose role is lower than yours.</p>
+    }
+    else
+    {
+        <form method="post" novalidate>
+            @Html.AntiForgeryToken()
+            <input type="hidden" asp-for="Rev" />
+            <div><label>Short description <input asp-for="Short" maxlength="100" required /></label></div>
+            <div><label>Long description <textarea asp-for="Long" maxlength="4000" rows="6"></textarea></label></div>
+            <div><label>Race <input asp-for="Race" maxlength="32" /></label></div>
+            <div><label>Gender <input asp-for="Gender" maxlength="32" /></label></div>
+            <div><label>Class <input asp-for="Class" maxlength="32" /></label></div>
+            @if (Model.CanSetRole)
+            {
+                <div>
+                    <label>Role
+                        <select asp-for="Role">
+                            <option value="Player">Player</option>
+                            <option value="Creator">Creator</option>
+                        </select>
+                    </label>
+                    (Admin changes happen outside the website.)
+                </div>
+            }
+            else
+            {
+                <input type="hidden" asp-for="Role" />
+            }
+            @if (Model.CanSetRetired)
+            {
+                <div><label><input asp-for="Retired" type="checkbox" /> Retired (the character can no longer log in)</label></div>
+            }
+            else
+            {
+                <input type="hidden" asp-for="Retired" />
+            }
+            <button type="submit">Save player</button>
+        </form>
+    }
+
+    @if (Model.Conflict && Model.Current != null)
+    {
+        <section aria-label="Current stored values">
+            <h2>Current values</h2>
+            <dl>
+                <dt>Short</dt><dd>@Model.Current.Short</dd>
+                <dt>Long</dt><dd>@Model.Current.Long</dd>
+                <dt>Race</dt><dd>@Model.Current.Race</dd>
+                <dt>Gender</dt><dd>@Model.Current.Gender</dd>
+                <dt>Class</dt><dd>@Model.Current.Class</dd>
+                <dt>Role</dt><dd>@Model.Current.Role</dd>
+                <dt>Retired</dt><dd>@(Model.Current.Retired ? "yes" : "no")</dd>
+            </dl>
+        </section>
+    }
+    <p><a href="/creator/players">Back to the player list</a></p>
+}

@@ -351,15 +351,19 @@ namespace MUD.Core
 
             // Website room edits (specs/WEB_EDITING.md section 6): poll every 5 s off-thread, apply here.
             if (_roomWebSync != null && !_shuttingDown && _roomWebSync.IsDue(Clock.Now)) { _roomWebSync.StartPoll(Post); }
+            if (_playerWebSync != null && !_shuttingDown && _playerWebSync.IsDue(Clock.Now)) { _playerWebSync.StartPoll(Post); }
         }
 
         private RoomWebSync _roomWebSync;
+
+        private PlayerWebSync _playerWebSync;
 
         /// <summary>Creates the poller for website room edits. Called once by the host after startup import.</summary>
         public void EnableWebSync()
         {
             var rooms = _serviceProvider.GetService<IRoomRepository>();
             _roomWebSync = new RoomWebSync(rooms, () => _settings.StartRoomKey);
+            _playerWebSync = new PlayerWebSync(_serviceProvider.GetService<IPlayerRepository>(), () => Players.ToList());
         }
 
         // Routes one inbound item. Game thread only.
@@ -497,6 +501,13 @@ namespace MUD.Core
 
             var foundPlayer = GetPlayerAccounts().Authenticate(userName, password);
 
+            if (foundPlayer != null && PlayerAccounts.IsRetired(foundPlayer))
+            {
+                // Only reached with the right password. A retired character cannot be played (specs/WEB_EDITING.md 15).
+                client.Send(PlayerAccounts.RetiredMessage);
+                return false;
+            }
+
             if (foundPlayer != null && IsFinalSavePending(foundPlayer.Id))
             {
                 // The previous session's logout save is still queued; logging in now could load stale data.
@@ -515,10 +526,25 @@ namespace MUD.Core
             {
                 foundPlayer.Connection = client;
                 foundPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
+                MoveToDefaultRoomIfLocationMissing(foundPlayer);
                 AddPlayer(foundPlayer);
                 return true;
             }
             return false;
+        }
+
+        public const string LostLocationMessage = "While you were away the world shifted, and the place you remember is gone. The currents of the realm carry you back to where all journeys begin.";
+
+        // A character whose saved room no longer exists (deleted on the website while they were away) wakes up in the
+        // default room. Does nothing when the room exists, or when the default room does not exist either.
+        private void MoveToDefaultRoomIfLocationMissing(Player player)
+        {
+            if (player.CurrentLocation != null) { return; }
+            string startKey = _settings != null ? _settings.StartRoomKey : null;
+            if (string.IsNullOrWhiteSpace(startKey) || GetRoom(startKey) == null) { return; }
+            player.CurrentLocation = null;
+            player.CurrentLocationId = startKey;
+            player.ReceiveMessage(LostLocationMessage);
         }
 
         public bool DoCreateUser(string userName, string password, Client connectingClient)

@@ -43,6 +43,8 @@ builder.Services.AddSingleton<IRoomEditStore>(sp => new MongoRoomEditStore(sp.Ge
 builder.Services.AddSingleton<IAuditLog>(sp => new MongoAuditLog(sp.GetRequiredService<IMongoClient>(), databaseName));
 builder.Services.AddSingleton<IRoomWriter>(sp => new RoomWriter(sp.GetRequiredService<IRoomEditStore>(), sp.GetRequiredService<IAuditLog>(), startRoomKey, TimeProvider.System, sp.GetRequiredService<ILoggerFactory>().CreateLogger("RoomWriter")));
 builder.Services.AddSingleton<IRoomCreationService, RoomCreationService>();
+builder.Services.AddSingleton<IPlayerEditStore>(sp => new MongoPlayerEditStore(sp.GetRequiredService<IMongoClient>(), databaseName));
+builder.Services.AddSingleton<IPlayerWriter>(sp => new PlayerWriter(sp.GetRequiredService<IPlayerEditStore>(), sp.GetRequiredService<IAuditLog>(), TimeProvider.System, sp.GetRequiredService<ILoggerFactory>().CreateLogger("PlayerWriter")));
 
 builder.Services.AddRazorPages();
 

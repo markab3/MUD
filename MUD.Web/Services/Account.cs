@@ -2,10 +2,12 @@ namespace MUD.Web.Services;
 
 public enum AccountRole { Player, Creator, Admin }
 
-public record Account(string PlayerName, AccountRole Role, string? Id = null);
+// Retired is true for a character that was retired (specs/WEB_EDITING.md section 15). Authenticate still returns such an
+// account after the password is verified so the login page can say why; callers must not sign a retired account in.
+public record Account(string PlayerName, AccountRole Role, string? Id = null, bool Retired = false);
 
 // What the store hands back for a player document. Password is plaintext today (see specs/WEB.md).
-public record StoredAccount(string PlayerName, string? Password, AccountRole Role, string? Id = null);
+public record StoredAccount(string PlayerName, string? Password, AccountRole Role, string? Id = null, bool Retired = false);
 
 public interface IAccountStore
 {
