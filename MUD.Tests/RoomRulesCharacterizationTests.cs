@@ -83,13 +83,20 @@ namespace MUD.Tests
         }
 
         [Fact]
-        public void ExitDirectionsAndTextLengthsAreNotLimitedToday()
+        public void ExitDirectionsAndTextLengthsAreNowLimitedBySharedRules()
         {
-            // Pinned on purpose: the importer has no length or direction grammar yet. The extraction in the next commit
-            // changes this deliberately (specs/WEB_EDITING.md section 10, validation parity) and updates this test.
+            // DELIBERATE CHANGE from the pre-extraction behaviour (the importer had no length or direction grammar):
+            // the importer now applies the same MUD.Data.RoomRules as the website (specs/WEB_EDITING.md section 10).
             var longText = new string('x', 5000);
-            var exits = "    exits:\n      - {dir: \"go-to 1\", to: t.a}\n";
-            Assert.True(Import(Yaml("t", "a", longText: longText, exits: exits)).Success);
+            var tooLong = Import(Yaml("t", "a", longText: longText));
+            Assert.False(tooLong.Success);
+            Assert.Contains(tooLong.Errors, e => e.Contains("at most 4000"));
+
+            var badDir = Import(Yaml("t", "a", exits: "    exits:\n      - {dir: \"go-to 1\", to: t.a}\n"));
+            Assert.False(badDir.Success);
+            Assert.Contains(badDir.Errors, e => e.Contains("exit direction"));
+
+            Assert.True(Import(Yaml("t", "a", exits: "    exits:\n      - {dir: \"enter hut\", to: t.a}\n")).Success);
         }
     }
 }
