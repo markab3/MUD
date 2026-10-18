@@ -156,6 +156,48 @@ namespace MUD.Core.GameObjects
             RebuildExitCommands();
         }
 
+        // Applies a website edit from the raw stored document: ONLY the web allow-list (Short, Long, Area, X, Y, Z, Exits)
+        // plus Rev. Items, occupants, features, handles and every other field are left alone, so players and floor
+        // items in the room are undisturbed (specs/WEB_EDITING.md 6.2). Game thread only. Does not announce anything.
+        public void ApplyWebEdit(MongoDB.Bson.BsonDocument doc)
+        {
+            ShortDescription = doc.GetValue("ShortDescription", MongoDB.Bson.BsonNull.Value).IsString ? doc["ShortDescription"].AsString : ShortDescription;
+            LongDescription = doc.GetValue("LongDescription", MongoDB.Bson.BsonNull.Value).IsString ? doc["LongDescription"].AsString : LongDescription;
+            Area = doc.GetValue("Area", MongoDB.Bson.BsonNull.Value).IsString ? doc["Area"].AsString : null;
+            X = OptionalInt(doc, "X");
+            Y = OptionalInt(doc, "Y");
+            Z = OptionalInt(doc, "Z");
+
+            var exits = new List<Exit>();
+            MongoDB.Bson.BsonValue stored;
+            if (doc.TryGetValue("Exits", out stored) && stored.IsBsonArray)
+            {
+                foreach (var element in stored.AsBsonArray)
+                {
+                    if (!element.IsBsonDocument) { continue; }
+                    var exit = element.AsBsonDocument;
+                    var name = exit.GetValue("Name", MongoDB.Bson.BsonNull.Value);
+                    var to = exit.GetValue("DestinationId", MongoDB.Bson.BsonNull.Value);
+                    if (name.IsString && to.IsString) { exits.Add(new Exit { Name = name.AsString, DestinationId = to.AsString }); }
+                }
+            }
+            Exits = exits;
+            Rev = StoredRev(doc);
+            RebuildExitCommands();
+        }
+
+        public static int StoredRev(MongoDB.Bson.BsonDocument doc)
+        {
+            var rev = doc.GetValue("Rev", MongoDB.Bson.BsonNull.Value);
+            return rev.IsNumeric ? rev.ToInt32() : 0;
+        }
+
+        private static int? OptionalInt(MongoDB.Bson.BsonDocument doc, string field)
+        {
+            var value = doc.GetValue(field, MongoDB.Bson.BsonNull.Value);
+            return value.IsNumeric ? value.ToInt32() : (int?)null;
+        }
+
         // The persistence sink for rooms, or null when saves are written synchronously (startup, plain fakes in tests).
         private MUD.Data.IPersistSink Sink
         {

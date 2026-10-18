@@ -152,11 +152,3 @@ public class RoomFormValidationTests
         Assert.Contains(Validate(f), r => r.MemberNames.Contains("Exits"));
     }
 }
-
-public class StubRoomCreationServiceTests
-{
-    [Fact]
-    public void Create_ReturnsNotImplemented() =>
-        Assert.Equal(RoomCreationStatus.NotImplemented,
-            new StubRoomCreationService().Create(new RoomForm(), "x").Status);
-}
