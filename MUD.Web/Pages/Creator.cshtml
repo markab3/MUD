@@ -2,9 +2,10 @@
 @model CreatorModel
 @{ ViewData["Title"] = "Creator"; }
 <h1>Creator</h1>
-@if (Model.NotImplemented)
+<p>Create a room. The stored key is the area prefix, a dot, then the room key. More exits can be added on the room's edit page afterwards.</p>
+@if (Model.Error != null)
 {
-    <p role="status">Room creation is not implemented yet.</p>
+    <p role="alert">@Model.Error</p>
 }
 <form method="post" novalidate>
     @Html.AntiForgeryToken()
@@ -16,6 +17,13 @@
     <div><label>Short description <input asp-for="Form.Short" maxlength="100" required /></label> <span asp-validation-for="Form.Short"></span></div>
     <div><label>Long description <textarea asp-for="Form.Long" maxlength="4000" rows="6" required></textarea></label> <span asp-validation-for="Form.Long"></span></div>
     <div><label>Area prefix <input asp-for="Form.Area" maxlength="128" required /></label> <span asp-validation-for="Form.Area"></span></div>
+    <div>
+        <label>X <input asp-for="Form.X" type="number" /></label>
+        <label>Y <input asp-for="Form.Y" type="number" /></label>
+        <label>Z <input asp-for="Form.Z" type="number" /></label>
+        (leave blank for an unplaced room)
+        <span asp-validation-for="Form.X"></span><span asp-validation-for="Form.Y"></span><span asp-validation-for="Form.Z"></span>
+    </div>
     <fieldset>
         <legend>Exits (direction and target room key)</legend>
         @for (var i = 0; i < Model.Form.Exits.Count; i++)
@@ -27,6 +35,7 @@
                 <span asp-validation-for="Form.Exits[i].To"></span>
             </div>
         }
+        <div><label><input asp-for="Form.ConfirmDangling" type="checkbox" /> Save exits to rooms that do not exist</label></div>
     </fieldset>
     <button type="submit">Create room</button>
 </form>

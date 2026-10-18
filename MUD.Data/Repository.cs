@@ -150,6 +150,33 @@ namespace MUD.Data
             return UpdateFields(id, set);
         }
 
+        public List<string> CachedIds()
+        {
+            lock (_sync)
+            {
+                return _modelCache.Keys.ToList();
+            }
+        }
+
+        public Dictionary<string, int> GetRevisions(IEnumerable<string> ids)
+        {
+            var result = new Dictionary<string, int>();
+            var wanted = ids == null ? new List<string>() : ids.Where(i => !string.IsNullOrWhiteSpace(i)).Distinct().ToList();
+            if (wanted.Count == 0) { return result; }
+
+            lock (_sync)
+            {
+                var filter = new MongoDB.Bson.BsonDocument("_id", new MongoDB.Bson.BsonDocument("$in", new MongoDB.Bson.BsonArray(wanted)));
+                var docs = RawCollection.Find(filter).Project(new MongoDB.Bson.BsonDocument { { "_id", 1 }, { "Rev", 1 } }).ToList();
+                foreach (var doc in docs)
+                {
+                    MongoDB.Bson.BsonValue rev;
+                    result[doc["_id"].AsString] = doc.TryGetValue("Rev", out rev) && rev.IsNumeric ? rev.ToInt32() : 0;
+                }
+            }
+            return result;
+        }
+
         public void Evict(string id)
         {
             if (string.IsNullOrWhiteSpace(id)) { return; }

@@ -38,7 +38,11 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     });
 
 builder.Services.AddAuthorization(WebPolicies.Configure);
-builder.Services.AddSingleton<IRoomCreationService, StubRoomCreationService>();
+var startRoomKey = builder.Configuration["WorldSettings:StartRoomKey"];
+builder.Services.AddSingleton<IRoomEditStore>(sp => new MongoRoomEditStore(sp.GetRequiredService<IMongoClient>(), databaseName));
+builder.Services.AddSingleton<IAuditLog>(sp => new MongoAuditLog(sp.GetRequiredService<IMongoClient>(), databaseName));
+builder.Services.AddSingleton<IRoomWriter>(sp => new RoomWriter(sp.GetRequiredService<IRoomEditStore>(), sp.GetRequiredService<IAuditLog>(), startRoomKey, TimeProvider.System, sp.GetRequiredService<ILoggerFactory>().CreateLogger("RoomWriter")));
+builder.Services.AddSingleton<IRoomCreationService, RoomCreationService>();
 
 builder.Services.AddRazorPages();
 

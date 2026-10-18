@@ -85,6 +85,19 @@ namespace MUD.Data
             return null;
         }
 
+        // ROOM_FILES.md section 3: an authored full key is "<area prefix>.<local key>". Keys without a dot (legacy generated
+        // ids) are not authored and are not checked. Area may be empty only for such legacy rooms.
+        public static string CheckKeyMatchesArea(string fullKey, string area)
+        {
+            if (string.IsNullOrEmpty(fullKey) || fullKey.IndexOf('.') < 0) { return null; }
+            if (string.IsNullOrEmpty(area)) { return "area prefix is required for a room whose key is '<area>.<key>'."; }
+            if (!fullKey.StartsWith(area + ".", System.StringComparison.Ordinal) || !LocalKeyPattern.IsMatch(fullKey.Substring(area.Length + 1)))
+            {
+                return "area prefix must match the room key (the key is '<area prefix>.<local key>').";
+            }
+            return null;
+        }
+
         // Directions that occur more than once in one room, compared case-insensitively (lowercased in the result).
         public static List<string> DuplicateDirections(IEnumerable<string> directions)
         {
