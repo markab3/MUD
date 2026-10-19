@@ -13,6 +13,10 @@ commit `ce8f7b9`).
 | [CONFIGURATION.md](CONFIGURATION.md) | Runtime config (environment, appsettings), build, local dev |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | systemd user unit, `scripts/deploy.sh`, rollback, triggering deploys |
 | [WEB.md](WEB.md) | MUD.Web site: config, routes, cookie auth model, plaintext password caveat |
+| [ARCHITECTURE_V2.md](ARCHITECTURE_V2.md) | DRAFT redesign: core / front-end split, composition over inheritance, process-per-module over gRPC on Unix sockets. Current-state inventory, target architecture, entity model, migration plan, decision log |
+| [CORE_API.md](CORE_API.md) | DRAFT: event model (pre/post), module and front-end API, gRPC over UDS (.proto sketches, .NET 8 notes) |
+| [MODULES.md](MODULES.md) | DRAFT: module manifest and lifecycle, supervision, systemd, desert and temple worked examples, failure modes, testing |
+| [OPEN_QUESTIONS_V2.md](OPEN_QUESTIONS_V2.md) | 41 numbered owner questions that must be answered before any V2 code |
 
 Convention: these are lightweight living documents — update the relevant
 file when the behavior they describe changes.
