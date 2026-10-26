@@ -21,6 +21,7 @@ builder.WebHost.UseUrls(string.IsNullOrWhiteSpace(url) ? "http://127.0.0.1:5080"
 
 builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoUri));
 builder.Services.AddSingleton<IAccountStore>(sp => new MongoAccountStore(sp.GetRequiredService<IMongoClient>(), databaseName));
+builder.Services.AddSingleton<IRoomReader>(sp => new MongoRoomReader(sp.GetRequiredService<IMongoClient>(), databaseName));
 builder.Services.AddSingleton<IAccountService, AccountService>();
 builder.Services.AddSingleton<LoginThrottle>();
 
@@ -37,7 +38,13 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     });
 
 builder.Services.AddAuthorization(WebPolicies.Configure);
-builder.Services.AddSingleton<IRoomCreationService, StubRoomCreationService>();
+var startRoomKey = builder.Configuration["WorldSettings:StartRoomKey"];
+builder.Services.AddSingleton<IRoomEditStore>(sp => new MongoRoomEditStore(sp.GetRequiredService<IMongoClient>(), databaseName));
+builder.Services.AddSingleton<IAuditLog>(sp => new MongoAuditLog(sp.GetRequiredService<IMongoClient>(), databaseName));
+builder.Services.AddSingleton<IRoomWriter>(sp => new RoomWriter(sp.GetRequiredService<IRoomEditStore>(), sp.GetRequiredService<IAuditLog>(), startRoomKey, TimeProvider.System, sp.GetRequiredService<ILoggerFactory>().CreateLogger("RoomWriter")));
+builder.Services.AddSingleton<IRoomCreationService, RoomCreationService>();
+builder.Services.AddSingleton<IPlayerEditStore>(sp => new MongoPlayerEditStore(sp.GetRequiredService<IMongoClient>(), databaseName));
+builder.Services.AddSingleton<IPlayerWriter>(sp => new PlayerWriter(sp.GetRequiredService<IPlayerEditStore>(), sp.GetRequiredService<IAuditLog>(), TimeProvider.System, sp.GetRequiredService<ILoggerFactory>().CreateLogger("PlayerWriter")));
 
 builder.Services.AddRazorPages();
 

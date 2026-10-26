@@ -4,7 +4,8 @@ Throwaway spike (owner decision D38) run on 2026-10-25, branch `v2-spike`, base
 `hermes` at `599721a`. All experiment code lived outside the repo
 (`~/.hermes/cache/scratch/v2-spike-code`) and is NOT committed. This file is the
 only artifact. Numbers below are what actually ran; anything not run is listed
-under "Not run" for each question.
+under "Not run" for each question. The spike is the pre-phase-4 spike described
+in [V2_PHASES.md](V2_PHASES.md).
 
 ## Environment
 

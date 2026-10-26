@@ -7,4 +7,8 @@
   <ItemGroup>
     <PackageReference Include="MongoDB.Driver" Version="2.30.0" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Shared room validation rules (RoomRules) only; never MUD.Core. -->
+    <ProjectReference Include="..\MUD.Data\MUD.Data.csproj" />
+  </ItemGroup>
 </Project>

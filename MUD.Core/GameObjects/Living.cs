@@ -33,8 +33,9 @@ namespace MUD.Core.GameObjects
 
         public List<InventoryItem> HeldItems { get; set; } = new List<InventoryItem>();
 
+        // Game time before which this living may not act (see CommandQueue). Replaces the old IsBusy flag.
         [BsonIgnore]
-        public bool IsBusy { get; set; } = false;
+        public System.DateTime NextActionAt { get; set; } = System.DateTime.MinValue;
 
         [BsonIgnore]
         public Room CurrentLocation
@@ -140,15 +141,23 @@ namespace MUD.Core.GameObjects
                 return;
             }
 
+            MoveToRoom(roomToEnter, string.Format("{0} leaves.", this.ShortDescription), null);
+        }
+
+        /// <summary>
+        /// Moves to an already resolved room. A null entranceMessage uses the room's default arrival message.
+        /// </summary>
+        public void MoveToRoom(Room roomToEnter, string exitMessage, string entranceMessage)
+        {
             if (CurrentLocation != null)
             {
-                CurrentLocation.ExitRoom(this, string.Format("{0} leaves.", this.ShortDescription));
+                CurrentLocation.ExitRoom(this, exitMessage);
             }
 
             CurrentLocation = roomToEnter;
             CurrentLocationId = roomToEnter.Id;
 
-            roomToEnter.EnterRoom(this);
+            roomToEnter.EnterRoom(this, entranceMessage);
             ReceiveMessage(roomToEnter.Examine(this));
         }
 

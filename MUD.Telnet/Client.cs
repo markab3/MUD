@@ -8,7 +8,7 @@ using System.Threading;
 
 namespace MUD.Telnet
 {
-    public class Client : ILoginConnection
+    public class Client : IClientConnection
     {
         // Captured at construction: the socket cannot be queried once it has been closed.
         private readonly IPEndPoint _remoteAddress;
@@ -48,6 +48,13 @@ namespace MUD.Telnet
 
         // 0 = open, 1 = disconnected. Makes Disconnect idempotent so ClientDisconnected fires exactly once.
         private int _disconnected = 0;
+
+        // Single writer per client (specs/GAME_LOOP.md section 7): Send only queues; the queue's writer loop
+        // performs the socket writes one at a time, in order.
+        private readonly OutboundQueue _outbound;
+
+        /// <summary>How long a flushing Disconnect waits for queued output before closing anyway.</summary>
+        public static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(2);
 
         public bool IsRemoteEcho { get; set; }
 
@@ -102,6 +109,7 @@ namespace MUD.Telnet
             _rateLimiter = new RateLimiter(_limits.RateLimitLines, _limits.RateLimitWindow);
             _lastActivity = _clock();
             try { _remoteAddress = (IPEndPoint)workSocket.RemoteEndPoint; } catch (Exception) { _remoteAddress = null; }
+            _outbound = new OutboundQueue(writeToSocket, onWriteFailed, onSlowClient);
         }
 
         public void Send(TelnetCommand command)
@@ -126,20 +134,31 @@ namespace MUD.Telnet
             Send(byteData);
         }
 
+        /// <summary>Queues data for the connection's writer. Never blocks and never touches the socket.</summary>
         public void Send(byte[] data)
         {
+            _outbound.Enqueue(data);
+        }
 
-            try
+        private async System.Threading.Tasks.Task writeToSocket(byte[] data)
+        {
+            int sent = 0;
+            while (sent < data.Length)
             {
-                // Begin sending the data to the remote device.  
-                _workSocket.BeginSend(data, 0, data.Length, 0, new AsyncCallback(sendCallback), _workSocket);
+                sent += await _workSocket.SendAsync(new ArraySegment<byte>(data, sent, data.Length - sent), SocketFlags.None).ConfigureAwait(false);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.ToString());
-                // Disconnect.
-                Disconnect();
-            }
+        }
+
+        private void onWriteFailed(Exception ex)
+        {
+            Console.WriteLine(ex.ToString());
+            Disconnect();
+        }
+
+        private void onSlowClient()
+        {
+            Console.WriteLine("Client too slow; disconnecting " + RemoteKey);
+            Disconnect();
         }
 
         public void Read()
@@ -161,8 +180,31 @@ namespace MUD.Telnet
 
         public void Disconnect()
         {
+            Disconnect(false);
+        }
+
+        /// <summary>
+        /// Closes the connection. With flush, output already queued (e.g. "Thanks for playing!") is written first,
+        /// bounded by FlushTimeout, and the socket closes afterwards on another thread. Idempotent.
+        /// </summary>
+        public void Disconnect(bool flush)
+        {
             if (Interlocked.Exchange(ref _disconnected, 1) != 0) { return; }
 
+            _outbound.Complete();
+            if (flush)
+            {
+                System.Threading.Tasks.Task.WhenAny(_outbound.Completion, System.Threading.Tasks.Task.Delay(FlushTimeout))
+                    .ContinueWith(t => closeSocket());
+            }
+            else
+            {
+                closeSocket();
+            }
+        }
+
+        private void closeSocket()
+        {
             try
             {
                 _workSocket.Shutdown(SocketShutdown.Both);
@@ -187,18 +229,8 @@ namespace MUD.Telnet
         /// </summary>
         public void DisconnectWithMessage(string message)
         {
-            if (_disconnected == 0)
-            {
-                try
-                {
-                    _workSocket.Send(_clientEncoding.GetBytes(message + _lineEnding));
-                }
-                catch (Exception)
-                {
-                    // Peer is already gone; just disconnect.
-                }
-            }
-            Disconnect();
+            if (_disconnected == 0) { Send(_clientEncoding.GetBytes(message + _lineEnding)); }
+            Disconnect(true);
         }
 
         /// <summary>
@@ -216,20 +248,6 @@ namespace MUD.Telnet
             return true;
         }
 
-        private void sendCallback(IAsyncResult ar)
-        {
-            try
-            {
-                // Complete sending the data to the remote device.  
-                int bytesSent = _workSocket.EndSend(ar);
-                Console.WriteLine("Sent {0} bytes to client.", bytesSent);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.ToString());
-                Disconnect();
-            }
-        }
         private void readCallback(IAsyncResult ar)
         {
             try

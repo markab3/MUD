@@ -63,8 +63,6 @@ namespace MUD.Core.Import
     // field-level upserts that touch definition fields only.
     public class AreaImporter
     {
-        private static readonly Regex ObjectIdPattern = new Regex("^[0-9a-f]{24}$");
-
         // The complete definition-field list (spec section 5). Everything else is state.
         public static readonly string[] DefinitionFields = new[]
         {
@@ -159,14 +157,14 @@ namespace MUD.Core.Import
 
             foreach (var room in area.Rooms)
             {
-                if (ObjectIdPattern.IsMatch(room.FullKey))
+                if (MUD.Data.RoomRules.LooksLikeObjectId(room.FullKey))
                 {
                     errors.Add(string.Format("Room '{0}': authored keys must not look like generated ObjectIds.", room.FullKey));
                 }
 
-                foreach (var dup in room.Exits.GroupBy(e => (e.Dir ?? "").ToLowerInvariant()).Where(g => g.Count() > 1))
+                foreach (var dup in MUD.Data.RoomRules.DuplicateDirections(room.Exits.Select(e => e.Dir)))
                 {
-                    errors.Add(string.Format("Room '{0}': duplicate exit '{1}'.", room.FullKey, dup.Key));
+                    errors.Add(string.Format("Room '{0}': duplicate exit '{1}'.", room.FullKey, dup));
                 }
                 foreach (var dup in room.Features.GroupBy(f => (f.Short ?? "").ToLowerInvariant()).Where(g => g.Count() > 1))
                 {

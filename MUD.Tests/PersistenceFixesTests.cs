@@ -95,14 +95,17 @@ namespace MUD.Tests
     {
         public bool UpdateResult = true;
         public int Inserts, Updates;
+        // Player.Save writes game-owned fields with $set when the player is stored, and the whole document otherwise.
+        public int FieldUpdates;
+        public HashSet<string> Stored = new HashSet<string>();
         public void CreateNameKeyIndex() { }
         public void Insert(Player model) { Inserts++; }
-        public bool Update(Player model) { Updates++; return UpdateResult; }
+        public bool Update(Player model) { Updates++; if (UpdateResult) { Stored.Add(model.Id); } return UpdateResult; }
         public bool Delete(Player model) { return true; }
         public Player Get(string id) { return null; }
         public IEnumerable<Player> GetAll() { return new Player[0]; }
         public IEnumerable<Player> Search(Expression<Func<Player, bool>> m) { return new Player[0]; }
-        public bool UpdateFields(string id, BsonDocument set) { return true; }
+        public bool UpdateFields(string id, BsonDocument set) { if (!Stored.Contains(id)) { return false; } FieldUpdates++; return UpdateResult; }
         public BsonDocument GetRawDocument(string id) { return null; }
         public List<string> GetIdsByField(string fieldName, string value) { return new List<string>(); }
         public void UpsertFields(string id, BsonDocument set, BsonDocument setOnInsert) { }

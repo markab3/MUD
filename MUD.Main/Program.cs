@@ -7,6 +7,7 @@ using MongoDB.Driver;
 using MUD.Core;
 using System.Linq;
 using System.Threading;
+using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using MUD.Core.Formatting;
 using MongoDB.Bson.Serialization;
@@ -70,6 +71,22 @@ namespace MUD.Main
     Use 'who' to see who is currently online.
     Use 'quit' to disconnect.
 --------------------------------------------------------------------------------";
+
+        private static ShutdownCoordinator _shutdown;
+
+        private static readonly ManualResetEventSlim _shutdownRequested = new ManualResetEventSlim(false);
+
+        // Runs the shutdown sequence off the signal thread, then exits the process. Used by the signal handlers.
+        private static void shutdownAndExit(string reason)
+        {
+            Console.WriteLine("SHUTDOWN requested: " + reason);
+            _shutdownRequested.Set();
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                if (_shutdown != null) { _shutdown.Run(); }
+                Environment.Exit(0);
+            });
+        }
 
         static void Main(string ip = null, int? port = null)
         {
@@ -165,6 +182,11 @@ namespace MUD.Main
                 if (database == null) { Console.WriteLine("Database not found!"); }
                 var collection = database.GetCollection<BsonDocument>("player"); // Check that the collection is there. If it is not, then the collection exists in memory and is created on the actual DB when needed.
                 var testFind = collection.AsQueryable().FirstOrDefault();
+                foreach (var legacyCollection in new[] { "room", "player" })
+                {
+                    var count = MUD.Data.ObjectIdMigration.MigrateCollection(database.GetCollection<BsonDocument>(legacyCollection), Console.WriteLine);
+                    if (count > 0) { Console.WriteLine(string.Format("Migrated {0} legacy ObjectId documents in '{1}'.", count, legacyCollection)); }
+                }
                 // collection = database.GetCollection<BsonDocument>("rooms"); // Check that the collection is there.
                 // collection.InsertOne(BsonDocument.Parse(jsonContent)); // The BSON object will have _id and it will be set by the insert call.
 
@@ -257,6 +279,9 @@ namespace MUD.Main
             {
                 Console.WriteLine("Player account preparation failed: " + ex.Message);
             }
+            _gameWorld.EnableWebSync();
+            _gameWorld.LoginThrottle = _loginThrottle;
+            _gameWorld.PreLoginHandler = (connection, line) => messageReceived(connection, line);
             Thread gameWorldThread = new Thread(_gameWorld.Start);
             gameWorldThread.Start();
             Console.WriteLine("done.");
@@ -275,8 +300,33 @@ namespace MUD.Main
 
             Console.WriteLine("SERVER STARTED: " + DateTime.Now);
 
+            // Graceful shutdown: stop accepting, tell clients, save every online player through the persistence
+            // worker and drain it, then close connections. Bounded: after 10 s it exits anyway and logs what
+            // was not saved. The World's own drain deadline is shorter so it can spool before this one fires.
+            _shutdown = new ShutdownCoordinator(
+                () => _serverInstance.StopAccepting(),
+                () => _serverInstance.SendMessageToAll("The server is shutting down."),
+                () => _gameWorld.Stop(),
+                () => _serverInstance.Stop(),
+                () => _gameWorld.DescribeUnsaved(),
+                Console.WriteLine);
+            _gameWorld.ShutdownTimeout = _shutdown.Timeout - TimeSpan.FromSeconds(2);
+
+            // SIGTERM (systemd stop), Ctrl+C / SIGINT, and process exit.
+            PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; shutdownAndExit("SIGTERM"); });
+            PosixSignalRegistration.Create(PosixSignal.SIGINT, context => { context.Cancel = true; shutdownAndExit("SIGINT"); });
+            Console.CancelKeyPress += (s, e) => { e.Cancel = true; shutdownAndExit("Ctrl+C"); };
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => _shutdown.Run();
+
             char read2 = ' ';
-            bool isInteractive = true;
+            bool isInteractive = !Console.IsInputRedirected;
+            if (!isInteractive)
+            {
+                // Under systemd stdin is not a terminal: block until a shutdown is requested instead of spinning.
+                _shutdownRequested.Wait();
+                _shutdown.Run();
+                return;
+            }
 
             while (read2 != 'q')
             {
@@ -321,29 +371,33 @@ namespace MUD.Main
                     }
                     catch (InvalidOperationException)
                     {
-                        // Can't accept console input.
-                        isInteractive = false;
+                        // Can't accept console input: wait for a shutdown signal instead.
+                        _shutdownRequested.Wait();
+                        break;
                     }
                 }
             }
 
-            _gameWorld.Stop();
-            _serverInstance.Stop();
+            _shutdown.Run();
         }
 
         private static void clientConnected(object sender, Client client)
         {
             Console.WriteLine("CONNECTED: " + client);
 
-            client.DataReceived += messageReceived;
+            client.DataReceived += (s, line) => _gameWorld.EnqueueLine(client, line);
             client.Send(welcomeMessage);
-            messageReceived(client, "who");
-            client.Send("");
+            // Pre-login handling reads world state, so it runs on the game thread, after the welcome text.
+            _gameWorld.Post(() =>
+            {
+                messageReceived(client, "who");
+                client.Send("");
+            });
         }
 
         private static void clientDisconnected(object sender, Client client)
         {
-            client.DataReceived -= messageReceived;
+            _gameWorld.EnqueueDisconnect(client);
             Console.WriteLine("DISCONNECTED: " + client);
         }
 
@@ -402,7 +456,7 @@ namespace MUD.Main
 
             if (session.IsLoggedIn)
             {
-                client.DataReceived -= messageReceived;
+                // Lines from now on go to the player (World routes by connection).
                 client.IsLoggedIn = true;
             }
         }

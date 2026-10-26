@@ -9,11 +9,12 @@ namespace MUD.Data
     // Thread safety: every access to the model cache and every collection call happens under _sync, so the
     // cache cannot be corrupted and an id always maps to exactly one live instance. The lock is held across
     // the Mongo round trip on purpose (simple, keeps cache and DB in step). The live model objects themselves
-    // are NOT locked: game logic is expected to mutate them from the command-queue thread.
+    // are NOT locked: game logic mutates them only on the single game thread (specs/GAME_LOOP.md). The game
+    // thread and the persistence worker both use this class, which is why the lock stays.
     //
-    // Persistence is write-through: callers persist a mutation immediately (Update / UpdateFields). There is no
-    // deferred queue, so there is nothing to flush on shutdown. See specs/RUNTIME_STATE.md.
-    public abstract class Repository<TModel> : IRepository<TModel> where TModel : Entity
+    // Persistence hands every mutation to the persistence worker straight away as a snapshot (ISnapshotRepository);
+    // Update / UpdateFields remain for code that runs before the game thread exists. See specs/RUNTIME_STATE.md.
+    public abstract class Repository<TModel> : IRepository<TModel>, ISnapshotRepository where TModel : Entity
     {
         private readonly object _sync = new object();
 
@@ -112,6 +113,76 @@ namespace MUD.Data
                 var update = new MongoDB.Bson.BsonDocument("$set", set);
                 var result = RawCollection.UpdateOne(new MongoDB.Bson.BsonDocument("_id", id), new BsonDocumentUpdateDefinition<MongoDB.Bson.BsonDocument>(update));
                 return result != null && result.IsAcknowledged && result.MatchedCount == 1;
+            }
+        }
+
+        // ---- ISnapshotRepository: used by the persistence worker; never touches the model cache ----
+
+        public string CollectionName
+        {
+            get { return _collection.CollectionNamespace.CollectionName; }
+        }
+
+        public IPersistSink Sink { get; set; }
+
+        public bool ReplaceDocument(string id, MongoDB.Bson.BsonDocument document)
+        {
+            if (string.IsNullOrWhiteSpace(id) || document == null) { return false; }
+
+            lock (_sync)
+            {
+                ReplaceOneResult result;
+                try
+                {
+                    result = RawCollection.ReplaceOne(new MongoDB.Bson.BsonDocument("_id", id), document, new ReplaceOptions { IsUpsert = true });
+                }
+                catch (Exception ex) when (DuplicateKeyException.IsDuplicateKey(ex))
+                {
+                    throw new DuplicateKeyException(ex);
+                }
+                // Same success rule as Update: an unchanged document modifies nothing but still succeeds.
+                return result != null && result.IsAcknowledged && (result.MatchedCount == 1 || result.UpsertedId != null);
+            }
+        }
+
+        public bool SetFields(string id, MongoDB.Bson.BsonDocument set)
+        {
+            return UpdateFields(id, set);
+        }
+
+        public List<string> CachedIds()
+        {
+            lock (_sync)
+            {
+                return _modelCache.Keys.ToList();
+            }
+        }
+
+        public Dictionary<string, int> GetRevisions(IEnumerable<string> ids)
+        {
+            var result = new Dictionary<string, int>();
+            var wanted = ids == null ? new List<string>() : ids.Where(i => !string.IsNullOrWhiteSpace(i)).Distinct().ToList();
+            if (wanted.Count == 0) { return result; }
+
+            lock (_sync)
+            {
+                var filter = new MongoDB.Bson.BsonDocument("_id", new MongoDB.Bson.BsonDocument("$in", new MongoDB.Bson.BsonArray(wanted)));
+                var docs = RawCollection.Find(filter).Project(new MongoDB.Bson.BsonDocument { { "_id", 1 }, { "Rev", 1 } }).ToList();
+                foreach (var doc in docs)
+                {
+                    MongoDB.Bson.BsonValue rev;
+                    result[doc["_id"].AsString] = doc.TryGetValue("Rev", out rev) && rev.IsNumeric ? rev.ToInt32() : 0;
+                }
+            }
+            return result;
+        }
+
+        public void Evict(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id)) { return; }
+            lock (_sync)
+            {
+                _modelCache.Remove(id);
             }
         }
 

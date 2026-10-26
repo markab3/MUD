@@ -121,6 +121,7 @@ namespace MUD.Core.Commands
                     break;
             }
 
+            recipient.MarkRolesChanged(); // the game only writes roles after an in-game role change
             recipient.Save();
             recipient.ReceiveMessage(string.Format("You have been promoted to {0}.", commandArgs[1]));
             commandIssuer.ReceiveMessage(string.Format("{0} has been promoted to {1}.", recipient.PlayerName, commandArgs[1]));

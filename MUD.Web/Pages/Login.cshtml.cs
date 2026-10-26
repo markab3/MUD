@@ -12,6 +12,7 @@ namespace MUD.Web.Pages;
 public class LoginModel : PageModel
 {
     private const string GenericError = "Invalid name or password.";
+    public const string RetiredError = "This character has been retired and can no longer be played.";
 
     private readonly IAccountService _accounts;
     private readonly LoginThrottle _throttle;
@@ -49,6 +50,12 @@ public class LoginModel : PageModel
         }
 
         _throttle.Reset(ip);
+        if (account.Retired)
+        {
+            // Only reached with the right password, so this does not reveal anything to someone without it.
+            Error = RetiredError;
+            return Page();
+        }
         var identity = new ClaimsIdentity(new[]
         {
             new Claim(ClaimTypes.Name, account.PlayerName),

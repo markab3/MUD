@@ -13,5 +13,8 @@ namespace MUD.Core
 
         // Whether to import ContentDirectory at startup. Defaults to true when a directory is configured.
         public bool ImportOnStartup { get; set; } = true;
+
+        // Where snapshots that could not be written at shutdown are kept. Defaults to ~/.local/share/mud/spool.
+        public string SpoolDirectory { get; set; }
     }
 }

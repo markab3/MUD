@@ -15,7 +15,7 @@ public class AccountService : IAccountService
     public Account? GetByName(string name)
     {
         var stored = Find(name);
-        return stored == null ? null : new Account(stored.PlayerName, stored.Role);
+        return stored == null ? null : new Account(stored.PlayerName, stored.Role, stored.Id, stored.Retired);
     }
 
     public Account? Authenticate(string name, string password)
@@ -25,7 +25,22 @@ public class AccountService : IAccountService
         {
             return null;
         }
-        return new Account(stored.PlayerName, stored.Role);
+        return new Account(stored.PlayerName, stored.Role, stored.Id, stored.Retired);
+    }
+
+    public PasswordChangeResult ChangePassword(string name, string currentPassword, string newPassword, string confirmPassword)
+    {
+        currentPassword ??= string.Empty;
+        newPassword ??= string.Empty;
+        var stored = Find(name);
+        if (stored == null || stored.Password == null || !PasswordsEqual(stored.Password, currentPassword))
+        {
+            return PasswordChangeResult.WrongCurrent;
+        }
+        if (PasswordRules.Validate(newPassword) != null) { return PasswordChangeResult.Invalid; }
+        if (newPassword != confirmPassword) { return PasswordChangeResult.Mismatch; }
+        if (PasswordsEqual(currentPassword, newPassword)) { return PasswordChangeResult.Same; }
+        return _store.UpdatePassword(Normalize(name), newPassword) ? PasswordChangeResult.Changed : PasswordChangeResult.SaveFailed;
     }
 
     private StoredAccount? Find(string name)

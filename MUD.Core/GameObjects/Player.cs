@@ -5,8 +5,12 @@ using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
+using MUD.Core.Properties;
+using MUD.Core.Properties.PlayerProperties;
 using MUD.Core.Repositories.Interfaces;
+using MUD.Data;
 using MUD.Telnet;
+using System.Threading;
 
 namespace MUD.Core.GameObjects
 {
@@ -14,9 +18,16 @@ namespace MUD.Core.GameObjects
     {
         private IPlayerRepository _playerRepository;
 
-        private Client _connection;
+        private IClientConnection _connection;
 
         private CommandQueue _commandQueue;
+
+        // Autosave interval (specs/GAME_LOOP.md 8.2).
+        private static readonly TimeSpan AutosaveInterval = TimeSpan.FromMinutes(10);
+
+        // Password writes handed to the persistence worker and not yet confirmed. While any are outstanding the
+        // stored password is older than the in-memory one, so SyncPasswordFromStore must not "adopt" it.
+        private int _unconfirmedPasswordWrites;
 
         // True once Quit() has started for the current connection; cleared when a new connection is attached.
         private bool _isQuitting;
@@ -28,30 +39,157 @@ namespace MUD.Core.GameObjects
 
         public string Password { get; set; }
 
+        // Serialises persistence and password changes (Save runs from the heartbeat, quit and commands).
+        private readonly object _saveLock = new object();
+
+        // True only while TryChangePassword is saving a password chosen in-game; only then may Save write it.
+        private bool _passwordChangePending;
+
+        // When set, input lines go here instead of the command queue (see SetPromptHandler).
+        private volatile Action<string> _promptHandler;
+
         public string SelectedTerm { get; set; }
 
+        // Website-owned (specs/WEB_EDITING.md 4.2, 15). Rev is the revision of the stored document this object last
+        // applied; the website bumps it on every edit and the game never writes it. Retired characters cannot log in.
+        public int Rev { get; set; }
+
+        public bool Retired { get; set; }
+
+        // Set by an in-game role change (promote) so the next save also writes ExtendedProperties. Otherwise the game
+        // leaves roles alone: the website owns them.
+        private volatile bool _rolesChanged;
+
+        /// <summary>Call after changing the Creator/Admin properties in-game, before Save.</summary>
+        public void MarkRolesChanged() { _rolesChanged = true; }
+
+        [Flags]
+        public enum WebChanges { None = 0, Text = 1, Roles = 2, Retired = 4 }
+
+        /// <summary>
+        /// Applies the website-owned fields of the stored document to this live player (game thread only):
+        /// ShortDescription, LongDescription, Race, Gender, Class, Retired and the Creator/Admin properties, plus Rev.
+        /// Inventory, location, password and every other field are left alone. Announces nothing.
+        /// </summary>
+        public WebChanges ApplyWebEdit(BsonDocument doc)
+        {
+            var changes = WebChanges.None;
+            if (SetText(doc, PlayerFields.ShortDescription, ShortDescription, v => ShortDescription = v)) { changes |= WebChanges.Text; }
+            if (SetText(doc, PlayerFields.LongDescription, LongDescription, v => LongDescription = v)) { changes |= WebChanges.Text; }
+            if (SetText(doc, PlayerFields.Race, Race, v => Race = v)) { changes |= WebChanges.Text; }
+            if (SetText(doc, PlayerFields.Gender, Gender, v => Gender = v)) { changes |= WebChanges.Text; }
+            if (SetText(doc, PlayerFields.Class, Class, v => Class = v)) { changes |= WebChanges.Text; }
+
+            BsonValue retired = doc.GetValue(PlayerFields.Retired, BsonNull.Value);
+            bool nowRetired = retired.IsBoolean && retired.AsBoolean;
+            if (nowRetired != Retired) { Retired = nowRetired; changes |= WebChanges.Retired; }
+
+            bool hasCreator, hasAdmin;
+            StoredRoles(doc, out hasCreator, out hasAdmin);
+            if (SyncRole<CreatorProperty>(hasCreator, () => new CreatorProperty())) { changes |= WebChanges.Roles; }
+            if (SyncRole<AdminProperty>(hasAdmin, () => new AdminProperty())) { changes |= WebChanges.Roles; }
+
+            BsonValue rev = doc.GetValue(PlayerFields.Rev, BsonNull.Value);
+            Rev = rev.IsNumeric ? rev.ToInt32() : 0;
+            return changes;
+        }
+
+        private static bool SetText(BsonDocument doc, string field, string current, Action<string> set)
+        {
+            BsonValue value = doc.GetValue(field, BsonNull.Value);
+            if (!value.IsString && !value.IsBsonNull) { return false; }
+            string updated = value.IsString ? value.AsString : null;
+            if (string.Equals(updated, current, StringComparison.Ordinal)) { return false; }
+            set(updated);
+            return true;
+        }
+
+        private static void StoredRoles(BsonDocument doc, out bool hasCreator, out bool hasAdmin)
+        {
+            hasCreator = false;
+            hasAdmin = false;
+            BsonValue props;
+            if (!doc.TryGetValue(PlayerFields.ExtendedProperties, out props) || !props.IsBsonArray) { return; }
+            foreach (var prop in props.AsBsonArray)
+            {
+                BsonValue t;
+                if (!prop.IsBsonDocument || !prop.AsBsonDocument.TryGetValue("_t", out t)) { continue; }
+                var names = t.IsBsonArray ? t.AsBsonArray.Select(x => x.ToString()) : new[] { t.ToString() };
+                foreach (var name in names)
+                {
+                    if (name == "CreatorProperty") { hasCreator = true; }
+                    if (name == "AdminProperty") { hasAdmin = true; }
+                }
+            }
+        }
+
+        // Makes the live properties agree with the stored role; true if anything changed.
+        private bool SyncRole<T>(bool stored, Func<T> create) where T : ExtendedProperty
+        {
+            bool live = ExtendedProperties.Any(p => p.GetType() == typeof(T));
+            if (live == stored) { return false; }
+            if (stored) { ExtendedProperties.Add(create()); }
+            else { ExtendedProperties.RemoveAll(p => p.GetType() == typeof(T)); }
+            return true;
+        }
+
+        // The document the game may write: everything except the website-owned fields. ExtendedProperties is included
+        // only after an in-game role change.
+        private BsonDocument GameOwnedFields(BsonDocument whole)
+        {
+            bool includeRoles = _rolesChanged;
+            _rolesChanged = false;
+            var set = new BsonDocument();
+            foreach (var element in whole)
+            {
+                if (Array.IndexOf(PlayerFields.NotWrittenByGame, element.Name) >= 0 &&
+                    !(includeRoles && element.Name == PlayerFields.ExtendedProperties)) { continue; }
+                set[element.Name] = element.Value;
+            }
+            return set;
+        }
+
+        /// <summary>
+        /// Adopts the website-owned fields of the stored document when its Rev or Retired flag differs, so a player
+        /// cached before a web edit shows the current text, roles and retirement. Never throws.
+        /// </summary>
+        public bool SyncWebFieldsFromStore()
+        {
+            lock (_saveLock)
+            {
+                if (string.IsNullOrWhiteSpace(Id)) { return false; }
+                try
+                {
+                    BsonDocument stored = _playerRepository.GetRawDocument(Id);
+                    if (stored == null) { return false; }
+                    BsonValue rev = stored.GetValue(PlayerFields.Rev, BsonNull.Value);
+                    int storedRev = rev.IsNumeric ? rev.ToInt32() : 0;
+                    BsonValue retired = stored.GetValue(PlayerFields.Retired, BsonNull.Value);
+                    bool storedRetired = retired.IsBoolean && retired.AsBoolean;
+                    if (storedRev == Rev && storedRetired == Retired) { return false; }
+                    ApplyWebEdit(stored);
+                    return true;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+        }
+
+        // Input and disconnects reach the player through the game loop (World routes lines to
+        // DataReceivedHandler and calls Quit on a Disconnected item), so no event handlers are attached here.
         [BsonIgnore]
-        public Client Connection
+        public IClientConnection Connection
         {
             get { return _connection; }
             set
             {
-                // If connection is changing, drop event handlers for the old one.
-                if (_connection != null && value != _connection)
-                {
-                    _connection.DataReceived -= DataReceivedHandler;
-                    _connection.ClientDisconnected -= ClientDisconnectedHandler;
-                }
                 if (value != null && value != _connection)
                 {
                     _isQuitting = false; // a new connection starts a new session
                 }
                 _connection = value;
-                if (value != null)
-                {
-                    _connection.DataReceived += DataReceivedHandler;
-                    _connection.ClientDisconnected += ClientDisconnectedHandler;
-                }
             }
         }
 
@@ -64,45 +202,207 @@ namespace MUD.Core.GameObjects
             _playerRepository = playerRepository;
         }
 
+        /// <summary>The connection as seen by prompted input (echo control, prompts). Overridable for tests.</summary>
+        [BsonIgnore]
+        public virtual ILoginConnection PromptChannel { get { return _connection; } }
+
+        [BsonIgnore]
+        public bool HasPrompt { get { return _promptHandler != null; } }
+
+        /// <summary>
+        /// While a handler is set, every line the player types goes to it and is NOT resolved as a command,
+        /// queued, or kept anywhere (used for passwords). The handler must call ClearPromptHandler when done.
+        /// </summary>
+        public void SetPromptHandler(Action<string> handler)
+        {
+            _promptHandler = handler;
+        }
+
+        public void ClearPromptHandler()
+        {
+            _promptHandler = null;
+        }
+
+        private IClock Clock { get { return _world != null ? _world.Clock : SystemClock.Instance; } }
+
+        // The persistence sink for this player's collection, or null when saves are written synchronously
+        // (before the game thread exists, and in tests that use a plain fake repository).
+        private IPersistSink Sink
+        {
+            get
+            {
+                var snapshots = _playerRepository as ISnapshotRepository;
+                return snapshots == null ? null : snapshots.Sink;
+            }
+        }
+
+        /// <summary>
+        /// Saves the player. With a persistence sink (normal operation) this snapshots the player and hands it to
+        /// the worker without touching the database, and returns true meaning "queued"; the outcome is reported to
+        /// the player later. Without a sink the write happens here and the result is the database's.
+        /// </summary>
         public bool Save(bool quiet = false)
         {
+            return SavePlayer(quiet, false, false);
+        }
+
+        private bool SavePlayer(bool quiet, bool final, bool passwordChange)
+        {
             if (!quiet) { ReceiveMessage("%^Bold%^%^Yellow%^Saving...%^Reset%^"); }
-            if (string.IsNullOrWhiteSpace(Id))
+            if (Sink != null) { return PostSnapshot(quiet, final, passwordChange); }
+            return SaveSynchronously();
+        }
+
+        private bool PostSnapshot(bool quiet, bool final, bool passwordChange)
+        {
+            BsonDocument snapshot;
+            BsonDocument gameFields;
+            lock (_saveLock)
             {
-                _playerRepository.Insert(this);
-                _lastSave = DateTime.Now;
-                return true;
+                // The Password it carries must not be older than the stored one (the website may have changed it
+                // since this player was loaded).
+                SyncPasswordFromStore();
+                snapshot = this.ToBsonDocument();
+                gameFields = GameOwnedFields(snapshot);
+                if (passwordChange) { _unconfirmedPasswordWrites++; }
             }
-            else
+            _lastSave = Clock.Now;
+
+            var request = new PersistRequest
             {
-                if (_playerRepository.Update(this))
+                Collection = ((ISnapshotRepository)_playerRepository).CollectionName,
+                Id = Id,
+                // Field-level $set of the game-owned fields; the whole snapshot is only written when nothing is stored
+                // yet (a new character). Website-owned fields and Rev are never rewritten from this object.
+                Kind = PersistKind.SetFields,
+                Doc = gameFields,
+                Fallback = snapshot,
+                Final = final,
+                Reason = final ? "logout" : "player save"
+            };
+            if (passwordChange)
+            {
+                request.OnCompleted = persisted => { lock (_saveLock) { _unconfirmedPasswordWrites--; } };
+            }
+            if (!quiet)
+            {
+                request.OnFailed = attempts => Notify("%^Bold%^%^Red%^Saving failed; it will be retried.%^Reset%^");
+                request.OnCompleted = Chain(request.OnCompleted, persisted =>
                 {
+                    if (persisted) { Notify("%^Bold%^%^Yellow%^Saved.%^Reset%^"); }
+                });
+            }
+            if (final && _world != null) { _world.BeginFinalSave(this, request); }
+            Sink.Post(request);
+            return true;
+        }
+
+        private static Action<bool> Chain(Action<bool> first, Action<bool> second)
+        {
+            if (first == null) { return second; }
+            return v => { first(v); second(v); };
+        }
+
+        // Tells a still-connected player about a persistence outcome (callbacks arrive on the game thread).
+        private void Notify(string message)
+        {
+            if (ConnectionStatus == PlayerConnectionStatuses.LoggedIn && _connection != null) { ReceiveMessage(message); }
+        }
+
+        private bool SaveSynchronously()
+        {
+            lock (_saveLock)
+            {
+                if (string.IsNullOrWhiteSpace(Id))
+                {
+                    _playerRepository.Insert(this);
                     _lastSave = DateTime.Now;
                     return true;
+                }
+                else
+                {
+                    // The Password it carries must not be older than the stored one (the website may have changed it
+                    // since this player was loaded). Only game-owned fields are written; the whole document only
+                    // when nothing is stored yet.
+                    SyncPasswordFromStore();
+                    if (_playerRepository.UpdateFields(Id, GameOwnedFields(this.ToBsonDocument())) || _playerRepository.Update(this))
+                    {
+                        _lastSave = DateTime.Now;
+                        return true;
+                    }
                 }
             }
             return false;
         }
 
+        /// <summary>
+        /// Adopts the stored password if it differs from the in-memory one, so a stale object never overwrites a
+        /// password changed elsewhere. Does nothing while an in-game change is being saved. Returns true if the
+        /// in-memory password was replaced. Never throws: on a read failure the in-memory value is kept.
+        /// </summary>
+        public bool SyncPasswordFromStore()
+        {
+            lock (_saveLock)
+            {
+                if (_passwordChangePending || _unconfirmedPasswordWrites > 0 || string.IsNullOrWhiteSpace(Id)) { return false; }
+                try
+                {
+                    BsonDocument stored = _playerRepository.GetRawDocument(Id);
+                    BsonValue value;
+                    if (stored == null || !stored.TryGetValue("Password", out value) || !value.IsString) { return false; }
+                    if (value.AsString == Password) { return false; }
+                    Password = value.AsString;
+                    return true;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sets and saves a new password chosen in-game. If the save fails the old password stays in memory.
+        /// </summary>
+        public bool TryChangePassword(string newPassword)
+        {
+            lock (_saveLock)
+            {
+                string oldPassword = Password;
+                Password = newPassword;
+                _passwordChangePending = true;
+                bool saved = false;
+                try
+                {
+                    saved = SavePlayer(true, false, Sink != null);
+                }
+                finally
+                {
+                    _passwordChangePending = false;
+                    if (!saved) { Password = oldPassword; }
+                }
+                return saved;
+            }
+        }
+
+        /// <summary>
+        /// Logout (specs/GAME_LOOP.md 8.4), on the game thread, once per session: farewell, leave the world,
+        /// final snapshot to the persistence worker, then a flushing disconnect so the farewell reaches the client.
+        /// Logout never waits on the database: a failed final save is retried by the worker (and spooled).
+        /// </summary>
         public void Quit()
         {
-            // Connection.Disconnect() re-enters through ClientDisconnectedHandler, so run the sequence once per session.
             if (_isQuitting) { return; }
             _isQuitting = true;
+            _promptHandler = null;
+            if (_commandQueue != null) { _commandQueue.Clear(this); }
 
             ReceiveMessage("Thanks for playing!");
             ConnectionStatus = PlayerConnectionStatuses.Offline;
-            if (Save())
-            {
-                _world.RemovePlayer(this);
-                Connection.Disconnect();
-            }
-            else
-            {
-                // Uh oh!
-                // Save failed, so the player is still online: allow another quit attempt.
-                _isQuitting = false;
-            }
+            if (_world != null) { _world.RemovePlayer(this); }
+            SavePlayer(true, true, false);
+            if (_world != null) { _world.RetireConnection(_connection); }
+            _connection.Disconnect(true);
         }
 
         public override void ReceiveMessage(string message)
@@ -121,18 +421,40 @@ namespace MUD.Core.GameObjects
 
             if (ConnectionStatus == PlayerConnectionStatuses.LoggedIn)
             {
-                if (DateTime.Now.Subtract(_lastSave).TotalMinutes >= 10)
+                if (Clock.Now.Subtract(_lastSave).TotalMinutes >= AutosaveInterval.TotalMinutes)
                 {
                     Save();
                 }
             }
         }
 
+        /// <summary>
+        /// Handles one input line from this player. Runs on the game thread (World routes lines here from the
+        /// inbound queue); it resolves and parses the command there, then queues it.
+        /// </summary>
         public void DataReceivedHandler(object sender, string message)
         {
             // check to see if this matches a command that the player has available.
             // if it does, add that command to the queue
+            var promptHandler = _promptHandler;
+            if (promptHandler != null)
+            {
+                promptHandler(message);
+                return;
+            }
+
             ICommand matchedCommand = ResolveCommand(message);
+            var sensitiveCommand = matchedCommand as ISensitiveInputCommand;
+            if (sensitiveCommand != null)
+            {
+                // Keep arguments (which may be a password) out of the queued command text.
+                string redacted = sensitiveCommand.Redact(message);
+                if (redacted != message)
+                {
+                    message = redacted;
+                    ReceiveMessage("Do not type a password on the command line. You will be prompted for it.");
+                }
+            }
             if (matchedCommand != null) // Move this logic to something else..something to match Command classes with input.
             {
                 _commandQueue.AddCommand(new CommandExecution(this, message, matchedCommand));
@@ -141,17 +463,6 @@ namespace MUD.Core.GameObjects
             {
                 ReceiveMessage("Command not recognized.");
             }
-        }
-
-        private void ClientDisconnectedHandler(object sender, Client e)
-        {
-            // I think this is what we want for now... 
-            // I think in other muds the player object doesn't get removed unless you quit via the actual command. That way you can't just kill your connection and avoid death or whatever.
-            // We would need to add a timeout feature...
-            e.DataReceived -= DataReceivedHandler;
-            e.ClientDisconnected -= ClientDisconnectedHandler;
-            Quit();
-            //ConnectionStatus = EPlayerConnectionStatus.NetDead; // Maybe just online/offline? Not sure when net dead is a thing...
         }
     }
 }

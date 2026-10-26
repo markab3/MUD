@@ -117,7 +117,8 @@ namespace MUD.Telnet
             ServerStopped?.Invoke(this, null);
         }
 
-        public void Stop()
+        /// <summary>Stops accepting new connections; existing clients stay connected.</summary>
+        public void StopAccepting()
         {
             _isAcceptingConnections = false;
             _allDone.Set();
@@ -128,12 +129,17 @@ namespace MUD.Telnet
             {
                 listener.Close();
             }
+        }
+
+        public void Stop()
+        {
+            StopAccepting();
 
             // Iterate over a snapshot: Disconnect() removes the client from _clients.
             foreach (Client currentClient in snapshotClients())
             {
                 currentClient.Send("The server is shutting down and your connection will now be closed.");
-                currentClient.Disconnect();
+                currentClient.Disconnect(true);
             }
         }
 
