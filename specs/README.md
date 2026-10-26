@@ -13,6 +13,7 @@ commit `ce8f7b9`).
 | [CONFIGURATION.md](CONFIGURATION.md) | Runtime config (environment, appsettings), build, local dev |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | systemd user unit, `scripts/deploy.sh`, rollback, triggering deploys |
 | [WEB.md](WEB.md) | MUD.Web site: config, routes, cookie auth model, plaintext password caveat |
+| [V2_SPIKE_RESULTS.md](V2_SPIKE_RESULTS.md) | Throwaway spike results (D38): gRPC over Unix domain sockets, Kestrel on two UDS endpoints, Grpc.Tools codegen, round-trip latency, process supervision |
 
 Convention: these are lightweight living documents — update the relevant
 file when the behavior they describe changes.
