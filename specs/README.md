@@ -20,6 +20,7 @@ commit `ce8f7b9`).
 | [MODULES.md](MODULES.md) | V2: manifest, launch entries and grants, lifecycle, supervision, dormant behaviors, worked examples A (desert sandstorm) and B (temple lever and traps), failure modes, testing |
 | [V2_PHASES.md](V2_PHASES.md) | V2 phase plan: the seven phases, the pre-phase-4 spike, deliverables, risks, sizes and the proposed card split (phase 1 in implementable detail) |
 | [OPEN_QUESTIONS_V2.md](OPEN_QUESTIONS_V2.md) | V2 decisions record: D1..D39 with pointers to the implementing sections, and "Still open or deferred" (name kept for link stability) |
+| [V2_SPIKE_RESULTS.md](V2_SPIKE_RESULTS.md) | Throwaway spike results (D38): gRPC over Unix domain sockets, Kestrel on two UDS endpoints, Grpc.Tools codegen, round-trip latency, process supervision |
 
 Convention: these are lightweight living documents — update the relevant
 file when the behavior they describe changes.
