@@ -1,5 +1,9 @@
 # Web Editing versus the Live Game (design spec)
 
+> **SUPERSEDED IN PART by the V2 owner decisions (D30); see [ARCHITECTURE_V2.md](ARCHITECTURE_V2.md) section 3 and [OPEN_QUESTIONS_V2.md](OPEN_QUESTIONS_V2.md).**
+> `Rev` (optimistic concurrency) is dropped: web and creator edits are last-write-wins and the per-field audit keeps history. The Rev/poll machinery (sections 6, 8, 9 and the matching parts of 13 and 14) is superseded and is removed in V2 phase 6.
+> Allow-lists, roles, audit and the owner decisions of section 15 survive as rules enforced in core. Nothing else in this file was rewritten.
+
 Status: APPROVED with owner decisions (section 15). Docs only; no code accompanies this spec.
 Based on `hermes` at 599721a. `specs/GAME_LOOP.md` exists only on branch `gameloop-spec`
 (not yet merged to `hermes`); where this spec relies on it, it says so (assumption A1).

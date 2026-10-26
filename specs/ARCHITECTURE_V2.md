@@ -1,43 +1,53 @@
 # Architecture V2: core / front-end split, composition, process-per-module (design spec)
 
-Status: DRAFT for owner review. Docs only. No code, scaffolding, .proto files or csproj changes accompany it.
-Base: `hermes` at 7c9bdd9. Task: t_866775c9.
+Status: REVISED to the owner's decisions D1..D39 (see [OPEN_QUESTIONS_V2.md](OPEN_QUESTIONS_V2.md)). Docs only. No code,
+scaffolding, `.proto` files or csproj changes accompany it. Revision task: t_17b7802d. Original draft: t_866775c9 (PR #42).
+Where the draft and the decisions differed, the decisions won and the draft text was removed or rewritten.
 
 Companion files (read together):
 
 | File | Contents |
 |---|---|
-| ARCHITECTURE_V2.md (this file) | Requirements, current-state inventory, superseded specs, target architecture, entity model, commands, front ends, persistence, security, observability, migration plan, decision log |
-| [CORE_API.md](CORE_API.md) | Event model, the API modules and front ends call, gRPC over Unix domain sockets (.proto sketches, .NET 8 notes), request-to-game-thread mapping |
-| [MODULES.md](MODULES.md) | Module manifest and lifecycle, supervision, deployment on this host, the desert and temple worked examples, failure-mode table, testing |
-| [OPEN_QUESTIONS_V2.md](OPEN_QUESTIONS_V2.md) | Numbered owner questions with options, recommendations and consequences |
+| ARCHITECTURE_V2.md (this file) | Requirements, current-state inventory, superseded specs, target architecture, entity and behavior model, commands, front ends, persistence, security, observability, phase summary |
+| [CORE_API.md](CORE_API.md) | Event model (Before/After, verdicts, limits), what modules and front ends call, gRPC over two Unix domain sockets (message sketches, .NET 8 notes), the list "Gaps found while revising" |
+| [MODULES.md](MODULES.md) | Manifest, launch entries and grants, lifecycle, supervision, deployment on this host, worked examples A (desert) and B (temple), failure modes, testing |
+| [V2_PHASES.md](V2_PHASES.md) | The seven-phase plan with deliverables, risks, sizes and the proposed implementation-card split |
+| [OPEN_QUESTIONS_V2.md](OPEN_QUESTIONS_V2.md) | (file name kept for link stability; it is now the decisions record) D1..D39 with a pointer to the section implementing each, and the list of items still open or deferred |
 
-Nothing in this design has been run. Where a statement about the current code is made, the file is cited
-(paths relative to the repo root, on `hermes`). Where a claim about a library, the OS or performance could not be
-verified here, it is marked **(unverified)**.
+Nothing in this design has been built or run. Where a statement about the current code is made, the file is cited
+(paths relative to the repo root, on `hermes` at 9a83afc). Where a claim about a library, the OS or performance could not
+be verified here, it is marked **(unverified)**.
 
 ## 0. How to read this document
 
 The owner is learning IPC and event-driven design as part of this work, so the design prefers explicit, inspectable
-mechanisms over frameworks: plain protobuf messages, one stream per module you can log line by line, one game
-thread, hand-written supervisor. Trade-offs are explained where a choice is made, and every choice that is the
-owner's to make is in OPEN_QUESTIONS_V2.md (referenced as Q-numbers). Where this document says "recommended" it
-means "the design below assumes it"; it is not an answer to a question.
+mechanisms over frameworks: plain protobuf messages, one event stream per module you can log line by line, one game
+thread, a hand-written supervisor. Decisions are numbered D1..D39 (the owner's numbering, in OPEN_QUESTIONS_V2.md).
+Things the decisions leave open and that an implementer would have to guess are collected in CORE_API.md section 9,
+"Gaps found while revising"; they are referenced here as G1..G31. Nothing in this document closes an item that
+OPEN_QUESTIONS_V2.md lists as open or deferred; where a number is needed it is marked **(not set)** or shown as an unmeasured proposal.
 
-## 1. Fixed requirements (owner)
+## 1. Fixed requirements (owner) and confirmed assumptions
 
-1. Core functionality and the telnet-specific interface are separated. Telnet is a front end, not part of core.
-2. Core handles the basic entities (room, player, ...) as it does now. Core is responsible for ALL entities in the
-   world and ALL persistence. It is the only process that talks to MongoDB.
-3. Composition over inheritance: core provides basic object types; behaviours are loaded from modules. Behaviours hook
-   pre-defined events and follow a general contract.
-4. Modules load and unload as needed. Each module is its own running process. Core starts them.
-5. IPC is gRPC over Unix domain sockets. No network service calls.
+1. Core functionality and the telnet-specific interface are separated. Telnet is a front end, not part of core (D27).
+2. Core handles the basic entities (room, player, ...). Core is responsible for ALL entities in the world and ALL
+   persistence. It is the only process that talks to MongoDB.
+3. Composition over inheritance: core provides basic object types; behaviours come from modules and attach to entities as
+   behavior list entries (D5). Behaviours hook pre-defined events and follow a general contract.
+4. Modules load and unload as needed. Each module is its own running process. Core starts them (D20).
+5. IPC is gRPC over Unix domain sockets (D16, D22). No network service calls.
 6. Prefer explicit, inspectable designs; explain trade-offs.
+
+Confirmed assumptions: modules live in this repo as solution projects; every module in the launch entries always runs (no
+area-header start trigger); non-required modules start in the background; the `required` flag lives in the launch entry
+(core config), not in the manifest (owner decisions, "Confirmed assumptions").
 
 Worked examples A (desert sandstorm) and B (temple lever and traps) are in MODULES.md sections 7 and 8.
 
 ## 2. Current-state inventory (grounded in `hermes`)
+
+This section describes the code as it is today and is unchanged by the decisions except where a row is marked. Sections
+2.1 to 2.8 below were verified by reading the files cited (draft task) and spot-checked again in this revision.
 
 ### 2.1 Projects
 
@@ -116,7 +126,7 @@ How behaviour is attached today:
 - Count: the card says 44 command classes. In the tree there are **40 files** under `Commands/{Player,Creator,Admin}`
   (21 + 17 + 2). 33 contain an `ICommand` implementation; 6 are **empty files** (0 bytes: `ShutdownCommand`, `DestCommand`,
   `EditCommand`, `LSCommand`, `ProtoCommand`, `RMCommand`) and 1 is a helper (`BuildFeatureEditor`). Plus
-  `AnonymousCommand`. I could not reproduce 44; the migration table in section 8.4 uses the 33 real ones. Of those,
+  `AnonymousCommand`. I could not reproduce 44; the migration table in section 9 uses the 33 real ones. Of those,
   `Wear`, `Remove`, `Wield`, `Lower` (and `ApplyStatus`) have empty `DoCommand` bodies (stubs).
 - Output: commands call `Living.ReceiveMessage(string)`. `Player.ReceiveMessage` runs the message through the
   player's selected `ITerminalHandler` (`AnsiTerminal`, `GMudTerminal`, `DefaultTerminal`), which replaces
@@ -159,7 +169,7 @@ documents directly with allow-listed `$set`, per-document `Rev` for optimistic c
 `Player.ApplyWebEdit`, `Room.ApplyWebEdit`, `Player.SyncWebFieldsFromStore`). Passwords are plaintext
 (WEB.md "Caveat").
 
-### 2.8 Couplings that the split has to cut (all verified in code)
+### 2.8 Couplings that the split has to cut (all verified in code; "today" facts, several are removed by decisions D30, D32)
 
 | Coupling | Where |
 |---|---|
@@ -172,39 +182,40 @@ documents directly with allow-listed `$set`, per-document `Rev` for optimistic c
 | Out-of-band tool writes Mongo | `scripts/seed-admin.sh` |
 | Game polls Mongo to learn about website writes | `RoomWebSync`, `PlayerWebSync` |
 
+
 ## 3. Which existing specs this design supersedes, invalidates, or keeps
 
-If the owner accepts this design, these existing specs become partly historical. Each gets a "superseded by
-ARCHITECTURE_V2.md section N" banner **when the corresponding migration phase lands**, not before.
+Banners have been added to ROOM_FILES.md and WEB_EDITING.md by this revision (the content below says what is obsolete);
+README.md rows are updated.
 
 | Spec | Status under V2 |
 |---|---|
-| WEB_EDITING.md sections 6 (game-side refresh/poll), 8 (Rev optimistic concurrency between two writers), 9 (what game stops writing), 13-14 (migration/tests for polling) | **Superseded** once the web goes through core (phase 6). With one writer there is no cross-process conflict to detect between web and game. `Rev` stays only if the owner wants optimistic concurrency between two human editors (Q27). `RoomWebSync`, `PlayerWebSync`, `Player.ApplyWebEdit/SyncWebFieldsFromStore`, `Room.ApplyWebEdit`, `PlayerFields.NotWrittenByGame`, `WithoutWebBookkeeping` go away |
-| WEB_EDITING.md sections 4 (allow-lists), 5/15 (roles), 7 (audit), 10 (importer interaction), 15 (owner decisions) | **Survive as rules**, enforced in core instead of the web: see the survive list below |
-| WEB.md | Routes, cookie auth and the plaintext caveat survive. "Talks to Mongo" is **invalidated**: MUD.Web becomes a core API client. `MongoAccountStore` et al. are removed in phase 6 |
-| GAME_LOOP.md | **Survives and is extended.** The single game thread, queues, tick, NextActionAt, persistence worker, spool, logout ordering stay. Changes: the inbound `Line/Connected/Disconnected` kinds are generalised to front-end session messages; `IClientConnection` is replaced by a session abstraction; gRPC handlers become another producer of `WorldEvent` items |
-| RUNTIME_STATE.md | **Survives** (write-through, definition vs state, repository lock). Its per-mutation table (get/drop/build/import) is updated when components land |
-| ROOM_FILES.md | YAML format, identity, import semantics, definition-vs-state **survive**. Section 4.5/7 (behaviour registry resolving to `ExtendedProperty` types) and section 8 (`class:` room subclass) are **superseded** by component bindings and module bindings (section 5.5 below). Section 9 (locally-modified flag) is unchanged and still unimplemented |
-| ARCHITECTURE.md, API.md, SPEC.md, DEPLOYMENT.md, CONFIGURATION.md | Describe today's layout; updated phase by phase. DEPLOYMENT.md gains module units/children in phase 4 |
-| DESIGN_PRINCIPLES.md | **Survives intact.** "Everything is persistent" is the constraint that shapes module state (section 5.4). The sentence "mudlib is mostly data, a C# subclass is the exception" is strengthened: modules replace subclassing |
+| WEB_EDITING.md sections 6 (game-side refresh/poll), 8 (Rev optimistic concurrency), 9 (what game stops writing), 13-14 (migration/tests for polling) | **Superseded** (D30). `Rev` is dropped; web and creator edits are last-write-wins, the per-field audit keeps history. `RoomWebSync`, `PlayerWebSync`, `Player.ApplyWebEdit/SyncWebFieldsFromStore`, `Room.ApplyWebEdit`, `PlayerFields.NotWrittenByGame`, `WithoutWebBookkeeping` go away in phase 6 |
+| WEB_EDITING.md sections 4 (allow-lists), 5/15 (roles), 7 (audit), 10 (importer interaction, but see D39), 15 (owner decisions) | **Survive as rules**, enforced in core instead of the web (list below) |
+| WEB.md | Routes, cookie auth and the plaintext caveat survive. "Talks to Mongo" is **invalidated**: MUD.Web becomes a core API client (D27, D31). `MongoAccountStore` et al. are removed in phase 6 |
+| GAME_LOOP.md | **Survives and is extended.** Single game thread, queues, tick, `NextActionAt`, persistence worker, spool, logout ordering stay. The inbound `Line/Connected/Disconnected` kinds are generalised to front-end session items; `IClientConnection` is replaced by a session id; gRPC handlers become another producer of `WorldEvent`-style items |
+| RUNTIME_STATE.md | **Survives** (write-through, definition vs state, repository lock). Its per-mutation table is updated when components land |
+| ROOM_FILES.md | YAML format and identity survive as an **optional, manually triggered one-off import/export format** (D39). Sections 4.5 and 7 (properties / behavior registry resolving to `ExtendedProperty`) are replaced by behavior entries (section 5.4 below). Section 6 (re-import semantics) and section 9 (`local_modified`, `source_hash`, `--force/--adopt`) are **obsolete**. Section 8 (`class:` room subclass) is superseded by plain `room` kind plus behavior entries |
+| ARCHITECTURE.md, API.md, SPEC.md, DEPLOYMENT.md, CONFIGURATION.md | Describe today's layout; updated phase by phase. DEPLOYMENT.md gains module launch entries and the grants file in phase 4 |
+| DESIGN_PRINCIPLES.md | **Survives.** "Everything is persistent" is the constraint that shapes module state (section 5.6). Its YAML-content-pipeline principle is narrowed by D39: the database is the sole source of truth, YAML is an optional one-off format |
 
 Rules that survive unchanged (and where they are enforced in V2):
 
-- **Audit**: per-field Old/New rows, audit-first (`Applied:false` before apply), Password never an audited field,
-  Admin-readable only (WEB_EDITING 7 and 15 Q9/Q10). In V2 core writes the audit row for **every** mutation that has a
-  non-system actor; a module is an actor (`Source: "module:<name>"`) (section 7.4).
-- **Role strictness**: inclusive roles (Admin includes Creator), cannot grant above own role, edit only strictly lower
-  roles, nobody edits an Admin via web, last-Admin check. Enforced in core's API handlers for front ends.
-- **Room deletion behaviour**: default room (StartRoomKey) never deletable; verify destination first; contents to a
-  random adjacent room else the default room; wind message; dangling exits removed and audited. Becomes a core
-  operation `DeleteRoom`; modules may not call it (capability).
-- **Room update message**: "Something feels different..." Core emits it on creator/web edits; module-driven
-  overlay changes are not announced this way (modules supply their own text).
-- **Retirement**: retired characters cannot log in; admin/self rules as in WEB_EDITING 15.
-- **Plaintext passwords for now** (WEB.md caveat). V2 does not change password storage. Note the consequence: a
-  front end that forwards passwords to core over the UDS sees plaintext; this is no worse than today (section 11).
-- **Single game thread** (GAME_LOOP.md): all entity mutation happens on one thread inside core.
-- Persistence principle (DESIGN_PRINCIPLES 1): no gameplay state only in memory.
+- **Audit of web and creator edits**: per-field Old/New rows, audit-first (`Applied:false` before apply), Password never an
+  audited field, Admin-readable only (WEB_EDITING 7 and 15 Q9/Q10). Core writes these rows (D34). **Module-made changes are
+  not durably audited** (D34): logs carrying module, event, targets, trace id and cause id are the record (section 7.6).
+- **Role strictness**: inclusive roles (Admin includes Creator), cannot grant above own role, edit only strictly lower roles,
+  nobody edits an Admin via web, last-Admin check. Enforced in core's front-end API handlers. Core re-checks the player's current
+  role on every web call (D31).
+- **Room deletion behaviour**: default room (StartRoomKey) never deletable; verify destination first; contents to a random
+  adjacent room else the default room; wind message; dangling exits removed and audited. Becomes a core operation `DeleteRoom`
+  not available to modules.
+- **Room update message**: "Something feels different..." Core emits it on creator/web edits; module-made changes use the
+  module's own `message.send` text.
+- **Retirement**: retired characters cannot log in; admin/self rules as in WEB_EDITING 15; retire/demote revokes the web session at once (D31).
+- **Plaintext passwords for now** (WEB.md caveat; D31). Never logged or displayed.
+- **Single game thread** (GAME_LOOP.md): all entity mutation happens on one thread inside core (D9).
+- Persistence principle (DESIGN_PRINCIPLES 1): no gameplay state only in memory (D12, D13).
 
 ## 4. Target architecture
 
@@ -216,87 +227,90 @@ Rules that survive unchanged (and where they are enforced in V2):
                                 v                                                v
                       +-------------------+                          +-------------------+
                       |  telnet front end |                          |   web front end   |
-                      |  (MUD.Telnet host)|                          |   (MUD.Web)       |
-                      |  sockets, telnet  |                          |   Razor Pages     |
-                      |  options, ANSI    |                          |   cookie auth     |
+                      |  (phase 1: project|                          |   (MUD.Web)       |
+                      |   in core process;|                          |   Razor Pages     |
+                      |   phase 7: own    |                          |   cookie holds    |
+                      |   process)        |                          |   core session    |
                       +---------+---------+                          +---------+---------+
-                                |  gRPC / Unix domain socket                   |  gRPC / UDS
-                                |  ($XDG_RUNTIME_DIR/mud/core.sock)            |
+                                |  gRPC / UDS  frontends.sock                  |  gRPC / UDS frontends.sock
                                 v                                              v
   +--------------------------------------------------------------------------------------------+
   |                                      CORE (MUD.Main)                                       |
-  |   gRPC host (Kestrel on UDS)                                                               |
-  |      |  every request becomes an InboundItem                                               |
+  |   Kestrel: two UDS endpoints: frontends.sock (Session + Admin services)                    |
+  |                               modules.sock   (Module service)                              |
+  |      |  every request becomes an item for the game thread                                  |
   |      v                                                                                     |
   |   +-----------------------------  GAME THREAD (single)  --------------------------------+  |
-  |   | World: rooms, players, NPCs, items, features, components | command resolve/execute |  |
-  |   | event dispatcher (pre/post) | timers | tick | capability + quota checks | audit rows |  |
+  |   | World: rooms, players, NPCs, items, features, components, behavior lists            |  |
+  |   | event processing (Before/After chains) | timers | tick | capability + quota checks  |  |
   |   +-----------------------------------------------------------------------------------+  |
   |   persistence worker --> MongoDB (ONLY process with a Mongo connection)                    |
-  |   module supervisor (start/stop/restart, health, backoff)   YAML import/export             |
+  |   module supervisor (launch entries, grants, tokens, restart/backoff)   in-memory session table |
   +-------+------------------------------+-----------------------------+-----------------------+
-          | gRPC / UDS (same socket,     |                             |
-          | one bidi stream per module)  |                             |
+          | modules.sock: module DIALS core: one server stream for events,                   |
+          | unary calls back (SubmitVerdict, Emit, State, Timer, reads)                      |
           v                              v                             v
    +--------------+              +--------------+               +--------------+
    | module:      |              | module:      |               | module: ...  |
    | desert       |              | temple       |               |              |
    | own process  |              | own process  |               |              |
-   | own memory   |              | own memory   |               |              |
    +--------------+              +--------------+               +--------------+
-        children of core (spawned and supervised by core)
+        children of core (spawned and supervised by core; C# projects in this repo)
 ```
+
+In phases 1 to 5 the telnet front end is a project inside the core process and calls the core API as a C# interface;
+the `frontends.sock` endpoint only exists from phase 4 and is first used by the web (phase 6) and the telnet process (phase 7).
 
 Responsibilities:
 
 | Process | Owns | Does not do |
 |---|---|---|
-| core | All entities, all rooms/players/items/components, the game thread, command resolution for built-ins, event dispatch, timers, capabilities, quotas, audit, persistence (sole Mongo client), YAML import/export, module supervision, the API socket, accounts and authentication | Telnet protocol, terminal escape sequences, HTML, module-specific rules |
-| telnet front end | TCP accept, telnet negotiation (NAWS/TTYPE/echo), line framing and input limits, connection caps, idle timeout, throttling of raw connection rate, rendering semantic output to ANSI, prompt echo-off | World state, command parsing beyond "this is a line", Mongo |
-| web front end | HTTP, cookie session, pages, CSRF, throttle of web login attempts | Mongo. Calls core API for every read and write |
-| module | Its own behaviour code and in-memory working state; handler logic for subscribed events; schema of its own components | Mongo, other modules' data, direct sockets to anything but core, mutating entities without going through the API |
+| core | All entities, components and behavior lists, the game thread, command resolution for built-ins, event processing, timers, capabilities, quotas, persistence (sole Mongo client), optional YAML import/export, module supervision, both API sockets, accounts, authentication and web session tokens, brute-force login throttle | Telnet protocol, terminal escape sequences, HTML, module-specific rules |
+| telnet front end | TCP accept, telnet negotiation, line framing and input limits, connection caps, idle timeout, raw connection-rate throttling, markup-to-ANSI conversion, prompt echo-off, the prompted login dialogue | World state, command parsing beyond "this is a line", Mongo |
+| web front end | HTTP, cookie session holding the core session token, pages, CSRF, markup-to-HTML conversion | Mongo. Calls the core API for every read and write |
+| module | Its behavior code and in-memory working state; handler logic for events delivered to its behaviors; schema of its own components and state document | Mongo, other modules' data, sockets to anything but core, mutating entities other than by events |
 
-What stays **in-process in core** (and why): the game thread and world model (single-writer rule), the persistence
-worker (it needs snapshots from the game thread, GAME_LOOP.md 8), built-in commands that are inseparable from the
-world model (look, get, drop, movement, say, tell, who, inventory, ...), account/authentication, creator/admin
-tooling (build, import, export), YAML import/export, the event dispatcher and supervisor. Splitting any of these into
-processes would add IPC on the hottest paths without a stated benefit.
+What stays **in-process in core** (and why): the game thread and world model (single-writer rule), the persistence worker (it
+needs snapshots from the game thread, GAME_LOOP.md 8), built-in commands inseparable from the world model (look, search, get,
+drop, movement, say, tell, who, inventory, ... D2), account/authentication, creator/admin tooling, optional YAML import/export
+and the supervisor. Splitting any of these into processes would add IPC on the hottest paths without a stated benefit.
 
 ### 4.2 Why one core process and not a "services" mesh
 
-Everything that mutates the world must serialise on one thread (GAME_LOOP.md owner decision 1, which this design
-keeps). A multi-process core would need distributed transactions for no gain at this scale. The extension points
-are therefore: modules (behaviour) and front ends (I/O). Both are clients of the same API.
+Everything that mutates the world must serialise on one thread (GAME_LOOP.md owner decision 1, kept; D9). A multi-process core
+would need distributed transactions for no gain at this scale. The extension points are therefore modules (behavior) and
+front ends (I/O). Both are clients of core over UDS.
 
-### 4.3 In-process modules (a deliberate escape hatch)
+### 4.3 In-process modules (phase 3 only)
 
-The module contract (events in, API calls out) is defined as an interface, with two adapters: an out-of-process adapter
-(gRPC stream) and an in-process adapter (a C# class running inside core and called on the game thread). Built-in
-behaviour such as the room search and timed-effect behaviours can start in-process (migration phase 3) and be moved out
-when it is worth the IPC. This keeps the contract honest (the same tests run against both adapters, MODULES.md 11) and
-lets the owner decide per module whether the isolation matters (Q4).
+Phase 3 builds the event bus before any IPC exists. During phase 3 the behaviors that exist (search, bleeding) run
+in-process as C# handlers registered in the same (Module, Type) dictionary that phase 4 later fills with remote modules. The contract is the
+same: a handler gets an immutable snapshot and returns Allow/Deny plus emitted events. The in-process registration is a
+test seam and a migration device, not a lasting second mechanism. Whether it stays after phase 4 is left to the phase-4 cards
+(listed in V2_PHASES.md as a decision the card must raise, not made here).
 
-## 5. Entity model
+## 5. Entity and behavior model
 
-### 5.1 Core object types
+### 5.1 Core object types (kinds)
 
 Core keeps a small, closed set of entity **kinds**. A kind fixes the minimum components an entity must have and which
 core-owned operations apply to it.
 
 | Kind | Today | Required components | Notes |
 |---|---|---|---|
-| `room` | `Room` | `Description`, `Exits`, `Position` (area, X/Y/Z), `Contents` | Has occupants (derived from location, not stored) |
-| `player` | `Player` | `Description`, `Location`, `Container` (inventory), `Account`, `Roles`, `Body` (gender/race/class) | Account holds name, NameKey, password (plaintext for now), Retired, term preference |
-| `npc` | `NPC` | `Description`, `Location`, `Container`, `Body` | No Account. `NPC` as a subclass disappears; "npc" is just a kind |
-| `item` | `InventoryItem`, `Food`, `Wand` | `Description`, `Location` | `Food.Servings`, `Wand.CurrentCharges` become module or core-registered components |
-| `feature` | `Feature` | `Description`, `FeatureText` (RoomLine, DetailDescription) | Stays attached to a room (embedded or child entity: Q8) |
+| `room` | `Room` | `Description`, `Exits`, `Position` (area, X/Y/Z), `Contents` | Occupants derived from location, not stored. Carries behavior list |
+| `player` | `Player` | `Description`, `Location`, `Container`, `Account`, `Roles`, `Body` | Carries behavior list. Account holds name, NameKey, password (plaintext for now), Retired, term preference |
+| `npc` | `NPC` | `Description`, `Location`, `Container`, `Body` | No Account. Carries behavior list |
+| `item` | `InventoryItem`, `Food`, `Wand` | `Description`, `Location` | Carries behavior list. `Food.Servings`, `Wand.CurrentCharges` become components |
+| `feature` | `Feature` | `Description`, `FeatureText` | **Inert (D14): no behavior list.** Stays attached to a room (embedded or child entity: not decided, see G14) |
 
-`Living` disappears as a type. "Living" becomes a query: "has `Location` and `Body`". Code that is written
-`if (x is Living)` becomes `if (x.Has<Body>())`. `Player`/`NPC` differ by kind and by having an `Account`/`Session`.
+`Living` disappears as a type: "living" becomes a query ("has `Location` and `Body`"). `if (x is Living)` becomes `if (x.Has<Body>())`.
+Behaviors attach to rooms, items and livings (player, npc) only (D14). A builder who wants a lever uses an immovable item
+(MODULES.md section 8) or a room-level behavior; this is revisited later.
 
 ### 5.2 Components
 
-A **component** is a named bag of data attached to an entity. One component of a given name per entity.
+A **component** is a named bag of data attached to an entity, one per name per entity.
 
 Core-owned components (typed in C#, schema fixed by core, persisted by core):
 
@@ -312,352 +326,266 @@ Core-owned components (typed in C#, schema fixed by core, persisted by core):
 | `Roles` | `AdminProperty`, `CreatorProperty` (+ `CreatorProperty.CurrentDirectory` stays as creator data) |
 | `FeatureText` | `Feature.RoomLine`, `Feature.DetailDescription` |
 
-Module-owned components (schemaless to core, namespaced `<module>.<name>`, e.g. `desert.sandstorm_overlay`,
-`temple.trap`): described in 5.3.
+Module-owned components are schemaless to core, namespaced `<module>.<name>` (examples: `desert.storm` on a room,
+`desert.sand_blind` on a player, `temple.trap` on a room, `temple.lever` on an item). Rules for who may write which component are in G13.
 
-### 5.3 Typed versus schemaless component data
+Typed versus schemaless: typed (C#) for core components, schemaless (BSON sub-document under `components.<module>.<name>`) for module
+components, with an optional JSON Schema fragment in the manifest that core can use to validate writes. A fully schemaless
+core would make rendering, matching and import impossible to reason about; a fully typed module system would force a core
+release for every module field. (Recommendation carried over from the draft; the owner decisions do not contradict it. Whether
+schema validation exists in the first cut is not decided; see G13.)
 
-| | Typed (C# classes in core) | Schemaless (protobuf `Struct`/BSON document) |
-|---|---|---|
-| Who uses it | Core-owned components | Module-owned components |
-| Validation | Compile time + validators | Optional JSON-Schema fragment in the module manifest; core validates writes when a schema is declared |
-| Query/index | Core can index and join | Core can store and return, and match simple equality on top-level fields only (Q6) |
-| Evolution | Core migrations (like `ObjectIdMigration`) | Module bumps a `schema_version` it stores in the component; the module migrates its own data on load |
-| Mongo shape | Fields on the entity document | Sub-document under `components.<module>.<name>` |
+### 5.3 Events are generic, string-named records (D4)
 
-Recommendation: typed for core, schemaless-with-optional-schema for modules. A fully schemaless core would make the
-renderer, matcher and import impossible to reason about; a fully typed module system would force a core release for
-every new module field. This is Q6.
+Everything that changes the world, and everything a behavior reacts to, is an **event**: a generic record with a string name
+(`entity.move`, `item.move`, `command.entered`, `heartbeat`, `component.set`, `behavior.add`, `timer.schedule`, `state.set`, ...),
+a **phase** field (`Before` or `After`, not separate types), subject entity ids, a payload, a cause chain and a trace id.
+Full treatment in CORE_API.md sections 2 to 3. Two names fix the shape:
 
-### 5.4 Persistence ownership and module state
+- `entity.move` covers exit and enter in one event with `from` and `to` roles. The parties are the mover and the two rooms.
+  After the move, After notifications go to the mover and to both rooms.
+- `item.move` carries a `Reason` (walk, drop, get, give, spawn, ...). The parties are the item, the living or container that holds
+  it and the room.
 
-Three classes of data, because "no gameplay state only in memory" (DESIGN_PRINCIPLES 1) has to hold for modules too:
+### 5.4 Behaviors: the entity carries a list, core resolves at call time (D5, D6)
 
-1. **Core data**: entities and core components. Persisted by core.
-2. **Module component data**: attached to entities (room has a `desert.exposure` component; a lever has
-   `temple.lever`). Module requests the write via the API; core validates, applies on the game thread, audits, persists
-   with the entity. It is therefore visible to queries, survives restarts, and **survives module unload and upgrade**
-   because it lives in core's documents under the module's namespace and is never deleted merely because the module
-   is not running (the unload policy is explicit, MODULES.md 5.4).
-3. **Module-private state**: not attached to any entity (sandstorm schedule, a storm's position as a record). Recommended: the module stores it through the same API into a
-   per-module key/value document (`ModuleState`), persisted by core in a `module_state` collection. It is still
-   "owned" by the module (core does not interpret it) but core persists it, so the module is stateless across restarts. Alternative: modules keep private state in memory only and rebuild on start
-   (simple, but violates the principle for state that matters, and loses a storm on crash). Alternative: modules get
-   their own storage (violates requirement 2: core sole persistence). Q5, Q7.
+An entity holds **no references to module code**. It holds a list of `BehaviorRef` entries:
 
-Rule of thumb: if losing it on a crash would be visible to a player, it must be in 2 or 3.
+| Field | Meaning |
+|---|---|
+| `Hook` | Which hook the entry is for. Initial hooks (D3): heartbeat, command entered, living enters/exits room, item dropped, item taken |
+| `Module` | String: the owning module's name |
+| `Type` | String: the behavior's name inside that module (example: `DesertTempleTrap`) |
+| `Priority` | Integer, informational only (D7: order is not significant) |
+| `Config` | JSON, authored per entry (for example `{ "damage": 10, "pit_room": "temple.pit" }`) |
+| `SchemaVersion` | Version of the Config shape; a module that cannot read it refuses the behavior (D10) |
 
-### 5.5 How modules attach behaviour
+How an event reaches code (all on the game thread):
 
-A module never subclasses anything. It does three things:
+1. The action (a move, a drop, a typed command, a heartbeat) creates a **Before** event.
+2. Core gathers the **parties**: the entities involved (for `entity.move`: mover, from-room, to-room). Each party filters
+   its own behavior list for the event's hook. An entity with no matching entry costs nothing (fast path, D9).
+3. For every matching entry core resolves `(Module, Type)` in a dictionary to a handler: an in-process handler (phase 3) or a
+   connected module (phase 4+). Hot swapping a module edits that dictionary only; entities are never scanned or rewritten (D5).
+4. Each handler receives an **immutable snapshot** (value types) of the entities it needs plus its own `Config`, and returns a
+   **verdict**: `ALLOW` or `DENY(message)`, each with optional **emitted events** (D6). There is no MODIFY. A redirect is
+   `DENY` plus a new `entity.move` event, which runs its own chain.
+5. Core waits for every handler or the single chain deadline (no short-circuit on the first Deny; D15). Any Deny vetoes (D6).
+   Handler order is not significant and handlers may run in any order or in parallel (D7). If several Deny, the player sees
+   the first Deny message to arrive (D7).
+6. Events emitted by **all** handlers apply whether or not the action is denied (D8). Effects that must depend on the action
+   committing belong in the **After** phase.
+7. If not denied, core re-validates and commits, then runs the After phase: notifications to the parties.
 
-1. Declares in its manifest which **events** it subscribes to and, per subscription, a **filter** (entity kind, area
-   prefix, component present). Filtering happens in core so uninterested modules are never woken.
-2. Declares **component names** it owns (namespace) and optional JSON Schema.
-3. Declares **verbs** it contributes (commands) and **capabilities** it needs.
+What the events a behavior emits look like, and the exact rules for each, are in CORE_API.md. The phases of the worked examples
+are in MODULES.md sections 7 and 8.
 
-Binding to world content (Q9): an area YAML header lists modules (`modules: [desert]`), and individual entities
-carry module components declared in YAML (`components: { temple.trap: { damage: 10 } }`) replacing the
-`properties: - behavior: search` form of ROOM_FILES.md 4.5. The importer treats a module component's `config` as
-definition and its `state` as state, as today (ROOM_FILES.md 5, 7.4). Import validates component names against
-manifests of installed modules (unknown component = validation error, same as unknown `behavior` today).
-When an area is loaded, core starts every module named in the area header that is not running (example A).
+**Dormant behaviors (D10).** When a module is unloaded its entries stay on the entities. An unresolved `(Module, Type)` is
+skipped under the hook's fail policy: flavor hooks fail open, rule hooks fail closed; a per-behavior override is bounded by a core
+policy file. The skip is counted and logged once per interval. When the module returns, its behaviors resume from the stored
+`Config`. A module that cannot read a `SchemaVersion` refuses that behavior and it counts as a miss. Which of the five initial
+hooks are flavor and which are rule is not decided (G3).
 
-### 5.6 How this replaces inheritance and ExtendedProperty
+**Temporary effects (D11).** There is no overlay, undo or TTL structure. An effect such as the sandstorm times itself out:
+the module sets a component (and a state document entry), schedules its own timer with `timer.schedule`, and removes the
+component idempotently when the timer fires. Core does not know which changes are temporary. Consequence, stated plainly: if
+the module never returns, the component stays on the entity until someone removes it by hand (creator command or web
+editor) or the module comes back.
+
+### 5.5 Every event is hookable, and the limits that makes necessary (D9)
+
+All world change is an event processed on the core game thread. **Every** event is hookable, including change events such as
+`component.set` and `behavior.add`. This requires, and the numbers are **not set** (OPEN_QUESTIONS_V2.md "Still open"):
+
+- a cascade depth limit,
+- a per-tick event budget,
+- a per-module emission quota,
+- a re-entrancy guard: reject an event whose cause chain already contains the same behavior, entity and event name,
+- a fast path: an entity with no matching behaviors costs nothing.
+
+### 5.6 Where state lives (D12, D13)
+
+Two places, split by ownership:
+
+| Kind of state | Where | Why | Example |
+|---|---|---|---|
+| Affects core behavior, is player-visible, or another behavior must read it from a snapshot | A **component on the entity** (`<module>.<name>`) | Persisted with the entity, visible to snapshots and to builders | room component `desert.storm`, player component `desert.sand_blind`, `temple.trap` on a room, `temple.lever` on an item |
+| Module-private scheduling detail that no entity or other behavior reads | The module's **module-state document**, a keyed document the module writes with `state.set` events and reads on start | Core persists it (sole DB writer); size limit and write-rate limit per module (numbers not set) | the storm schedule, next spawn time |
+
+Startup reconciliation by the module must be idempotent (D13). Unloading a module never deletes component data or state
+documents; purging orphaned module data is deferred (open item).
+
+### 5.7 How this replaces inheritance and ExtendedProperty
 
 | Today | V2 |
 |---|---|
 | `Living` : `Player`, `NPC` | kinds + components; `Living` = "has Location + Body" |
-| `Room` subclass via `class:` | plain `room` kind + module components/handlers; ROOM_FILES 8 `class:` field is removed (mapped to a module binding at migration) |
-| `InventoryItem` : `Food`, `Wand` | `item` kind + components (`food.servings` / `wand.charges`), `Examine` text modifiers via the `entity.describe` pre-event (CORE_API 2.4) |
+| `Room` subclass via `class:` | plain `room` kind + behavior entries; ROOM_FILES 8 `class:` is superseded (D39) |
+| `InventoryItem` : `Food`, `Wand` | `item` kind + components (`food.servings`, `wand.charges`) and behavior entries |
 | `AdminProperty`, `CreatorProperty` | `Roles` core component |
-| `BleedingProperty` (heartbeat) | a timed status effect: component `status.bleeding` + a `status` module subscribed to `tick`; or built-in |
-| `BasicSearchProperty` | component `search` (config in YAML) + handler on the `search` verb/event, either built-in in-process module or a module |
-| `IHeartbeat` | the `tick` event (CORE_API 2.3) delivered to subscribers, scoped by filter |
-| `ISearchable`, `IExaminable`, `IUpdatable` | events `command.search`, `entity.describe`, `tick` |
-| Virtual `Examine(examiner)` overrides | `entity.describe` pre-event allowing modules to append/replace text |
+| `BleedingProperty` (heartbeat) | a behavior entry on the living: `Hook = heartbeat`, `Type = "Bleeding"` with a component for its remaining duration; timed effects time themselves out (D11) |
+| `BasicSearchProperty` | search stays baked into core like look (D2); its per-room configuration (reward, cooldown) becomes a core component, so ROOM_FILES 7.4's "cooldowns reset on every boot" gap is fixed by moving `_nextReward` into component state. No extension slot is created for search |
+| `IHeartbeat` | the `heartbeat` hook (CORE_API 2.3); see G8 for who receives it |
+| `ISearchable`, `IExaminable`, `IUpdatable` | not generalised. `look` and `search` remain core built-ins (D2) |
+| Virtual `Examine(examiner)` overrides | stay core; how module-set text reaches `look` is G9 |
 
-Persisted-data migration is a design topic of its own (existing documents have `_t` discriminators and
-`ExtendedProperties`); the plan is "no data to migrate" per DESIGN_PRINCIPLES 3 (no live players), but this must be
-confirmed by the owner (Q10).
+Persisted-data migration: none (D1). No live data worth keeping (1 player, 3 rooms); rebuild from YAML, re-create the account;
+no migration code and no dual-read.
 
 ## 6. Event model (summary; full catalogue in CORE_API.md section 2)
 
-Core defines named events. **Pre-events** are synchronous from the command's point of view: the action is held, subscribed
-modules are asked in priority order, any may veto or alter, with a hard deadline per handler. **Post-events** are
-notifications after the action is committed: fire and forget. All handlers are called with a correlation id. The
-critical rule of the whole design: **the game thread never blocks waiting for a module**. A pre-event suspends the
-*action* (the command is parked, the actor's `NextActionAt`-style busy flag is set), the loop carries on, and the
-module's reply arrives later as an inbound item that resumes the action. That keeps GAME_LOOP.md rule "no
-blocking in commands" intact. Details and the cost: CORE_API.md 2.2 and 6.
+Events have two phases. **Before** is synchronous from the acting entity's point of view: the action is held, handlers run,
+any Deny vetoes. **After** is a notification once the action has committed. The critical rule of the whole design, carried
+over from the draft and kept by D15: **the game thread never blocks waiting for a module.** The acting entity is *parked*
+while the chain runs, the loop carries on, replies arrive as inbound items, and a re-validation step precedes commit.
+Details and cost: CORE_API.md 2.3 and 6.
 
 ## 7. Cross-cutting design
 
 ### 7.1 Commands
 
-Where commands live:
-
 | Group | Home in V2 | Examples |
 |---|---|---|
-| Inseparable from world model | core built-ins | look, get, drop, inventory, say, tell, chat, who, status, help, commands, save, stop |
-| Account/session | core built-ins (session verbs the front end forwards) | quit, chpwd (+ `term` as a **front-end-local** setting, section 7.2) |
-| Creator/admin tooling | core built-ins (need import/export/Mongo path) | build, create, clone, cd, navigate, terraform, trans, import, export, genmap, promote |
-| Movement | core built-in generated from `Exits` (as today, `Room.RebuildExitCommands`), emitting `entity.move` pre/post events | north, n, ... |
-| World behaviour verbs | modules | search (when it becomes a module), pull (lever), future spells and skills |
+| Inseparable from world model | core built-ins | look, search, get, drop, inventory, say, tell, chat, who, status, help, commands, save, stop |
+| Account/session | core built-ins (session verbs the front end forwards) | quit, chpwd (+ `term` as a front-end-local setting, 7.2) |
+| Creator/admin tooling | core built-ins | build, create, clone, cd, navigate, terraform, trans, import, export, genmap, promote |
+| Movement | core built-in generated from `Exits` (as today, `Room.RebuildExitCommands`), producing an `entity.move` event | north, n, ... |
+| Behavior-handled verbs | a `command.entered` behavior on the living or the room (CORE_API 2.4, G7) | pull (lever) |
 
-Raw line flow (CORE_API.md 6): front end sends `SubmitLine(session, line)`; core, on the game thread, takes the
-prompt-handler shortcut if any (passwords), else resolves in the same order as today (room exits -> known commands ->
-role commands -> defaults) with one addition: **module-contributed verbs** are consulted after room exits and before
-defaults. If the verb belongs to a built-in, it runs as today. If it belongs to a module, core emits
-`command.invoke` (a pre-event-shaped request/response) to that module with the parsed text; the response carries
-output messages and requested mutations, applied atomically by core. Prefix matching (`GetCommandFromInput`) is
-replaced by an explicit verb table keyed by a case-folded token with deterministic precedence (the current
-dictionary-order behaviour is an existing wart, not preserved).
+Raw line flow (CORE_API 6): front end sends session id + raw line; core, on the game thread, takes the prompt-handler shortcut
+if any (passwords), else runs the `command.entered` Before chain for parties that carry such behaviors, else resolves the verb as
+today (room exits -> known commands -> role commands -> defaults). Whether prefix matching (`CommandSource.GetCommandFromInput`) is
+kept is not decided by the owner; the draft's explicit verb table is left as a recommendation for phase 2 and is **not** part of phase 1.
 
-### 7.2 Output and rendering
+### 7.2 Output and rendering (D28)
 
-Today core renders (`%^Red%^` -> ANSI) and `Player` holds the connection. In V2 core produces **semantic output**
-and never sees a terminal. Two options for the wire format:
+Core output to front ends is the existing `%^Color%^` markup string plus a **channel tag** (say, tell, room, combat, system).
+The telnet project converts markup to ANSI (the `ITerminalHandler`s move out of `MUD.Core/Formatting` into it); the web
+needs a markup-to-HTML converter with correct escaping. Structured spans are deferred. Modules use the existing channels. The `term`
+command becomes a front-end-local setting, with the stored preference still in `Account` (details in V2_PHASES.md phase 1).
 
-- A (recommended first cut): keep the existing `%^Token%^` markup string as the wire format. The front end owns the
-  `ITerminalHandler`s (`AnsiTerminal`, `GMudTerminal`, `DefaultTerminal` move out of `MUD.Core/Formatting`) and the
-  per-session terminal choice; the `term` command becomes a front-end-local setting (or a core setting stored in
-  `Account.Term` and sent at session start). Simple and low-risk; markup text remains stringly typed.
-- B: structured output (a repeated list of `Span { text, style }` plus message kind: room description, say, system).
-  Lets the web render HTML styles and lets modules emit styled text without knowing the markup. More work and more schema.
+### 7.3 Front ends (D27, D29)
 
-Message envelope in either case: `Output { session_id, channel, text }` where channel is `game`, `system`, `chat`,
-so a web client can later split them (Q24).
+Telnet becomes its own project behind a front-end-neutral core API, still in the core process first (phase 1); a separate
+telnet process is phase 7. The web front end uses the same core API over gRPC, replacing `MUD.Web`'s direct Mongo access.
 
-### 7.3 Front ends
+Session ownership: core owns the **player** and the **session record** (`session_id`, player, front end). A front end owns the
+**connection**. A connection's identity towards core is the `session_id` core returned, never a socket handle. Link-dead grace
+period is an open item (OPEN_QUESTIONS_V2.md): until decided, the current behavior stays (a lost connection logs the player out,
+`World.handleInbound` Disconnected -> `Player.Quit`, `MUD.Core/World.cs`).
 
-Telnet front end - separate **process** or separate **project in the same process**? Evaluated:
+**Core restart (D29):** front ends close connections with a "world is restarting" message and clients reconnect. Characters are
+saved on shutdown and the persistence worker is drained (as `ShutdownCoordinator` does today).
 
-| | Separate project, in-process with core | Separate process (recommended end state) |
-|---|---|---|
-| Isolation | A telnet bug can crash core | Telnet crash/DoS does not touch world state or lose unflushed writes |
-| Complexity | Low: only needs an interface boundary | gRPC session stream, reconnect logic, per-line IPC |
-| Latency | None | ~1 UDS round trip per line (**unverified**; expected well below telnet RTT) |
-| Learning value | Low | High (same API the web and modules use) |
-| Restart | Restarting telnet restarts the game | Telnet restarts alone (players reconnect); core restart alone drops sessions |
-
-Recommendation: first extract the boundary as a **separate project in the same process** (phase 1) because it is the
-cheapest way to prove the interface and keeps the game deployable at every step, then move to a separate process in
-phase 7 behind the same interface. This is Q1.
-
-Web front end: `MUD.Web` stays an ASP.NET Core process; its stores (`MongoAccountStore`, `MongoRoomEditStore`,
-`MongoPlayerEditStore`, `MongoAuditLog`, `MongoRoomReader`) are replaced by thin API clients. Its validation
-(`MUD.Data/RoomRules`, `PlayerFields`) moves to core because core now enforces it; the web may keep a copy for form
-feedback only.
-
-Session ownership: core owns the **player** and the **session record** (`session_id`, player id, front end id,
-state). A front end owns the **connection**. A session is created when core accepts `Authenticate`/`CreatePlayer`
-from a front end. Identity of a connection towards core is the `session_id` core returned, never a socket handle.
-
-When a front end restarts: its streams to core break. Current behaviour on disconnect is "log the player out"
-(`World.handleInbound` Disconnected -> `Player.Quit`), and net-dead handling was deferred (GAME_LOOP Q14). V2 keeps
-that default: core treats the front end's stream loss as a disconnect of every session on it. Optional improvement: a
-grace period (`linkdead` for N seconds) so a front-end restart does not log everybody out (Q25).
-When core restarts: all sessions are gone (as today on a server restart); front ends reconnect with backoff and
-show connected clients "The world is restarting" and a login prompt (or hold the TCP connection open: Q26).
+**Web identity (D31):** core issues an opaque session token at web authentication. The web keeps it (HttpOnly cookie suggested)
+and sends it on every call; core re-checks the player's current role on every call and can revoke sessions (retire/demote is
+effective immediately). The session table is in memory in core and is lost on restart. Passwords remain plaintext by earlier owner
+decision; never log or display them.
 
 ### 7.4 Persistence and consistency
 
-- Core is the sole writer and the sole Mongo client. The `MongoClient` in `MUD.Web` is removed.
-- Write path unchanged: game thread mutation -> snapshot -> `PersistenceWorker` (GAME_LOOP.md 8). A mutation requested
-  by a module is simply another source of the same game-thread mutation; the persistence behaviour is identical to a
-  player-caused change.
-- Audit: the existing `audit` record gains `Source: "web" | "module:<name>" | "game" | "system"` and a `CorrelationId`.
-  Rule of proportion: web and creator edits audit **per field**, as today. Module mutations audit at **batch level by
-  default** (one row per `ApplyBatch` listing entity id, component name, old/new hash or value), configurable per
-  module/component (an auditing every sandstorm step would flood: Q34). Audit-first still holds for web/creator edits;
-  for module mutations the audit write is queued with the data write (Q34).
-- Snapshots/backup: `mongodump` against a stopped or quiesced core is the baseline; because core is the only
-  writer, a consistent backup can be taken by asking core for a flush (`Flush` admin RPC) first. The spool directory
-  must be included.
-- Out-of-band tools: `scripts/seed-admin.sh` talks to Mongo directly. Under V2 rule 2 it must either (a) run only with
-  core stopped, or (b) be replaced by a core admin RPC (`EnsureAdmin`, callable from a `core-admin` CLI over the UDS with
-  OS-user peer check). Recommended: (a) documented now, (b) later. Any other tool that writes Mongo is subject to the
-  same rule. Module state created while core is stopped does not exist: modules cannot run without core.
-- Consistency between core and module: core is authoritative. A module's view is a cache; any decision needing
-  authoritative state is re-checked by core when applying the mutation (preconditions in the request, CORE_API 3.3).
+- Core is the sole writer and the sole Mongo client. The `MongoClient` in `MUD.Web` is removed in phase 6.
+- Write path unchanged: game thread mutation -> snapshot -> `PersistenceWorker` (GAME_LOOP.md 8). A change made by a module is
+  an event processed on the game thread and persisted exactly like a player-caused change.
+- **No `Rev` (D30).** Web and creator edits are last-write-wins; the per-field audit keeps history. The Rev/poll machinery is removed.
+- **Audit (D34).** Web and creator edits keep the existing per-field audit. Module-made changes are **not** durably audited;
+  logs (module, event, targets, trace id, cause id) are the record.
+- **Area YAML (D39).** The area YAML is an optional, manually triggered one-off import/export format. The database is the sole
+  source of truth; the world is built ad hoc (creator tools, web editor) and then updated. No recurring sync. Import must be
+  collision-safe (never silently overwrite). Behavior binding lives only in entity behavior lists. Consequence to resolve: the host currently imports on every start
+  (`WorldSettings.ImportOnStartup` defaults to true, `MUD.Core/WorldSettings.cs:15`, `MUD.Main/appsettings.json:10`, `World.ImportContent`
+  at `MUD.Core/World.cs:614`); that is a recurring sync and conflicts with D39 (G17).
+- **No seed-admin, no core-admin CLI (D32).** `scripts/seed-admin.sh` was a one-off bootstrap and is not a maintained tool;
+  the design adds no replacement. First-run seeding by core on an empty database is possible later and is deferred. Because core is the only DB writer,
+  any other tool that writes Mongo is outside the design.
+- **Backups: deferred (D33).**
+- Consistency between core and module: core is authoritative; a module's view is a snapshot that may be stale; core
+  re-validates before commit.
 
-### 7.5 Security and trust model
+### 7.5 Security and trust model (D17, D18, D19)
 
-Facts: all processes run as the same OS user (`mark`) on one host. Unix socket file mode 0600 inside a 0700 directory
-(`/run/user/1000/mud/`; `/run/user/1000` is `drwx------` here, verified) stops *other* OS users, not other processes of the same user.
+Facts: all processes run as the same OS user on one host. Socket files are mode 0600 inside a 0700 directory
+(`/run/user/1000/mud/`; `/run/user/1000` is `drwx------`, verified in the draft task).
 
-What the design gives:
-
-- Fault isolation: a module crash, leak or infinite loop cannot corrupt the game thread or core memory. Module
-  failure is contained to its own events.
-- Authority isolation by API: a module can only do what the API exposes, checked against its capability grant; it has
-  no Mongo credentials (the `MUD_MONGO_URI` is only in the core unit's environment; modules are spawned with a cleaned
-  environment).
-- Rate/quota isolation: per-module limits (CORE_API 5).
-
-What it does **not** give:
-
-- No protection against a malicious module: a same-user process can `ptrace` or read `/proc/<pid>/environ` of core, read
-  `~/.config/mud/mongo.env` (mode 600, same user), and talk to Mongo directly. Capability checks are a seatbelt against
-  *bugs*, not against *attackers*.
-- Authentication on the socket is a shared-secret handshake (a per-start token passed to the child in its environment) plus,
-  optionally, a peer PID check via `SO_PEERCRED` **(.NET exposure unverified; may need `getsockopt` via P/Invoke)**. Any same-user
-  process that learns the token could impersonate a module.
-
-Stance: **only the owner's own modules run, trust-by-review** (Q37). Untrusted third-party modules would require running
-them as another OS user, in a systemd sandbox (`DynamicUser`, `ProtectHome`, namespaces) and a socket reachable across users (ACL / group). That is
-a future option and out of scope. Plaintext passwords pass over the UDS from front ends to core; with the
-socket 0600 this is no worse than today where the password crosses a TCP socket in plaintext to telnet already; hashing remains a separate
-future card.
+- Fault isolation: a module crash, leak or loop cannot corrupt the game thread. Authority isolation by API: a module can do only what
+  the API exposes, checked against its grants; it has no Mongo credentials (modules are spawned with a cleaned environment).
+- **Authentication (D17):** random per-spawn token in the child's environment, presented on the first call together with the
+  manifest and the contract version. It guards against accidents, not a hostile same-user process; no `SO_PEERCRED`. A dev tool must
+  be able to issue a token for a module started by hand.
+- **Capabilities (D18):** an owner-edited grants file (`~/.config/mud/module-grants.yaml`, mode 600, read by core only), reloadable by an
+  admin command without restarting core. Partial grant: the module starts with the granted subset and a logged warning; a manifest
+  capability flagged `required: true` makes core refuse the start when missing. The manifest ships with the module and is sent to core on
+  connect (not compiled into core). Launch entries are a separate core config (section 4 of MODULES.md).
+- **Trust stance (D19):** same machine only (UDS), owner's own modules only; capability checks are a seatbelt against bugs, not a
+  defense against a hostile same-user process. Untrusted third-party modules are out of scope.
 
 ### 7.6 Observability and testing
 
-- Correlation: every inbound item gets a `trace_id` (new GUID or from the front end); every event and API call carries
-  it; logs include `trace_id`, `module`, `session`, `entity`. The gRPC metadata mirrors it (`x-trace-id`).
-  .NET's `Activity` / W3C trace-context support can carry it, though a plain string field is sufficient and more inspectable.
-- Logging: today it is `Console.WriteLine`; use the same sink everywhere (stdout to journald). Module stdout/stderr is
-  captured by core and re-logged with a `[module:name]` prefix.
-- Metrics (counters/gauges exposed via a `GetStats` RPC and logged every minute; no Prometheus dependency to start):
-  inbound queue depth, tick duration (already warned in `GameLoop.Tick`), events dispatched per module, handler latency
-  p50/p99, deadline misses, vetoes, quota rejections, module restarts, stream reconnects.
-- Testing core with a fake module host: an in-process `IModuleHost` test double that scripts responses and can delay or drop them,
-  driven by the existing `IClock` fake (`GameLoopTests.cs` already steps ticks with a fake clock). The in-process adapter (4.3)
-  runs the **same** contract tests as the gRPC adapter.
-- Contract tests for the .proto: (a) golden binary files per message version checked in as test fixtures, decoded by
-  current code (backward compatibility); (b) a test that rejects removal/renumbering by diffing the compiled descriptor
-  set against a committed baseline (tool choice is **unverified**; `buf breaking` is a common choice but would be a new tool dependency, Q22);
-  (c) a conformance suite any module host/adapter must pass.
-- Module author without core: a `ModuleTestHarness` library (phase 4) that hosts a module's handler class against a fake
-  core: feeds scripted events and records requested mutations. No sockets, no Mongo.
-- Mongo is not available in the sandbox, so Mongo-backed paths stay unverified until the owner's host runs them (as
-  specs/RUNTIME_STATE.md 4 already states).
+- Correlation: every inbound item gets a `trace_id` (new GUID or from the front end); every event and call carries it plus the
+  `cause_id` of the event that produced it (D34's log record). Logs include `trace_id`, `cause_id`, `module`, `event`, `targets`, `session`.
+- Logging: today `Console.WriteLine`; use the same sink everywhere (stdout to journald). Module stdout/stderr is captured by core
+  and re-logged with a `[module:name]` prefix.
+- Metrics (counters/gauges via an admin RPC and logged every minute; no Prometheus dependency to start): inbound queue depth,
+  tick duration (already warned in `GameLoop.Tick`), events processed per hook, handler latency, deadline misses, Denies,
+  quota rejections, dormant-behavior skips, module restarts.
+- Testing core with a fake module host: an in-process test double that scripts verdicts and can delay or drop them, driven by the
+  existing `IClock` fake (`GameLoopTests.cs` already steps ticks with a fake clock).
+- **No automated contract tests (D26)** (golden files, descriptor diffs, `buf`) until the contract settles after phases 3 to 5. No conformance suite (D25).
+- A module author without core: a `ModuleTestHarness` library hosts a module's handler classes against a fake core (phase 4 card).
+- Mongo is not available in the sandbox, so Mongo-backed paths stay unverified until the owner's host runs them (RUNTIME_STATE.md 4).
 
-## 8. Migration plan
+## 8. Phase plan
 
-Principle: every phase ends deployable with `dotnet build MUD.sln` and `dotnet test MUD.sln` green, and behaviour for
-players unchanged unless stated. Sizes are rough: S = a day or two of agent work, M = several days, L = a week plus.
-Each phase should be split into several cards later, as listed.
+The seven phases are in scope (D35). The full plan, with deliverables, risks, sizes and the card split, is in
+[V2_PHASES.md](V2_PHASES.md). Summary of the order:
 
-### Phase 1: front-end-neutral core API; telnet out of core (still in one process) - size M, split into 3-4 cards
-
-Scope: introduce `ISession`/`IFrontEnd` abstractions in core (`SendOutput`, `Disconnect(flush)`, prompt/echo control);
-move `ITerminalHandler`s and `SelectedTerm` rendering out of core into the telnet project; move `LoginSession`,
-`LoginThrottle` into a `MUD.FrontEnd.Telnet` project that references core, not the reverse; delete the `MUD.Core ->
-MUD.Telnet` project reference; replace `Player.Connection : IClientConnection` and `World._sessions` keyed by
-connection with `session_id` keyed sessions; `World.DoLogin/CreatePlayer` become API methods that return results rather than writing to a connection. Core API shape defined as C# interfaces mirroring CORE_API.md
-section 3, still called in-process.
-Risk: medium - touches `Player.cs`, `World.cs`, `Program.cs`, and 7-8 test files (TelnetClientTests, TelnetLimitTests, LoginSessionTests,
-SessionTakeoverTests, PlayerQuitTests, ServerLifecycleTests, InputSanitiseTests, ConcurrencySafetyTests). Hotspot: `Player.cs` (~450 lines mixing identity, persistence, web sync and connection).
-Can be cut: nothing; everything later depends on it. Can be split: (1a) session abstraction and removal of telnet types from `Player`/`World`; (1b) move rendering and `term`; (1c) move login flow; (1d) project reference flip and tests.
-
-### Phase 2: components alongside the old types; migrate ExtendedProperty - size L, split into 4-5 cards
-
-Scope: introduce `Components` on entities (core typed + module schemaless dictionary), a component registry, BSON shape
-`components.<name>`. Dual-read: old fields remain, new components are populated; port roles (`Roles`), search config,
-bleeding; convert `Living.DoHeartbeat` to a component tick; stop using the polymorphic `ExtendedProperties`. Change the YAML `properties` loader to emit components; keep importer semantics (ROOM_FILES 6) including config-vs-state split (fixes the "cooldowns reset on every boot" gap of ROOM_FILES 7.4).
-Risk: high - persisted shape changes, class maps, the web reads `ExtendedProperties` `_t` for roles (`MUD.Web` `MongoAccountStore`) so
-the web must be updated in the same phase or the old field kept as a mirror until phase 6.
-Can be cut: removing `Living`/`Player`/`NPC` subclasses can be deferred (components can coexist); keep as separate card.
-Split: (2a) component registry + storage; (2b) Roles + web mirror; (2c) search/bleeding migration; (2d) YAML bindings; (2e) retire inheritance (optional, later).
-
-### Phase 3: in-process event bus with pre/post contract - size M, split into 3 cards
-
-Scope: event dispatcher in core with subscriptions, filters, priorities, pre-event suspension (command parking) and
-post-event delivery; fire the catalogue's core events from movement, get/drop, login/logout, tick; an in-process
-module adapter; port one built-in behaviour (search) to it. Introduce the quota and capability checkers (no gRPC yet).
-Risk: medium-high - the parked-command state machine is the hardest new concept (CORE_API 2.2). Needs deterministic tests with the fake clock.
-Can be cut: priorities and filters beyond "event name + area"; the `entity.describe` event.
-Split: (3a) dispatcher + post-events; (3b) pre-events and parked commands; (3c) port search + timers.
-
-### Phase 4: gRPC over UDS host and first out-of-process module - size L, split into 4 cards
-
-Scope: add Grpc.AspNetCore to core (Kestrel on a UDS), .proto files, module supervisor, manifest loader, handshake and
-authentication, one bidi stream per module, reconnect, health, the `hello`-style trivial module (greets on login, counts
-moves), module test harness, systemd/deployment notes, structured logging with trace ids.
-Risk: high for learning curve, moderate for code. New dependencies (Grpc.AspNetCore, Grpc.Tools codegen at build; CI uses `actions/setup-dotnet@v4` with 8.0.x and plain `dotnet build`, so codegen via NuGet should work in CI **(unverified)**).
-Can be cut: peer-credential checks, JSON-Schema validation of component writes, hot reload.
-Split: (4a) .proto + generated stubs + contract tests; (4b) core gRPC host and handshake; (4c) supervisor and lifecycle; (4d) trivial module + harness + docs.
-
-### Phase 5: desert and temple example modules - size M-L, split into 2 cards
-
-Scope: implement the two worked examples (MODULES.md 7-8) as real modules with real area content, including overlay
-components and cleanup on unload. These double as the acceptance test of phases 2-4.
-Risk: medium; likely to expose gaps in phases 2-4 (budget a revision pass on CORE_API).
-Can be cut: the temple (keep desert), or the lever (keep traps).
-
-### Phase 6: web front end on the core API; remove Rev/poll - size L, split into 4-5 cards
-
-Scope: expose front-end RPCs (CORE_API 3.4) for accounts, rooms, players, audit, map; rewrite `MUD.Web` stores as clients;
-remove `MongoClient` from `MUD.Web`; delete `RoomWebSync`, `PlayerWebSync`, `ApplyWebEdit`, `SyncWebFieldsFromStore`,
-`PlayerFields.NotWrittenByGame` special casing; port the audit writer to core; update WEB.md and supersede WEB_EDITING 6/8/9.
-Risk: medium - big surface, but behaviour is spec'd and tests exist in `MUD.Web.Tests` (8 files) that can be re-targeted at a fake core client.
-Can be cut: move one page at a time; the poll machinery is removed last, after all pages use the API.
-Split by page group: accounts+login; rooms; players+audit; map; cleanup.
-
-### Phase 7: telnet front end as a separate process - size M, split into 2-3 cards
-
-Scope: run the telnet host as its own executable talking to core over the same session RPC; second systemd unit; handle
-front-end/core restart semantics (7.3); delete the in-process adapter if unused.
-Risk: low-medium given phase 1 and 4; main risks are session-loss behaviour and output backpressure.
-Can be cut: yes - the game works with the telnet front end in-process indefinitely. This phase is optional for the
-owner's stated goal if Q1 is answered "in-process first".
-
-### Order assessment
-
-The suggested order (1..7) is kept with two amendments: (a) phase 2 (components) depends on nothing in phase 1 and could run in
-parallel by a different worker, but both touch `GameObject.cs`/`Player.cs`/`Room.cs` so sequential is safer (hotspot
-files); (b) the **web move (6) could be done before the out-of-process module work (4-5)** if the owner cares more about removing Mongo access
-from `MUD.Web` than about modules, since it needs only phase 1's API. Which comes first is Q40.
-
-Total: roughly 7 phases, about 28 cards. Nothing is started by this document.
+1. Front-end-neutral core API; telnet as a project (still one process).
+2. Components and behavior lists in core. Phases 1 then 2 are strictly sequential (D36: both touch Player/Room/World/GameObject).
+3. In-process event bus.
+   *Spike card before phase 4 (D38): UDS round-trip latency, Grpc.Tools codegen in CI, Kestrel on two UDS endpoints, ASP.NET Core in the console host `MUD.Main`; record measurements.*
+4. gRPC over UDS and the first trivial out-of-process module.
+5. Desert and temple modules.
+6. Web front end on the core API (after modules, D37).
+7. Telnet as a separate process.
 
 ## 9. Command migration table (33 command classes)
 
 | Class | Category | V2 home |
 |---|---|---|
-| Look, Get, Drop, Inventory, Say, Tell, Chat, Who, Status, Help, Commands, Save, Stop | Default | core built-in |
+| Look, Search, Get, Drop, Inventory, Say, Tell, Chat, Who, Status, Help, Commands, Save, Stop | Default | core built-in (search stays baked in, D2) |
 | Quit | Default | core built-in (ends session; front end closes) |
-| Chpwd | Default | core built-in (`ISensitiveInputCommand` redaction moves with the prompt flow to the front end: the front end must not echo or log the argument) |
-| Term | Default | front end-local (selects renderer); core stores preference in `Account` if persistence wanted |
-| Search | Default | module or in-process built-in (uses `search` component) - candidate for first port |
+| Chpwd | Default | core built-in (`ISensitiveInputCommand` redaction stays in core; the front end must not echo or log the argument) |
+| Term | Default | front-end-local setting (selects the markup converter); the preference stays stored in `Account` |
 | Wear, Remove, Wield, Lower | Default | stubs today; core built-ins when implemented (`Body` slots) |
-| Build, Create, Clone, CD, Navigate, Terraform, Trans, Import, Export, GenMap | Creator | core built-ins (creator tools; need importer/exporter and audit) |
-| ApplyStatus | Creator | stub; becomes a module-facing creator command that sets a component |
+| Build, Create, Clone, CD, Navigate, Terraform, Trans, Import, Export, GenMap | Creator | core built-ins (creator tools; Import/Export keep their optional one-off role, D39) |
+| ApplyStatus | Creator | stub; not migrated until a use is specified |
 | Promote | Admin | core built-in (role rules) |
 | (empty files) Shutdown, Dest, Edit, LS, Proto, RM | - | not implemented; not migrated |
 
 Exit commands (`AnonymousCommand` from `Room.RebuildExitCommands`) become the movement path through `entity.move`.
 
-## 10. Decision log
+## 10. Design choices not in the owner's decision list
 
-| # | Decision (recommended) | Alternatives considered | Why |
-|---|---|---|---|
-| D1 | One core process owns the world on one game thread | Sharded/multi-process core; actor-per-room | Keeps GAME_LOOP.md rule; avoids distributed state; scale is small |
-| D2 | Modules are clients of an explicit API; no in-core plugin DLLs | Load module assemblies in core (as `MUD.PlanarRealms` is loaded today) | Requirement 4; isolation; but an in-process adapter exists for the same contract |
-| D3 | gRPC over UDS | Raw protobuf over socket; JSON lines; named pipes; D-Bus | Requirement 5; code generation, deadlines, streaming and status codes built in; .NET 8 supports it (CORE_API 8) |
-| D4 | One long-lived bidirectional stream per module for events and requests, plus unary RPCs only for front ends' request/response | Per-call unary in both directions (two servers); server-stream + unary; client polling | Ordering of events per module; single connection to supervise; core can push without the module hosting a server. Trade-off: multiplexing request correlation is manual (CORE_API 7) |
-| D5 | Pre-event suspends the action, never blocks the game thread | Block the game thread with a short deadline | A blocked loop stalls every player and breaks GAME_LOOP 6; the suspend model costs a re-validation step but keeps tick latency independent of modules |
-| D6 | Overlay components tagged with owner for module-made room changes | Module rewrites room definition fields and later restores | Core can undo exactly the module's changes on crash/unload without the module's help; definition stays authored (DESIGN_PRINCIPLES 2) |
-| D7 | Module state persisted by core (component data and `ModuleState`) | Module-private files/DB; in-memory only | Requirement 2; principle "everything is persistent" |
-| D8 | Schemaless module components with optional schema | Typed codegen per module; fully typed core only | Modules evolve without core release |
-| D9 | Core renders nothing terminal-specific; front end renders | Core keeps ITerminalHandler | Requirement 1; enables web output |
-| D10 | Telnet first as project, then process | Process immediately; stay in-process | Lowest risk first, still ends at requirement 1 |
-| D11 | Fail policy per hook declared in the manifest, core default per event class (CORE_API 2.5) | One global policy | Trap (fail open) vs paid-action/rule-enforcement (fail closed) differ |
-| D12 | Core starts modules as child processes | systemd template units per module started by core via `systemctl --user` | Requirement 4 says core starts them; children die with core's cgroup. Systemd units remain an option for later hardening (MODULES 9) |
-| D13 | Plain correlation-id strings in messages | OpenTelemetry/Activity everywhere | More inspectable for a learner; OTel can be added later |
-| D14 | Plaintext passwords unchanged | Hash during this work | Out of scope; separate card (WEB.md caveat) |
+These were choices in the draft that no decision reverses. They remain the design's assumption but are not owner decisions; any can be reopened.
 
-Open items that these decisions depend on are in OPEN_QUESTIONS_V2.md; if an answer contradicts a "recommended" decision above, the dependent sections need a revision pass (the questions note this).
+| # | Choice | Why |
+|---|---|---|
+| C1 | One core process owns the world on one game thread | Keeps GAME_LOOP.md rule; avoids distributed state; scale is small |
+| C2 | Plain correlation-id strings in messages, not OpenTelemetry | More inspectable for a learner; OTel can be added later |
+| C3 | Core renders nothing terminal-specific (D28 makes this a decision for output; the rest follows) | Requirement 1 |
+| C4 | Plaintext passwords unchanged | Out of scope; separate card (WEB.md caveat) |
 
-## 11. Follow-ups noticed while reading the code (NOT part of this design; recommend as backlog cards)
+Open items that these depend on are in OPEN_QUESTIONS_V2.md ("Still open or deferred"); gaps found while revising are in
+CORE_API.md section 9.
 
-1. `Living.ResolveCommand` checks `CreatorCommands` for Admins instead of `AdminCommands` (`Living.cs`, Admin branch). Possibly intentional (admin commands reachable via `KnownCommands`) but looks like a bug. Verify before V2 changes resolution.
-2. `ExtendedProperty.InitializeProperty/RemoveProperty` appear never to be called on add/remove; `BleedingProperty` messages rely on them.
-3. `Food`/`Wand` are not registered for DI (commented-out lines in `Program.cs`), so they cannot be loaded from Mongo.
-4. Six empty command source files (0 bytes) are in the tree and the card's "44 command classes" does not match the code (33 real).
-5. Heartbeats only reach players, not NPCs or rooms.
-6. `CommandSource.GetCommandFromInput` first-match order is dictionary enumeration order.
+## 11. Follow-ups noticed while reading the code (NOT part of this design)
 
-These were not fixed, per scope rules. No backlog cards were filed by this task (the card forbids follow-up cards; these are
-recorded here for the owner/orchestrator to file).
+1. `Living.ResolveCommand` checks `CreatorCommands` for Admins instead of `AdminCommands` (`MUD.Core/GameObjects/Living.cs`, Admin branch).
+2. `ExtendedProperty.InitializeProperty/RemoveProperty` have no caller outside the property classes (grep in this revision found only overrides and `BleedingProperty`'s own `RemoveProperty()` call).
+3. `Food`/`Wand` are not registered for DI (commented-out lines in `MUD.Main/Program.cs` ~156-157, 170-178, 198-199), so they cannot be loaded from Mongo.
+4. Six empty command source files (0 bytes: `Admin/ShutdownCommand.cs`, `Creator/{Dest,Edit,LS,Proto,RM}Command.cs`); the original card's "44 command classes" does not match the code (33 real).
+5. Heartbeats only reach players, not NPCs or rooms (`World.doHeartbeat`, `MUD.Core/World.cs:633`).
+6. `CommandSource.GetCommandFromInput` is a prefix match whose first-match order depends on dictionary enumeration.
+7. `.github/workflows/ci.yml` still carries a "hermes has no test project yet" guard although test projects exist.
+
+Backlog cards filed for these by the revision task are listed in the PR description and the card's completion summary.

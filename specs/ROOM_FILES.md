@@ -1,5 +1,10 @@
 # Planar Realms — Room Content Files and Import Semantics
 
+> **SUPERSEDED IN PART by the V2 owner decisions (D39); see [ARCHITECTURE_V2.md](ARCHITECTURE_V2.md) and [OPEN_QUESTIONS_V2.md](OPEN_QUESTIONS_V2.md).**
+> The area YAML is only an optional, manually triggered one-off import/export format; the database is the sole source of truth and there is no recurring sync.
+> Obsolete: section 4.5 and section 7 (properties and the behavior registry; replaced by behavior entries on entities), section 6 (re-import semantics) and section 9 (`local_modified`, `source_hash`, `--force`/`--adopt`).
+> Section 8 (`class:` room subclass) is superseded by the plain room kind plus behavior entries. Import must be collision-safe (never silently overwrite). The rest of this file is unchanged and still describes the format and today's code.
+
 Status: DRAFT specification. Docs only; nothing here is implemented.
 Task: t_2c9f6235. Branch: roomspec (based on `hermes`).
 
