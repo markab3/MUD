@@ -9,7 +9,6 @@
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta1.20371.2" />
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
     <ProjectReference Include="..\MUD.CoreApi\MUD.CoreApi.csproj" />
-    <ProjectReference Include="..\MUD.Telnet\MUD.Telnet.csproj" />
     <ProjectReference Include="..\MUD.Data\MUD.Data.csproj" />
     <PackageReference Include="MongoDB.Bson" Version="2.30.0" />
     <PackageReference Include="MongoDB.Driver" Version="2.30.0" />

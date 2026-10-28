@@ -15,11 +15,11 @@ namespace MUD.Telnet
     public class PreLoginHandler
     {
         private readonly ICoreApi _core;
-        private readonly IClientConnection _connection;
+        private readonly ILoginConnection _connection;
         private readonly LoginSession _session;
         private readonly Action<string> _log;
 
-        public PreLoginHandler(ICoreApi core, SessionId sessionId, IClientConnection connection, Action<string> log = null)
+        public PreLoginHandler(ICoreApi core, SessionId sessionId, ILoginConnection connection, Action<string> log = null)
         {
             _core = core ?? throw new ArgumentNullException(nameof(core));
             _connection = connection ?? throw new ArgumentNullException(nameof(connection));

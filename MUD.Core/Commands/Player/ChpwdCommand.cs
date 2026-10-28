@@ -2,7 +2,6 @@ using System;
 using MUD.Core.GameObjects;
 using MUD.Core.Repositories;
 using MUD.Core.Sessions;
-using MUD.Telnet;
 
 namespace MUD.Core.Commands
 {

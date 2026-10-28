@@ -9,7 +9,13 @@ MUD.sln
 │                     repositories, output formatting, properties
 ├── MUD.Data/         Generic MongoDB data access: Entity, Repository<T>,
 │                     MongoDBClassMapManager
-├── MUD.Telnet/       Raw-socket telnet Server/Client (no dependencies)
+├── MUD.CoreApi/      The front-end-neutral surface: ICoreApi, IFrontEndSink,
+│                     SessionId, OutputChannel, LoginResult, SessionEndReason
+│                     (no references, no packages)
+├── MUD.Telnet/       The telnet front end: socket Server/Client, option
+│                     negotiation, limits, the login dialogue, markup-to-ANSI
+│                     conversion, TelnetSessionSink, TelnetFrontEnd
+│                     (references MUD.CoreApi only)
 └── MUD.PlanarRealms/ World content module (room classes), loaded at
                       runtime by assembly name — NOT a csproj reference
 ```
@@ -18,14 +24,21 @@ Dependency graph:
 
 ```
 MUD.Main ──► MUD.Core ──► MUD.Data
-     │          │  └─────► MUD.Telnet
-     ├──────────┴─────────► MUD.Telnet
-     └─────────────────────► MUD.Data
+     │          │  └─────► MUD.CoreApi
+     ├──► MUD.Telnet ─────► MUD.CoreApi
+     ├──────────────────► MUD.CoreApi
+     └──────────────────► MUD.Data
 
 MUD.PlanarRealms ──► MUD.Core   (scanned at runtime, not compile-referenced)
 ```
 
-`MUD.Telnet` and `MUD.Data` are dependency-free leaf libraries.
+`MUD.CoreApi` and `MUD.Data` are dependency-free leaf libraries. `MUD.Core` does
+not reference `MUD.Telnet`, and `MUD.Telnet` references neither `MUD.Core` nor
+`MUD.Data`: the two sides meet only in `MUD.CoreApi`. `MUD.Core` implements
+`ICoreApi` (`World`); `MUD.Telnet` calls it. `MUD.Main` is a composition root: it
+builds the `World`, builds the telnet `Server`, and connects them with
+`new TelnetFrontEnd(world, welcomeMessage).Attach(server)`. The build is checked
+for this by `ProjectBoundaryTests`.
 
 ## 2. Boot sequence (MUD.Main/Program.cs)
 
@@ -35,12 +48,14 @@ MUD.PlanarRealms ──► MUD.Core   (scanned at runtime, not compile-reference
    `testmud`; asserts `players` collection exists.
 3. `new World(...)` — World builds its own DI container (see §3).
 4. `World.Start()` on a dedicated thread (game loop).
-5. `new Server(...)` (telnet) on a dedicated thread; program wires
-   `ClientConnected` / `messageReceived`.
-6. **Pre-login gate:** a raw `messageReceived` handler in `Program.cs`
-   handles `connect <user> <pass>`, `create <user> <pass>`, `who`, `quit`
-   directly — *not* via the command system. After successful login the
-   handler is unsubscribed and the `Player` object takes over I/O.
+5. `new Server(...)` (telnet) on a dedicated thread; `TelnetFrontEnd` (in
+   `MUD.Telnet`) is attached to its `ClientConnected` / `ClientDisconnected`
+   events and gives each connection a core session through `ICoreApi`.
+6. **Pre-login gate:** `PreLoginHandler` (in `MUD.Telnet`) handles `connect`,
+   `create`, `who`, `quit` — *not* via the command system. It calls
+   `ICoreApi.Authenticate` / `CreatePlayer` / `GetOnlineNames`; the login
+   throttle lives in core. After a successful login `TelnetFrontEnd` sends the
+   connection's lines to `ICoreApi.SubmitLine` and the `Player` takes over I/O.
 7. Host-console debug loop on the main thread: `b` broadcast, `c` color
    test, `t` terminal-type subneg, `q` quit.
 
@@ -90,8 +105,9 @@ World.Start():
 ```
 Client keystrokes
   → MUD.Telnet.Client (async socket read, IAC state machine, line assembly)
-  → Client.DataReceived event
-  → Player (post-login) → World.DoCommand(player, input)
+  → Client.DataReceived event → TelnetFrontEnd
+  → ICoreApi.SubmitLine(session, line) → game thread → Player (post-login)
+  → World.DoCommand(player, input)
   → CommandQueue enqueue (per-player serial queue)
   → game-loop dequeue → Task.Run
   → Living.ResolveCommand:  room commands (RoomCommandSource)
@@ -99,7 +115,8 @@ Client keystrokes
                             → creator/admin commands (if Admin/Creator property)
                             → DefaultCommands (fallback)
   → ICommand.ParseCommand → ICommand.DoCommand
-  → Living.ReceiveMessage → ITerminalHandler.ResolveOutput (markup → bytes)
+  → Living.ReceiveMessage → IFrontEndSink.Output (markup + channel; never blocks)
+  → TelnetSessionSink → ITerminalHandler.ResolveOutput (markup → ANSI)
   → MUD.Telnet.Client.Send
 ```
 

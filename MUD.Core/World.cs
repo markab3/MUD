@@ -7,7 +7,6 @@ using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using Microsoft.Extensions.DependencyInjection;
-using MUD.Telnet;
 using MUD.CoreApi;
 using MUD.Core.Sessions;
 using MUD.Core.Repositories;

@@ -49,7 +49,7 @@ namespace MUD.Tests
             Assert.Equal(Markup, Received(terminal));
         }
 
-        private class RecordingConnection : IClientConnection
+        private class RecordingConnection : ILoginConnection
         {
             public readonly System.Collections.Generic.List<string> Sent = new System.Collections.Generic.List<string>();
             public string RemoteKey { get { return "test"; } }

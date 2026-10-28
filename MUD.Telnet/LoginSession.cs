@@ -4,7 +4,9 @@ using MUD.CoreApi;
 namespace MUD.Telnet
 {
     /// <summary>
-    /// The parts of a connection the pre-login flow needs. Implemented by <see cref="Client"/>; tests supply a fake.
+    /// What the telnet project needs from one connection: the pre-login dialogue and <see cref="TelnetSessionSink"/> both
+    /// work through it. Implemented by <see cref="Client"/>; tests supply a fake. Send never blocks: it queues text
+    /// for the connection's single writer.
     /// </summary>
     public interface ILoginConnection
     {
@@ -24,6 +26,12 @@ namespace MUD.Telnet
         void SetEchoHidden(bool hidden);
 
         void DisconnectWithMessage(string message);
+
+        /// <summary>
+        /// Closes the connection. With flush, queued output (e.g. "Thanks for playing!") is written first,
+        /// bounded by a short timeout; the close then happens asynchronously.
+        /// </summary>
+        void Disconnect(bool flush);
     }
 
     public enum LoginState

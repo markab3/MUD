@@ -24,6 +24,14 @@ jobs:
       - name: Build
         run: dotnet build MUD.sln --no-restore
 
+      # Core and the telnet front end meet only in MUD.CoreApi (phase 1 of the V2 redesign).
+      - name: Core does not reference the telnet project
+        run: |
+          if grep -R "MUD.Telnet" MUD.Core --include=*.cs --include=*.csproj --exclude-dir=obj --exclude-dir=bin; then
+            echo "::error::MUD.Core must not reference MUD.Telnet"
+            exit 1
+          fi
+
       # hermes has no test project yet. Skip tests only until one exists
       # (a project referencing Microsoft.NET.Test.Sdk); remove this guard once tests merge.
       - name: Detect test projects

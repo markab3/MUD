@@ -8,8 +8,12 @@ namespace MUD.Telnet
     /// <summary>
     /// The <see cref="IFrontEndSink"/> for one telnet session. Core sends markup; this converts the %^Token%^ markup of
     /// each output to the text of the terminal the player chose (pushed by core through <see cref="SetTerminal"/>) and
-    /// forwards it to the session's <see cref="IClientConnection"/>. Only Output is converted: prompts and farewells
+    /// forwards it to the session's <see cref="ILoginConnection"/>. Only Output is converted: prompts and farewells
     /// never were. A terminal name no handler knows leaves the markup as it is.
+    ///
+    /// Closing is two steps, as core reports it: Close writes the farewell, and SessionEnded (which core always sends
+    /// after Close) says why and then closes the connection. When the world is stopping, the "world is restarting"
+    /// message (decision D29) is written first, so it is not lost behind the close.
     ///
     /// Never blocks: the connection's Send, SendPrompt and SetEchoHidden only queue bytes for its single writer, and a
     /// close with flush is finished on another thread. The conversion adds only string work.
@@ -23,18 +27,24 @@ namespace MUD.Telnet
 
         private readonly IReadOnlyList<ITerminalHandler> _handlers;
         private volatile ITerminalHandler _handler;
+        private volatile bool _closeRequested;
+        private volatile bool _closeFlush;
+        private int _ended;
 
-        public TelnetSessionSink(IClientConnection connection) : this(connection, null)
+        /// <summary>The text written to a telnet client when the world is stopping (decision D29).</summary>
+        public const string WorldRestartingMessage = "The world is restarting. Please reconnect in a moment.";
+
+        public TelnetSessionSink(ILoginConnection connection) : this(connection, null)
         {
         }
 
-        public TelnetSessionSink(IClientConnection connection, IEnumerable<ITerminalHandler> handlers)
+        public TelnetSessionSink(ILoginConnection connection, IEnumerable<ITerminalHandler> handlers)
         {
             Connection = connection ?? throw new ArgumentNullException(nameof(connection));
             _handlers = (handlers ?? DefaultHandlers).ToList();
         }
 
-        public IClientConnection Connection { get; private set; }
+        public ILoginConnection Connection { get; private set; }
 
         /// <summary>The handler of the terminal currently chosen for the session; null when none matches (markup is sent unconverted).</summary>
         public ITerminalHandler CurrentHandler { get { return _handler; } }
@@ -62,19 +72,17 @@ namespace MUD.Telnet
 
         public void Close(SessionId id, string farewellMarkup, bool flush)
         {
-            if (string.IsNullOrEmpty(farewellMarkup))
-            {
-                Connection.Disconnect(flush);
-            }
-            else
-            {
-                Connection.DisconnectWithMessage(farewellMarkup);
-            }
+            _closeFlush = flush || !string.IsNullOrEmpty(farewellMarkup);
+            _closeRequested = true;
+            if (!string.IsNullOrEmpty(farewellMarkup)) { Connection.Send(farewellMarkup); }
         }
 
         public void SessionEnded(SessionId id, SessionEndReason reason)
         {
-            // The connection was closed by Close; nothing more to tell a telnet client.
+            // Once only. A session ended without a Close (core never does this) still closes the connection.
+            if (System.Threading.Interlocked.Exchange(ref _ended, 1) != 0) { return; }
+            if (reason == SessionEndReason.WorldStopping) { Connection.Send(WorldRestartingMessage); }
+            Connection.Disconnect(_closeRequested ? _closeFlush : true);
         }
 
         private ITerminalHandler Find(string terminalName)
