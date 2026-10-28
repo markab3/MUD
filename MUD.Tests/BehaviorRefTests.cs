@@ -6,7 +6,6 @@ using MUD.Core.Commands;
 using MUD.Core.Components;
 using MUD.Core.GameObjects;
 using MUD.Core.Import;
-using MUD.Core.Properties.PlayerProperties;
 using Xunit;
 
 namespace MUD.Tests
@@ -500,7 +499,7 @@ rooms:
                 Room = new Room(RoomRepo) { Id = "t.hall", ShortDescription = "a hall", LongDescription = "A hall." };
                 RoomRepo.Insert(Room);
                 Creator = new RecordingPlayer("Ana");
-                if (isCreator) { Creator.ExtendedProperties.Add(new CreatorProperty()); }
+                if (isCreator) { Creator.Roles.Creator = true; }
                 Creator.CurrentLocation = Room;
                 Creator.CurrentLocationId = Room.Id;
                 Room.Occupants.Add(Creator);

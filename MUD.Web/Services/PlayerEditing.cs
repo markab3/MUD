@@ -19,10 +19,10 @@ public record PlayerPage(IReadOnlyList<PlayerSummary> Items, int Total, int Page
     public int PageCount => Math.Max(1, (Total + PageSize - 1) / PageSize);
 }
 
-// Editable view of one stored player. Properties is the raw ExtendedProperties array, used only to rewrite the Creator/Admin
-// role elements; it is never rendered.
+// Editable view of one stored player. RolesDocument is the raw stored roles component, used only to rewrite the creator and
+// admin flags; it is never rendered.
 public record PlayerDetail(string Id, string NameKey, string Name, string? Short, string? Long, string? Race, string? Gender,
-    string? Class, bool Retired, AccountRole Role, int Rev, BsonArray Properties);
+    string? Class, bool Retired, AccountRole Role, int Rev, BsonDocument RolesDocument);
 
 // Thin persistence seam. Every method is a single-document operation (the database is not a replica set).
 public interface IPlayerEditStore
@@ -169,7 +169,7 @@ public class PlayerWriter : IPlayerWriter
             }
             if (roleChange.HasValue)
             {
-                set[PlayerFields.ExtendedProperties] = WithRole(current.Properties, roleChange.Value);
+                set[PlayerFields.Roles] = WithRole(current.RolesDocument, roleChange.Value);
                 rows.Add(("Role", current.Role.ToString(), roleChange.Value.ToString()));
             }
 
@@ -197,47 +197,14 @@ public class PlayerWriter : IPlayerWriter
         }
     }
 
-    // Keeps every element that is not a role and the roles that are still wanted (so CurrentDirectory survives);
-    // adds the missing ones in the same shape seed-admin.sh and the game store. Admin implies Creator.
-    public static BsonArray WithRole(BsonArray existing, AccountRole role)
+    // The roles component after a role change: creator and admin set from the wanted role (admin implies creator), every
+    // other field of the stored document (the game's currentDirectory) kept. Written as the whole "roles" field (D45, G30).
+    public static BsonDocument WithRole(BsonDocument existing, AccountRole role)
     {
-        bool wantCreator = role >= AccountRole.Creator, wantAdmin = role == AccountRole.Admin;
-        var result = new BsonArray();
-        bool hasCreator = false, hasAdmin = false;
-        foreach (var element in existing)
-        {
-            var kind = Kind(element);
-            if (kind == "CreatorProperty") { if (!wantCreator || hasCreator) { continue; } hasCreator = true; }
-            if (kind == "AdminProperty") { if (!wantAdmin || hasAdmin) { continue; } hasAdmin = true; }
-            result.Add(element.DeepClone());
-        }
-        if (wantCreator && !hasCreator) { result.Add(NewProperty("CreatorProperty")); }
-        if (wantAdmin && !hasAdmin) { result.Add(NewProperty("AdminProperty")); }
+        var result = existing.DeepClone().AsBsonDocument;
+        result["creator"] = role >= AccountRole.Creator;
+        result["admin"] = role == AccountRole.Admin;
         return result;
-    }
-
-    private static string? Kind(BsonValue element)
-    {
-        if (!element.IsBsonDocument || !element.AsBsonDocument.TryGetValue("_t", out var t)) { return null; }
-        var names = t.IsBsonArray ? t.AsBsonArray.Select(x => x.ToString()!) : new[] { t.ToString()! };
-        foreach (var n in names)
-        {
-            var simple = n.Split('.').Last();
-            if (simple == "AdminProperty" || simple == "CreatorProperty") { return simple; }
-        }
-        return null;
-    }
-
-    private static BsonDocument NewProperty(string type)
-    {
-        var doc = new BsonDocument
-        {
-            { "_t", new BsonArray { "Entity", "ExtendedProperty", type } },
-            { "_id", ObjectId.GenerateNewId().ToString() },
-            { "objectContext", BsonNull.Value },
-        };
-        if (type == "CreatorProperty") { doc["CurrentDirectory"] = BsonNull.Value; }
-        return doc;
     }
 
     // null and empty are the same "unset" value.

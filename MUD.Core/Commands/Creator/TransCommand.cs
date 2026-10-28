@@ -1,7 +1,7 @@
 using System;
 using System.Linq;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties.PlayerProperties;
+using MUD.Core.Components;
 using MUD.Core.Repositories;
 
 namespace MUD.Core.Commands
@@ -125,8 +125,8 @@ namespace MUD.Core.Commands
         // 2 = admin, 1 = creator, 0 = player.
         private static int GetRank(Living living)
         {
-            if (living.ExtendedProperties.Any(s => s.GetType() == typeof(AdminProperty))) { return 2; }
-            if (living.ExtendedProperties.Any(s => s.GetType() == typeof(CreatorProperty))) { return 1; }
+            if (living.Roles.Admin) { return 2; }
+            if (living.Roles.Creator) { return 1; }
             return 0;
         }
     }

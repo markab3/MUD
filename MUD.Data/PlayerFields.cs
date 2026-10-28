@@ -15,8 +15,11 @@ namespace MUD.Data
         public const string Class = "Class";
         public const string Retired = "Retired";
 
-        // Roles are CreatorProperty / AdminProperty elements inside this array. Other elements (none today) belong to the game.
-        public const string ExtendedProperties = "ExtendedProperties";
+        // The roles component (decisions D45, G30): an embedded document { creator, admin, currentDirectory }. The website
+        // owns creator and admin and writes them as the dotted fields below; currentDirectory belongs to the game.
+        public const string Roles = "roles";
+        public const string RolesCreator = "roles.creator";
+        public const string RolesAdmin = "roles.admin";
 
         public const string Rev = "Rev";
         public const string WebUpdatedAt = "WebUpdatedAt";
@@ -28,7 +31,7 @@ namespace MUD.Data
         // Fields the game must leave out of its field-level $set on Player.Save.
         public static readonly string[] NotWrittenByGame =
         {
-            Id, Rev, WebUpdatedAt, ShortDescription, LongDescription, Race, Gender, Class, Retired, ExtendedProperties
+            Id, Rev, WebUpdatedAt, ShortDescription, LongDescription, Race, Gender, Class, Retired, Roles
         };
     }
 }

@@ -13,7 +13,7 @@ public class MongoPlayerEditStore : IPlayerEditStore
     private static readonly ProjectionDefinition<BsonDocument> Projection = Builders<BsonDocument>.Projection
         .Include("PlayerName").Include("NameKey").Include("ShortDescription").Include("LongDescription").Include("Race")
         .Include("Gender").Include("Class").Include("CurrentLocationId").Include("Retired").Include("Rev")
-        .Include("ExtendedProperties");
+        .Include(PlayerFields.Roles);
 
     private readonly IMongoCollection<BsonDocument> _players;
 
@@ -61,9 +61,9 @@ public class MongoPlayerEditStore : IPlayerEditStore
 
     public int CountAdmins()
     {
-        // Same role rule as login: any _t entry (scalar or hierarchy array) that names AdminProperty.
+        // Same role rule as login: the roles component with admin set to true.
         var count = 0;
-        foreach (var doc in _players.Find(new BsonDocument("ExtendedProperties._t", "AdminProperty")).Project(Projection).ToList())
+        foreach (var doc in _players.Find(new BsonDocument(PlayerFields.RolesAdmin, true)).Project(Projection).ToList())
         {
             if (MongoAccountStore.RoleFrom(doc) == AccountRole.Admin) { count++; }
         }
@@ -79,7 +79,7 @@ public class MongoPlayerEditStore : IPlayerEditStore
         Str(doc, "ShortDescription"), Str(doc, "LongDescription"), Str(doc, "Race"), Str(doc, "Gender"), Str(doc, "Class"),
         Bool(doc, "Retired"), MongoAccountStore.RoleFrom(doc),
         doc.TryGetValue("Rev", out var rev) && rev.IsNumeric ? rev.ToInt32() : 0,
-        doc.TryGetValue("ExtendedProperties", out var props) && props.IsBsonArray ? props.AsBsonArray : new BsonArray());
+        doc.TryGetValue(PlayerFields.Roles, out var roles) && roles.IsBsonDocument ? roles.AsBsonDocument : new BsonDocument());
 
     private static string? Str(BsonDocument d, string field) =>
         d.TryGetValue(field, out var v) && v.IsString ? v.AsString : null;

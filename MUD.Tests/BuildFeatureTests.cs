@@ -2,7 +2,6 @@ using System.Linq;
 using MUD.Core;
 using MUD.Core.Commands;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties.PlayerProperties;
 using Xunit;
 
 namespace MUD.Tests
@@ -22,7 +21,7 @@ namespace MUD.Tests
                 Repo.Insert(Room);
                 var world = TestWorld.Create();
                 Creator = new RecordingLiving(world) { CurrentLocation = Room };
-                if (creator) { Creator.ExtendedProperties.Add(new CreatorProperty()); }
+                if (creator) { Creator.Roles.Creator = true; }
                 Command = new BuildCommand(Repo, new WorldSettings());
             }
 

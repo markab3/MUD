@@ -2,7 +2,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using MUD.Core.Formatting;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties.PlayerProperties;
+using MUD.Core.Components;
 
 namespace MUD.Core.Commands
 {
@@ -38,7 +38,7 @@ namespace MUD.Core.Commands
 
         public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
-            AdminProperty adminStatusObj = (AdminProperty)commandIssuer.ExtendedProperties.FirstOrDefault(s => s.GetType() == typeof(AdminProperty));
+            Roles adminStatusObj = commandIssuer.Roles.Admin ? commandIssuer.Roles : null;
 
             // if (adminStatusObj == null)
             // {
@@ -100,24 +100,17 @@ namespace MUD.Core.Commands
             switch (commandArgs[1])
             {
                 case "player":
-                    recipient.ExtendedProperties.RemoveAll(s => s.GetType() == typeof(CreatorProperty) || s.GetType() == typeof(AdminProperty));
+                    recipient.Roles.Creator = false;
+                    recipient.Roles.Admin = false;
+                    recipient.Roles.CurrentDirectory = null;
                     break;
                 case "creator":
-                    recipient.ExtendedProperties.RemoveAll(s => s.GetType() == typeof(AdminProperty));
-                    if (!recipient.ExtendedProperties.Any(s => s.GetType() == typeof(CreatorProperty)))
-                    {
-                        recipient.ExtendedProperties.Add(new CreatorProperty());
-                    }
+                    recipient.Roles.Admin = false;
+                    recipient.Roles.Creator = true;
                     break;
                 case "admin":
-                    if (!recipient.ExtendedProperties.Any(s => s.GetType() == typeof(CreatorProperty)))
-                    {
-                        recipient.ExtendedProperties.Add(new CreatorProperty());
-                    }
-                    if (!recipient.ExtendedProperties.Any(s => s.GetType() == typeof(AdminProperty)))
-                    {
-                        recipient.ExtendedProperties.Add(new AdminProperty());
-                    }
+                    recipient.Roles.Creator = true;
+                    recipient.Roles.Admin = true;
                     break;
             }
 
