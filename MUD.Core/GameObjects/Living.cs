@@ -8,7 +8,6 @@ using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using MUD.Core.Properties;
 using MUD.Core.Properties.Interfaces;
-using MUD.Core.Properties.PlayerProperties;
 
 namespace MUD.Core.GameObjects
 {
@@ -25,6 +24,18 @@ namespace MUD.Core.GameObjects
         }
 
         private List<MUD.Core.Components.BehaviorRef> _behaviors;
+
+        // Creator and admin roles (owner decisions D45, G30): the core component "roles", stored as the embedded
+        // document "roles": { creator, admin, currentDirectory }. The website reads creator and admin from it.
+        [BsonElement("roles")]
+        public MUD.Core.Components.Roles Roles
+        {
+            // Never null, including for a stored document that has no roles element.
+            get { return _roles ?? (_roles = new MUD.Core.Components.Roles()); }
+            set { _roles = value; }
+        }
+
+        private MUD.Core.Components.Roles _roles;
 
         protected Room _currentLocation;
 
@@ -210,13 +221,13 @@ namespace MUD.Core.GameObjects
             matchedCommand = GetKnownCommandSource().GetCommandFromInput(input);
             if (matchedCommand != null) { return matchedCommand; }
 
-            if (ExtendedProperties.Any(s => s.GetType() == typeof(AdminProperty)))
+            if (Roles.Admin)
             {
                 matchedCommand = _world.CreatorCommands.GetCommandFromInput(input);
                 if (matchedCommand != null) { return matchedCommand; }
             }
 
-            if (ExtendedProperties.Any(s => s.GetType() == typeof(CreatorProperty)))
+            if (Roles.Creator)
             {
                 matchedCommand = _world.CreatorCommands.GetCommandFromInput(input);
                 if (matchedCommand != null) { return matchedCommand; }

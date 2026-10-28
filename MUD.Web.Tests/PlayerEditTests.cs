@@ -22,22 +22,21 @@ public class FakePlayerEditStore : IPlayerEditStore
     public Action<string>? BeforeUpdate { get; set; }
     public List<string> Names { get; } = new();
 
-    public FakePlayerEditStore Add(string name, AccountRole role = AccountRole.Player, int rev = 0, bool retired = false, BsonArray? props = null)
+    public FakePlayerEditStore Add(string name, AccountRole role = AccountRole.Player, int rev = 0, bool retired = false, BsonDocument? roles = null)
     {
         var key = name.ToLowerInvariant();
-        props ??= RoleProps(role);
-        Players[key] = new PlayerDetail("id-" + key, key, name, name, "tall", "human", "female", "fighter", retired, role, rev, props);
+        roles ??= RoleDocument(role);
+        Players[key] = new PlayerDetail("id-" + key, key, name, name, "tall", "human", "female", "fighter", retired, role, rev, roles);
         return this;
     }
 
-    public static BsonArray RoleProps(AccountRole role)
+    // The stored roles component: creator and admin flags plus the game-owned currentDirectory.
+    public static BsonDocument RoleDocument(AccountRole role) => new()
     {
-        var a = new BsonArray();
-        if (role >= AccountRole.Creator) { a.Add(new BsonDocument { { "_t", new BsonArray { "Entity", "ExtendedProperty", "CreatorProperty" } }, { "_id", "c" }, { "CurrentDirectory", "/home" } }); }
-        if (role == AccountRole.Admin) { a.Add(new BsonDocument { { "_t", new BsonArray { "Entity", "ExtendedProperty", "AdminProperty" } }, { "_id", "a" } }); }
-        a.Add(new BsonDocument { { "_t", "SomeOtherProperty" }, { "_id", "o" } });
-        return a;
-    }
+        { "creator", role >= AccountRole.Creator },
+        { "admin", role == AccountRole.Admin },
+        { "currentDirectory", "/home" },
+    };
 
     public PlayerPage List(string? nameFilter, bool descending, int pageNumber, int pageSize)
     {
@@ -60,15 +59,14 @@ public class FakePlayerEditStore : IPlayerEditStore
         if (p == null) { return StoreUpdateOutcome.Missing; }
         if (p.Rev != expectedRev) { return StoreUpdateOutcome.Conflict; }
         string? S(string f, string? cur) => set.Contains(f) ? (set[f].IsBsonNull ? null : set[f].AsString) : cur;
-        var props = set.Contains("ExtendedProperties") ? set["ExtendedProperties"].AsBsonArray : p.Properties;
-        var role = AccountRole.Player;
-        foreach (var e in props) { var t = e["_t"]; var names = t.IsBsonArray ? t.AsBsonArray.Select(x => x.AsString) : new[] { t.AsString }; foreach (var n in names) { if (n == "AdminProperty") { role = AccountRole.Admin; } else if (n == "CreatorProperty" && role < AccountRole.Creator) { role = AccountRole.Creator; } } }
+        var roles = set.Contains("roles") ? set["roles"].AsBsonDocument : p.RolesDocument;
+        var role = MongoAccountStore.RoleFrom(new BsonDocument("roles", roles));
         Players[p.NameKey] = p with
         {
             Short = S("ShortDescription", p.Short), Long = S("LongDescription", p.Long), Race = S("Race", p.Race),
             Gender = S("Gender", p.Gender), Class = S("Class", p.Class),
             Retired = set.Contains("Retired") ? set["Retired"].AsBoolean : p.Retired,
-            Properties = props, Role = role, Rev = p.Rev + 1,
+            RolesDocument = roles, Role = role, Rev = p.Rev + 1,
         };
         return StoreUpdateOutcome.Applied;
     }
@@ -188,8 +186,11 @@ public class PlayerWriterTests
         Assert.Equal(PlayerEditStatus.Saved, result.Status);
         Assert.Equal(AccountRole.Creator, store.Find("ann")!.Role);
         var set = Assert.Single(store.Updates).Set;
-        Assert.Equal(new[] { "ExtendedProperties", PlayerFields_WebUpdatedAt }, set.Names.ToArray());
-        Assert.Contains(store.Find("ann")!.Properties, e => e["_t"].IsString && e["_t"].AsString == "SomeOtherProperty");
+        Assert.Equal(new[] { "roles", PlayerFields_WebUpdatedAt }, set.Names.ToArray());
+        // Only the flags change; the game-owned currentDirectory in the same document is kept.
+        Assert.Equal("/home", store.Find("ann")!.RolesDocument["currentDirectory"].AsString);
+        Assert.True(store.Find("ann")!.RolesDocument["creator"].AsBoolean);
+        Assert.False(store.Find("ann")!.RolesDocument["admin"].AsBoolean);
         var row = Assert.Single(audit.Entries);
         Assert.Equal("Role", row.Field);
         Assert.Equal("Player", row.Old.AsString);
@@ -201,14 +202,16 @@ public class PlayerWriterTests
     private const string PlayerFields_WebUpdatedAt = "WebUpdatedAt";
 
     [Fact]
-    public void Admin_RevokesCreator_KeepsOtherProperties()
+    public void Admin_RevokesCreator_KeepsTheGameOwnedDirectory()
     {
         var (w, store, _, _) = Make();
         var ben = store.Find("ben")!;
         Assert.Equal(PlayerEditStatus.Saved, w.Save(Admin, Edit(ben, role: AccountRole.Player)).Status);
         var after = store.Find("ben")!;
         Assert.Equal(AccountRole.Player, after.Role);
-        Assert.Single(after.Properties);
+        Assert.False(after.RolesDocument["creator"].AsBoolean);
+        Assert.False(after.RolesDocument["admin"].AsBoolean);
+        Assert.Equal("/home", after.RolesDocument["currentDirectory"].AsString);
     }
 
     [Fact]
@@ -284,7 +287,7 @@ public class PlayerWriterTests
         {
             Assert.False(set.Contains(banned), banned);
         }
-        Assert.True(set.Names.All(n => n == "WebUpdatedAt" || n == "ExtendedProperties" || MUD.Data.PlayerFields.WebEditable.Contains(n)));
+        Assert.True(set.Names.All(n => n == "WebUpdatedAt" || n == "roles" || MUD.Data.PlayerFields.WebEditable.Contains(n)));
     }
 
     [Fact]
@@ -842,7 +845,7 @@ public class PlayerPagesTests
         {
             { "_id", "p.ann" }, { "PlayerName", "Ann" }, { "NameKey", "ann" }, { "ShortDescription", "Ann" }, { "LongDescription", "tall" },
             { "Race", "human" }, { "Gender", "f" }, { "Class", "fighter" }, { "CurrentLocationId", "t.hall" }, { "Retired", false }, { "Rev", 2 },
-            { "Password", FakePlayerEditStore.SecretPassword }, { "ExtendedProperties", new BsonArray() },
+            { "Password", FakePlayerEditStore.SecretPassword }, { "roles", new BsonDocument() },
         };
         var all = new List<string>();
         foreach (var o in new object[] { MongoPlayerEditStore.Summary(doc), MongoPlayerEditStore.Detail(doc) })

@@ -3,7 +3,6 @@ using System.Linq;
 using MUD.Core;
 using MUD.Core.Commands;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties.PlayerProperties;
 using Xunit;
 
 namespace MUD.Tests
@@ -50,8 +49,8 @@ namespace MUD.Tests
             public RecordingPlayer AddPlayer(string name, Role role, Room room, bool online = true)
             {
                 var p = new RecordingPlayer(World, name);
-                if (role >= Role.Creator) { p.ExtendedProperties.Add(new CreatorProperty()); }
-                if (role == Role.Admin) { p.ExtendedProperties.Add(new AdminProperty()); }
+                if (role >= Role.Creator) { p.Roles.Creator = true; }
+                if (role == Role.Admin) { p.Roles.Admin = true; }
                 if (room != null)
                 {
                     p.CurrentLocation = room;

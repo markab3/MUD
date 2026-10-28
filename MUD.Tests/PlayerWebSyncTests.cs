@@ -8,7 +8,6 @@ using MongoDB.Bson;
 using MUD.Core;
 using MUD.Core.Commands;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties.PlayerProperties;
 using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Data;
@@ -133,12 +132,11 @@ namespace MUD.Tests
         {
             var repo = new SyncPlayerRepo();
             var p = Stored(repo, "Ann");
-            var roles = new BsonArray { new BsonDocument { { "_t", new BsonArray { "Entity", "ExtendedProperty", "CreatorProperty" } }, { "_id", "x" } } };
-            repo.Stored[p.Id]["ExtendedProperties"] = roles;
+            repo.Stored[p.Id]["roles"] = new BsonDocument { { "creator", true }, { "admin", false }, { "currentDirectory", BsonNull.Value } };
 
             p.Save(true);
 
-            Assert.Equal(1, repo.Stored[p.Id]["ExtendedProperties"].AsBsonArray.Count);
+            Assert.True(repo.Stored[p.Id]["roles"].AsBsonDocument["creator"].AsBoolean);
         }
 
         [Fact]
@@ -146,16 +144,16 @@ namespace MUD.Tests
         {
             var repo = new SyncPlayerRepo();
             var p = Stored(repo, "Ann");
-            p.ExtendedProperties.Add(new CreatorProperty());
+            p.Roles.Creator = true;
             p.MarkRolesChanged();
 
             p.Save(true);
 
-            Assert.Equal(1, repo.Stored[p.Id]["ExtendedProperties"].AsBsonArray.Count);
+            Assert.True(repo.Stored[p.Id]["roles"].AsBsonDocument["creator"].AsBoolean);
             // The flag is one-shot: a later ordinary save leaves roles alone again.
-            repo.Stored[p.Id]["ExtendedProperties"] = new BsonArray();
+            repo.Stored[p.Id]["roles"] = new BsonDocument { { "creator", false }, { "admin", false } };
             p.Save(true);
-            Assert.Equal(0, repo.Stored[p.Id]["ExtendedProperties"].AsBsonArray.Count);
+            Assert.False(repo.Stored[p.Id]["roles"].AsBsonDocument["creator"].AsBoolean);
         }
 
         [Fact]
@@ -208,13 +206,16 @@ namespace MUD.Tests
             var repo = new SyncPlayerRepo();
             var p = Stored(repo, "Ann");
             var doc = repo.Stored[p.Id];
-            doc["ExtendedProperties"] = new BsonArray { new BsonDocument { { "_t", new BsonArray { "Entity", "ExtendedProperty", "CreatorProperty" } }, { "_id", "c1" } } };
+            doc["roles"] = new BsonDocument { { "creator", true }, { "admin", false } };
             Assert.Equal(Player.WebChanges.Roles, p.ApplyWebEdit(doc));
-            Assert.Single(p.ExtendedProperties.OfType<CreatorProperty>());
+            Assert.True(p.Roles.Creator);
+            Assert.False(p.Roles.Admin);
 
-            doc["ExtendedProperties"] = new BsonArray();
+            p.Roles.CurrentDirectory = "/home";
+            doc["roles"] = new BsonDocument { { "creator", false }, { "admin", false } };
             Assert.Equal(Player.WebChanges.Roles, p.ApplyWebEdit(doc));
-            Assert.Empty(p.ExtendedProperties.OfType<CreatorProperty>());
+            Assert.False(p.Roles.Creator);
+            Assert.Equal("/home", p.Roles.CurrentDirectory); // the game-owned directory is not touched by a web edit
             Assert.Equal(Player.WebChanges.None, p.ApplyWebEdit(doc)); // idempotent
         }
 
@@ -276,12 +277,12 @@ namespace MUD.Tests
         {
             var (sync, repo, _) = Make("Ann");
             var ann = (Listener)repo.Live[0];
-            repo.Stored[ann.Id]["ExtendedProperties"] = new BsonArray { new BsonDocument { { "_t", new BsonArray { "Entity", "ExtendedProperty", "CreatorProperty" } }, { "_id", "c1" } } };
+            repo.Stored[ann.Id]["roles"] = new BsonDocument { { "creator", true }, { "admin", false } };
             repo.Stored[ann.Id]["Rev"] = 1;
 
             PollAndApply(sync, repo);
 
-            Assert.Single(ann.ExtendedProperties.OfType<CreatorProperty>());
+            Assert.True(ann.Roles.Creator);
             Assert.Contains(PlayerWebSync.RolesChangedMessage, ann.Messages);
         }
 

@@ -1,7 +1,6 @@
 using System.Linq;
 using MUD.Core.Formatting;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties.PlayerProperties;
 
 namespace MUD.Core.Commands
 {
@@ -40,7 +39,7 @@ namespace MUD.Core.Commands
                 returnString = returnString + string.Format("Default Commands:\r\n\r\n{0}\r\n\r\n", defaultCommandList);
             }
 
-            if (commandIssuer.ExtendedProperties.Any(s => s.GetType() == typeof(CreatorProperty)))
+            if (commandIssuer.Roles.Creator)
             {
                 var creatorCommandList = _world.CreatorCommands.Commands.Select(c => c.Value.CommandKeywords[0]).Distinct().ToArray().GetListText();
                 if (creatorCommandList != null && creatorCommandList.Length > 0)
@@ -49,7 +48,7 @@ namespace MUD.Core.Commands
                 }
             }
 
-            if (commandIssuer.ExtendedProperties.Any(s => s.GetType() == typeof(AdminProperty)))
+            if (commandIssuer.Roles.Admin)
             {
                 var adminCommandList = _world.AdminCommands.Commands.Select(c => c.Value.CommandKeywords[0]).Distinct().ToArray().GetListText();
                 if (adminCommandList != null && adminCommandList.Length > 0)

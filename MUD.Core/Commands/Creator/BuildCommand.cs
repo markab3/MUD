@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties.PlayerProperties;
+using MUD.Core.Components;
 using MUD.Core.Properties.RoomProperties;
 using MUD.Core.Repositories.Interfaces;
 
@@ -32,7 +32,7 @@ namespace MUD.Core.Commands
 
         public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
-            CreatorProperty creatorStatusObj = (CreatorProperty)commandIssuer.ExtendedProperties.FirstOrDefault(s => s.GetType() == typeof(CreatorProperty));
+            Roles creatorStatusObj = commandIssuer.Roles.Creator ? commandIssuer.Roles : null;
             if (creatorStatusObj == null)
             {
                 commandIssuer.ReceiveMessage("This is a creator only command. How did you get this?!");

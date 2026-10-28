@@ -157,7 +157,12 @@ namespace MUD.Core
                 // Load utility stuff?
                 .AddSingleton<IClock>(Clock)
                 .AddSingleton<CommandQueue>()
-                .AddSingleton<MUD.Core.Components.ComponentRegistry>()
+                .AddSingleton<MUD.Core.Components.ComponentRegistry>(_ =>
+                {
+                    var registry = new MUD.Core.Components.ComponentRegistry();
+                    registry.RegisterCore<MUD.Core.Components.Roles>(MUD.Core.Components.Roles.FieldName);
+                    return registry;
+                })
 
                 // Load repositories
                 .Scan(scan => scan

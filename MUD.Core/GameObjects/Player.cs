@@ -6,7 +6,6 @@ using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using MUD.Core.Properties;
-using MUD.Core.Properties.PlayerProperties;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Data;
 using MUD.CoreApi;
@@ -60,11 +59,11 @@ namespace MUD.Core.GameObjects
 
         public bool Retired { get; set; }
 
-        // Set by an in-game role change (promote) so the next save also writes ExtendedProperties. Otherwise the game
+        // Set by an in-game role change (promote) so the next save also writes the roles component. Otherwise the game
         // leaves roles alone: the website owns them.
         private volatile bool _rolesChanged;
 
-        /// <summary>Call after changing the Creator/Admin properties in-game, before Save.</summary>
+        /// <summary>Call after changing the roles component in-game, before Save.</summary>
         public void MarkRolesChanged() { _rolesChanged = true; }
 
         [Flags]
@@ -72,7 +71,7 @@ namespace MUD.Core.GameObjects
 
         /// <summary>
         /// Applies the website-owned fields of the stored document to this live player (game thread only):
-        /// ShortDescription, LongDescription, Race, Gender, Class, Retired and the Creator/Admin properties, plus Rev.
+        /// ShortDescription, LongDescription, Race, Gender, Class, Retired and the creator/admin flags of the roles component, plus Rev.
         /// Inventory, location, password and every other field are left alone. Announces nothing.
         /// </summary>
         public WebChanges ApplyWebEdit(BsonDocument doc)
@@ -90,8 +89,8 @@ namespace MUD.Core.GameObjects
 
             bool hasCreator, hasAdmin;
             StoredRoles(doc, out hasCreator, out hasAdmin);
-            if (SyncRole<CreatorProperty>(hasCreator, () => new CreatorProperty())) { changes |= WebChanges.Roles; }
-            if (SyncRole<AdminProperty>(hasAdmin, () => new AdminProperty())) { changes |= WebChanges.Roles; }
+            if (Roles.Creator != hasCreator) { Roles.Creator = hasCreator; changes |= WebChanges.Roles; }
+            if (Roles.Admin != hasAdmin) { Roles.Admin = hasAdmin; changes |= WebChanges.Roles; }
 
             BsonValue rev = doc.GetValue(PlayerFields.Rev, BsonNull.Value);
             Rev = rev.IsNumeric ? rev.ToInt32() : 0;
@@ -108,36 +107,20 @@ namespace MUD.Core.GameObjects
             return true;
         }
 
+        // The website owns the creator and admin flags inside the stored roles document. Anything else (the creator's
+        // current directory) is the game's and is left alone.
         private static void StoredRoles(BsonDocument doc, out bool hasCreator, out bool hasAdmin)
         {
             hasCreator = false;
             hasAdmin = false;
-            BsonValue props;
-            if (!doc.TryGetValue(PlayerFields.ExtendedProperties, out props) || !props.IsBsonArray) { return; }
-            foreach (var prop in props.AsBsonArray)
-            {
-                BsonValue t;
-                if (!prop.IsBsonDocument || !prop.AsBsonDocument.TryGetValue("_t", out t)) { continue; }
-                var names = t.IsBsonArray ? t.AsBsonArray.Select(x => x.ToString()) : new[] { t.ToString() };
-                foreach (var name in names)
-                {
-                    if (name == "CreatorProperty") { hasCreator = true; }
-                    if (name == "AdminProperty") { hasAdmin = true; }
-                }
-            }
+            BsonValue roles;
+            if (!doc.TryGetValue(PlayerFields.Roles, out roles) || !roles.IsBsonDocument) { return; }
+            BsonValue value;
+            if (roles.AsBsonDocument.TryGetValue("creator", out value) && value.IsBoolean) { hasCreator = value.AsBoolean; }
+            if (roles.AsBsonDocument.TryGetValue("admin", out value) && value.IsBoolean) { hasAdmin = value.AsBoolean; }
         }
 
-        // Makes the live properties agree with the stored role; true if anything changed.
-        private bool SyncRole<T>(bool stored, Func<T> create) where T : ExtendedProperty
-        {
-            bool live = ExtendedProperties.Any(p => p.GetType() == typeof(T));
-            if (live == stored) { return false; }
-            if (stored) { ExtendedProperties.Add(create()); }
-            else { ExtendedProperties.RemoveAll(p => p.GetType() == typeof(T)); }
-            return true;
-        }
-
-        // The document the game may write: everything except the website-owned fields. ExtendedProperties is included
+        // The document the game may write: everything except the website-owned fields. The roles component is included
         // only after an in-game role change.
         private BsonDocument GameOwnedFields(BsonDocument whole)
         {
@@ -147,7 +130,7 @@ namespace MUD.Core.GameObjects
             foreach (var element in whole)
             {
                 if (Array.IndexOf(PlayerFields.NotWrittenByGame, element.Name) >= 0 &&
-                    !(includeRoles && element.Name == PlayerFields.ExtendedProperties)) { continue; }
+                    !(includeRoles && element.Name == PlayerFields.Roles)) { continue; }
                 set[element.Name] = element.Value;
             }
             return set;

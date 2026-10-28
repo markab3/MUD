@@ -89,35 +89,39 @@ public class AccountServiceTests
 
 public class RoleMappingTests
 {
-    private static BsonDocument Doc(params BsonValue[] discriminators) => new()
+    private static BsonDocument Doc(BsonValue roles) => new() { { "roles", roles } };
+
+    private static BsonDocument Roles(bool creator, bool admin) => new() { { "creator", creator }, { "admin", admin }, { "currentDirectory", BsonNull.Value } };
+
+    [Fact]
+    public void NoRolesComponent_IsPlayer() => Assert.Equal(AccountRole.Player, MongoAccountStore.RoleFrom(new BsonDocument()));
+
+    [Fact]
+    public void EmptyOrMalformedRoles_IsPlayer()
     {
-        { "ExtendedProperties", new BsonArray(discriminators.Select(d => new BsonDocument("_t", d))) },
-    };
-
-    [Fact]
-    public void NoProperties_IsPlayer() => Assert.Equal(AccountRole.Player, MongoAccountStore.RoleFrom(new BsonDocument()));
-
-    [Fact]
-    public void OtherProperty_IsPlayer() => Assert.Equal(AccountRole.Player, MongoAccountStore.RoleFrom(Doc("SomethingElse")));
-
-    [Fact]
-    public void Creator() => Assert.Equal(AccountRole.Creator, MongoAccountStore.RoleFrom(Doc("CreatorProperty")));
-
-    [Fact]
-    public void Admin() => Assert.Equal(AccountRole.Admin, MongoAccountStore.RoleFrom(Doc("AdminProperty")));
-
-    [Fact]
-    public void AdminWinsOverCreatorInEitherOrder()
-    {
-        Assert.Equal(AccountRole.Admin, MongoAccountStore.RoleFrom(Doc("CreatorProperty", "AdminProperty")));
-        Assert.Equal(AccountRole.Admin, MongoAccountStore.RoleFrom(Doc("AdminProperty", "CreatorProperty")));
+        Assert.Equal(AccountRole.Player, MongoAccountStore.RoleFrom(Doc(new BsonDocument())));
+        Assert.Equal(AccountRole.Player, MongoAccountStore.RoleFrom(Doc("admin")));
+        Assert.Equal(AccountRole.Player, MongoAccountStore.RoleFrom(Doc(new BsonDocument { { "creator", "true" }, { "admin", 1 } })));
     }
 
     [Fact]
-    public void HierarchyArrayDiscriminator()
+    public void BothFlagsFalse_IsPlayer() => Assert.Equal(AccountRole.Player, MongoAccountStore.RoleFrom(Doc(Roles(false, false))));
+
+    [Fact]
+    public void Creator() => Assert.Equal(AccountRole.Creator, MongoAccountStore.RoleFrom(Doc(Roles(true, false))));
+
+    [Fact]
+    public void Admin() => Assert.Equal(AccountRole.Admin, MongoAccountStore.RoleFrom(Doc(Roles(false, true))));
+
+    [Fact]
+    public void AdminWinsOverCreator() => Assert.Equal(AccountRole.Admin, MongoAccountStore.RoleFrom(Doc(Roles(true, true))));
+
+    [Fact]
+    public void TheOldExtendedPropertiesShapeIsNotRead()
     {
-        var d = Doc(new BsonArray { "Entity", "ExtendedProperty", "CreatorProperty" });
-        Assert.Equal(AccountRole.Creator, MongoAccountStore.RoleFrom(d));
+        // No dual-read of the old shape (decision D1): a document with only the old role elements is a plain player.
+        var old = new BsonDocument { { "ExtendedProperties", new BsonArray { new BsonDocument("_t", new BsonArray { "Entity", "ExtendedProperty", "AdminProperty" }) } } };
+        Assert.Equal(AccountRole.Player, MongoAccountStore.RoleFrom(old));
     }
 }
 
