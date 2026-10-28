@@ -290,8 +290,9 @@ namespace MUD.Tests
         {
             var world = new World(new MongoDB.Driver.MongoClient("mongodb://127.0.0.1:1"), new WorldSettings(), new FakeClock());
             var repo = new SyncPlayerRepo();
-            var conn = new FakeConnection();
-            var ann = new QuitTracker(world, repo) { Connection = conn };
+            var conn = new FakeSink();
+            var ann = new QuitTracker(world, repo);
+            world.AttachPlayer(ann, world.OpenSession("test", "test", conn));
             repo.Stored[ann.Id] = ann.ToBsonDocument();
             repo.Live.Add(ann);
             world.Players.Add(ann);
@@ -305,7 +306,7 @@ namespace MUD.Tests
             Assert.Contains(PlayerWebSync.RetiredMessage, ann.Messages);
             // The normal quit path ran: farewell, left the world, final save, flushing disconnect.
             Assert.DoesNotContain(ann, world.Players);
-            Assert.Contains("disconnect", conn.Events);
+            Assert.Contains(conn.Events, e => e.StartsWith("close:"));
             Assert.True(ann.Messages.IndexOf(PlayerWebSync.RetiredMessage) < ann.Messages.IndexOf("Thanks for playing!"));
         }
 

@@ -175,7 +175,7 @@ namespace MUD.Tests
     {
         public TestPlayer(World world, Client connection) : base(world, null, null)
         {
-            Connection = connection;
+            Attach(new MUD.CoreApi.SessionId("test"), new ClientSink(connection));
         }
     }
 

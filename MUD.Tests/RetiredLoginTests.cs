@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
 using MUD.Core;
 using MUD.Core.GameObjects;
+using MUD.CoreApi;
 using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
 using Xunit;
@@ -28,7 +29,8 @@ namespace MUD.Tests
             public SyncPlayerRepo Players = new SyncPlayerRepo();
             public SyncRoomRepo Rooms = new SyncRoomRepo();
             public Quiet Ann;
-            public FakeConnection Client = new FakeConnection();
+            public FakeSink Sink = new FakeSink();
+            public SessionId Client;
 
             public Fixture(string startKey = "t.start")
             {
@@ -39,6 +41,7 @@ namespace MUD.Tests
                     .BuildServiceProvider();
                 typeof(World).GetField("_serviceProvider", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(World, services);
 
+                Client = World.OpenSession("test", "test", Sink);
                 Ann = new Quiet(World, Players) { Id = "p.ann", PlayerName = "Ann", NameKey = "ann", Password = "secret", ShortDescription = "Ann", Race = "human" };
                 Players.Stored[Ann.Id] = Ann.ToBsonDocument();
                 Players.Live.Add(Ann);
@@ -64,7 +67,7 @@ namespace MUD.Tests
 
             Assert.False(f.World.DoLogin("Ann", "secret", f.Client));
 
-            Assert.Contains(PlayerAccounts.RetiredMessage, f.Client.Sent);
+            Assert.Contains(PlayerAccounts.RetiredMessage, f.Sink.Sent);
             Assert.Equal("This character has been retired and can no longer be played.", PlayerAccounts.RetiredMessage);
             Assert.DoesNotContain(f.Ann, f.World.Players);
             Assert.Equal(PlayerConnectionStatuses.Guest, f.Ann.ConnectionStatus); // never logged in
@@ -78,7 +81,7 @@ namespace MUD.Tests
 
             Assert.False(f.World.DoLogin("Ann", "wrong", f.Client));
 
-            Assert.DoesNotContain(PlayerAccounts.RetiredMessage, f.Client.Sent);
+            Assert.DoesNotContain(PlayerAccounts.RetiredMessage, f.Sink.Sent);
         }
 
         [Fact]
@@ -88,7 +91,7 @@ namespace MUD.Tests
             f.Players.Stored[f.Ann.Id]["Retired"] = true; // Rev unchanged: a direct database edit
 
             Assert.False(f.World.DoLogin("Ann", "secret", f.Client));
-            Assert.Contains(PlayerAccounts.RetiredMessage, f.Client.Sent);
+            Assert.Contains(PlayerAccounts.RetiredMessage, f.Sink.Sent);
         }
 
         [Fact]
@@ -101,7 +104,7 @@ namespace MUD.Tests
             Assert.True(f.World.DoLogin("Ann", "secret", f.Client));
 
             Assert.Contains(f.Ann, f.World.Players);
-            Assert.DoesNotContain(PlayerAccounts.RetiredMessage, f.Client.Sent);
+            Assert.DoesNotContain(PlayerAccounts.RetiredMessage, f.Sink.Sent);
         }
 
         [Fact]

@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using MongoDB.Driver;
 using MUD.Core;
 using MUD.Core.GameObjects;
+using MUD.CoreApi;
 using MUD.Telnet;
 using Xunit;
 
@@ -47,7 +48,7 @@ namespace MUD.Tests
             try
             {
                 world.Players.Add(player);
-                player.Connection = client;
+                world.AttachPlayer(player, world.OpenSession("test", "test", new ClientSink(client)));
 
                 player.Quit();
                 player.Quit();
@@ -75,12 +76,12 @@ namespace MUD.Tests
             var second = NewConnectedClient(out TcpClient secondPeer);
             try
             {
-                player.Connection = first;
+                world.AttachPlayer(player, world.OpenSession("test", "test", new ClientSink(first)));
                 player.Quit();
                 Assert.Equal(1, repo.ReplaceCount);
 
                 // A new session (new connection on the same player object) must be able to quit.
-                player.Connection = second;
+                world.AttachPlayer(player, world.OpenSession("test", "test", new ClientSink(second)));
                 player.Quit();
 
                 // First quit: the $set matched no stored document, so the whole document was written once.

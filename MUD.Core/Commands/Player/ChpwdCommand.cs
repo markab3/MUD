@@ -1,6 +1,7 @@
 using System;
 using MUD.Core.GameObjects;
 using MUD.Core.Repositories;
+using MUD.Core.Sessions;
 using MUD.Telnet;
 
 namespace MUD.Core.Commands
@@ -54,13 +55,13 @@ namespace MUD.Core.Commands
         private enum Step { Current, New, Confirm }
 
         private readonly Player _player;
-        private readonly ILoginConnection _connection;
+        private readonly IPromptChannel _connection;
         private readonly LoginThrottle _throttle;
         private Step _step;
         private string _current;
         private string _new;
 
-        public PasswordChangeFlow(Player player, ILoginConnection connection, LoginThrottle throttle)
+        public PasswordChangeFlow(Player player, IPromptChannel connection, LoginThrottle throttle)
         {
             _player = player;
             _connection = connection;

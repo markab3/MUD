@@ -7,6 +7,7 @@ using MUD.Core.Commands;
 using MUD.Core.GameObjects;
 using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
+using MUD.CoreApi;
 using MUD.Telnet;
 using Xunit;
 
@@ -14,14 +15,16 @@ namespace MUD.Tests
 {
     public class PasswordChangeTests
     {
-        private class FakeConnection : ILoginConnection
+        // The front end the player is attached to; it records what the player's session sends, as "send:", "prompt:", "echo-off" and "echo-on".
+        private class FakeConnection : IFrontEndSink
         {
             public string RemoteKey { get; set; } = "5.6.7.8";
             public List<string> Events = new List<string>();
-            public void Send(string text) { Events.Add("send:" + text); }
-            public void SendPrompt(string text) { Events.Add("prompt:" + text); }
-            public void SetEchoHidden(bool hidden) { Events.Add(hidden ? "echo-off" : "echo-on"); }
-            public void DisconnectWithMessage(string message) { Events.Add("disconnect:" + message); }
+            public void Output(SessionId id, OutputChannel channel, string markupText, bool flush) { Events.Add("send:" + markupText); }
+            public void Prompt(SessionId id, string text) { Events.Add("prompt:" + text); }
+            public void SetEchoHidden(SessionId id, bool hidden) { Events.Add(hidden ? "echo-off" : "echo-on"); }
+            public void Close(SessionId id, string farewellMarkup, bool flush) { Events.Add("disconnect:" + farewellMarkup); }
+            public void SessionEnded(SessionId id, SessionEndReason reason) { }
             public string Last { get { return Events[Events.Count - 1]; } }
         }
 
@@ -62,11 +65,8 @@ namespace MUD.Tests
 
         private class TestPlayer : Player
         {
-            [MongoDB.Bson.Serialization.Attributes.BsonIgnore]
-            public ILoginConnection Channel { get; set; }
             public TestPlayer(IPlayerRepository repo) : base(null, null, repo) { }
             public override void ReceiveMessage(string message) { }
-            public override ILoginConnection PromptChannel { get { return Channel; } }
         }
 
         private static LoginThrottle Throttle(int max = 3)
@@ -77,7 +77,8 @@ namespace MUD.Tests
         // A logged-in player whose document is already stored (Updates reset afterwards).
         private static TestPlayer NewPlayer(Repo repo, FakeConnection conn, string password = "oldsecret")
         {
-            var p = new TestPlayer(repo) { Id = "p.holen", PlayerName = "Holen", NameKey = "holen", Password = password, Channel = conn };
+            var p = new TestPlayer(repo) { Id = "p.holen", PlayerName = "Holen", NameKey = "holen", Password = password };
+            p.Attach(new SessionId("test"), conn, conn.RemoteKey);
             repo.Update(p);
             repo.Players.Add(p);
             repo.Updates = 0;
@@ -96,7 +97,7 @@ namespace MUD.Tests
         {
             var repo = new Repo(); var conn = new FakeConnection();
             var p = NewPlayer(repo, conn);
-            new PasswordChangeFlow(p, conn, Throttle()).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, Throttle()).Start();
             Assert.Equal(new[] { "echo-off", "prompt:Current password: " }, conn.Events);
 
             Type(p, "oldsecret");
@@ -123,7 +124,7 @@ namespace MUD.Tests
 
             for (int i = 0; i < 2; i++)
             {
-                new PasswordChangeFlow(p, conn, throttle).Start();
+                new PasswordChangeFlow(p, p.PromptChannel, throttle).Start();
                 Type(p, "wrong");
                 Assert.Equal("send:" + PasswordChangeFlow.WrongCurrentMessage, conn.Last);
                 Assert.False(p.HasPrompt);
@@ -134,7 +135,7 @@ namespace MUD.Tests
 
             // Blocked: no prompt is even offered.
             conn.Events.Clear();
-            new PasswordChangeFlow(p, conn, throttle).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, throttle).Start();
             Assert.Equal(new[] { "send:" + PasswordChangeFlow.BlockedMessage }, conn.Events);
             Assert.False(p.HasPrompt);
         }
@@ -147,7 +148,7 @@ namespace MUD.Tests
             var throttle = Throttle(2);
             throttle.RecordFailure("5.6.7.8");
             throttle.RecordFailure("5.6.7.8"); // two failed logins
-            new PasswordChangeFlow(p, conn, throttle).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, throttle).Start();
             Assert.Equal("send:" + PasswordChangeFlow.BlockedMessage, conn.Last);
             Assert.False(p.HasPrompt);
         }
@@ -157,7 +158,7 @@ namespace MUD.Tests
         {
             var repo = new Repo(); var conn = new FakeConnection();
             var p = NewPlayer(repo, conn);
-            new PasswordChangeFlow(p, conn, Throttle()).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, Throttle()).Start();
             Type(p, "oldsecret", "newsecret", "newsecreT");
             Assert.Equal("send:" + PasswordChangeFlow.MismatchMessage, conn.Last);
             Assert.Equal("oldsecret", p.Password);
@@ -170,7 +171,7 @@ namespace MUD.Tests
         {
             var repo = new Repo(); var conn = new FakeConnection();
             var p = NewPlayer(repo, conn);
-            new PasswordChangeFlow(p, conn, Throttle()).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, Throttle()).Start();
             Type(p, "oldsecret", "oldsecret");
             Assert.Equal("send:" + PasswordChangeFlow.SameMessage, conn.Last);
             Assert.Equal(0, repo.Updates);
@@ -183,7 +184,7 @@ namespace MUD.Tests
         {
             var repo = new Repo(); var conn = new FakeConnection();
             var p = NewPlayer(repo, conn);
-            new PasswordChangeFlow(p, conn, Throttle()).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, Throttle()).Start();
             Type(p, "oldsecret", bad);
             Assert.Equal("send:" + PlayerAccounts.ValidatePassword(bad), conn.Last);
             Assert.Equal("oldsecret", p.Password);
@@ -210,7 +211,7 @@ namespace MUD.Tests
             var repo = new Repo(); var conn = new FakeConnection();
             var p = NewPlayer(repo, conn);
             repo.UpdateResult = false;
-            new PasswordChangeFlow(p, conn, Throttle()).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, Throttle()).Start();
             Type(p, "oldsecret", "newsecret", "newsecret");
             Assert.Equal("send:" + PasswordChangeFlow.SaveFailedMessage, conn.Last);
             Assert.Equal("oldsecret", p.Password);
@@ -247,9 +248,9 @@ namespace MUD.Tests
         {
             var repo = new Repo(); var conn = new FakeConnection();
             var p = NewPlayer(repo, conn, "oldsecret");
-            new PasswordChangeFlow(p, conn, Throttle()).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, Throttle()).Start();
             Type(p, "oldsecret", "newsecret", "othersecret");
-            new PasswordChangeFlow(p, conn, Throttle()).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, Throttle()).Start();
             Type(p, "wrongpass");
             var all = string.Join("\n", conn.Events);
             foreach (var secret in new[] { "oldsecret", "newsecret", "othersecret", "wrongpass" })
@@ -268,7 +269,7 @@ namespace MUD.Tests
             Console.SetOut(sw);
             try
             {
-                new PasswordChangeFlow(p, conn, Throttle()).Start();
+                new PasswordChangeFlow(p, p.PromptChannel, Throttle()).Start();
                 Type(p, "oldsecret", "newsecret", "newsecret");
             }
             finally { Console.SetOut(original); }
@@ -311,11 +312,11 @@ namespace MUD.Tests
             var p = NewPlayer(repo, conn, "oldsecret");
             repo.Docs["p.holen"]["Password"] = "webpassword";
 
-            new PasswordChangeFlow(p, conn, Throttle()).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, Throttle()).Start();
             Type(p, "oldsecret"); // the stale password no longer works
             Assert.Equal("send:" + PasswordChangeFlow.WrongCurrentMessage, conn.Last);
 
-            new PasswordChangeFlow(p, conn, Throttle()).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, Throttle()).Start();
             Type(p, "webpassword", "gamechange", "gamechange");
             Assert.Equal("gamechange", repo.Stored);
         }
@@ -325,7 +326,7 @@ namespace MUD.Tests
         {
             var repo = new Repo(); var conn = new FakeConnection();
             var p = NewPlayer(repo, conn, "oldsecret");
-            new PasswordChangeFlow(p, conn, Throttle()).Start();
+            new PasswordChangeFlow(p, p.PromptChannel, Throttle()).Start();
             Type(p, "oldsecret", "newsecret", "newsecret");
             p.Save(true);
             Assert.Equal("newsecret", repo.Stored);

@@ -238,6 +238,7 @@ namespace MUD.Tests
             var repo = new NameKeyPlayerRepo();
             var world = (World)RuntimeHelpers.GetUninitializedObject(typeof(World));
             world.Players = new List<Player>();
+            typeof(World).GetField("_sessionRegistry", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(world, new MUD.Core.Sessions.SessionRegistry());
             var services = new ServiceCollection().AddSingleton<IPlayerRepository>(repo).BuildServiceProvider();
             typeof(World).GetField("_serviceProvider", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(world, services);
             return (world, repo);
@@ -272,7 +273,7 @@ namespace MUD.Tests
             var client = Connect(out TcpClient peer);
             try
             {
-                Assert.False(world.DoCreateUser(name, "pw", client));
+                Assert.False(world.DoCreateUser(name, "pw", world.OpenSession("test", "test", new ClientSink(client))));
                 Assert.Contains(expected, ReadAvailable(peer));
                 Assert.Empty(repo.Stored);
             }
@@ -287,7 +288,7 @@ namespace MUD.Tests
             var client = Connect(out TcpClient peer);
             try
             {
-                Assert.False(world.DoCreateUser("hOLEN", "pw", client));
+                Assert.False(world.DoCreateUser("hOLEN", "pw", world.OpenSession("test", "test", new ClientSink(client))));
                 Assert.Contains("already someone", ReadAvailable(peer));
                 Assert.Single(repo.Stored);
             }
