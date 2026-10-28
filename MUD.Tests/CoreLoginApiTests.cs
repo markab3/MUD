@@ -202,7 +202,7 @@ namespace MUD.Tests
             public IReadOnlyList<string> GetOnlineNames() { return Online; }
         }
 
-        private class RecordingConnection : IClientConnection
+        private class RecordingConnection : ILoginConnection
         {
             public readonly List<string> Sent = new List<string>();
             public bool Disconnected;

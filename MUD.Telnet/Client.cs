@@ -8,7 +8,7 @@ using System.Threading;
 
 namespace MUD.Telnet
 {
-    public class Client : IClientConnection
+    public class Client : ILoginConnection
     {
         // Captured at construction: the socket cannot be queried once it has been closed.
         private readonly IPEndPoint _remoteAddress;

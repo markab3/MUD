@@ -20,6 +20,7 @@ namespace MUD.Tests
             public void SendPrompt(string text) { Events.Add("prompt:" + text); }
             public void SetEchoHidden(bool hidden) { EchoHidden = hidden; Events.Add(hidden ? "echo-off" : "echo-on"); }
             public void DisconnectWithMessage(string message) { Disconnected = message; }
+            public void Disconnect(bool flush) { }
         }
 
         // A fake core: records the calls the login dialogue makes and answers them from the flags. The throttle is core's

@@ -10,7 +10,6 @@ using MUD.Core;
 using System.Linq;
 using System.Threading;
 using System.Runtime.InteropServices;
-using System.Runtime.CompilerServices;
 using MUD.Core.Formatting;
 using MongoDB.Bson.Serialization;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,10 +23,6 @@ namespace MUD.Main
         private static World _gameWorld;
         private static Server _serverInstance;
         private static TelnetLimits _telnetLimits = TelnetLimits.FromEnvironment();
-        // The pre-login dialogue of each telnet client; it lives in the telnet project and calls the core API.
-        private static readonly ConditionalWeakTable<Client, PreLoginHandler> _preLoginHandlers = new ConditionalWeakTable<Client, PreLoginHandler>();
-        // The core session id of each telnet client; core generates the ids.
-        private static readonly ConditionalWeakTable<Client, object> _sessionIds = new ConditionalWeakTable<Client, object>();
         private static LoginThrottle _loginThrottle = new LoginThrottle(_telnetLimits.LoginMaxFailures, _telnetLimits.LoginThrottleDuration);
         private static string alternateMessage =
 @"
@@ -295,8 +290,8 @@ namespace MUD.Main
             if (!IPAddress.TryParse(ip, out ipAddress)) { ipAddress = IPAddress.Any; }
 
             _serverInstance = new Server(ipAddress, port.Value, _telnetLimits);
-            _serverInstance.ClientConnected += clientConnected;
-            _serverInstance.ClientDisconnected += clientDisconnected;
+            // The telnet front end talks to core only through ICoreApi (the World implements it).
+            new TelnetFrontEnd(_gameWorld, welcomeMessage).Attach(_serverInstance);
 
             Thread serverThread = new Thread(_serverInstance.Start);
             serverThread.Start();
@@ -383,37 +378,6 @@ namespace MUD.Main
             }
 
             _shutdown.Run();
-        }
-
-        private static void clientConnected(object sender, Client client)
-        {
-            Console.WriteLine("CONNECTED: " + client);
-
-            SessionId sessionId = _gameWorld.OpenSession("telnet", client.RemoteKey, new TelnetSessionSink(client));
-            _sessionIds.Add(client, sessionId);
-            var preLogin = new PreLoginHandler(_gameWorld, sessionId, client);
-            _preLoginHandlers.Add(client, preLogin);
-            client.DataReceived += (s, line) =>
-            {
-                if (preLogin.IsLoggedIn)
-                {
-                    // Lines from now on go to the player (core routes by session).
-                    _gameWorld.SubmitLine(sessionId, line);
-                    return;
-                }
-                preLogin.HandleLine(line);
-                if (preLogin.IsLoggedIn) { client.IsLoggedIn = true; }
-            };
-            client.Send(welcomeMessage);
-            preLogin.ShowWho();
-            client.Send("");
-        }
-
-        private static void clientDisconnected(object sender, Client client)
-        {
-            object sessionId;
-            if (_sessionIds.TryGetValue(client, out sessionId)) { _gameWorld.CloseSession((SessionId)sessionId, SessionEndReason.ClientClosed); }
-            Console.WriteLine("DISCONNECTED: " + client);
         }
 
         private static void connectionBlocked(IPEndPoint ep)

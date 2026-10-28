@@ -13,15 +13,16 @@ namespace MUD.Tests
 {
     public class TelnetSessionSinkTests
     {
-        private class RecordingConnection : IClientConnection
+        private class RecordingConnection : ILoginConnection
         {
             public readonly List<string> Sent = new List<string>();
+            public readonly List<string> Closes = new List<string>();
             public string RemoteKey { get { return "test"; } }
             public void Send(string text) { Sent.Add(text); }
             public void SendPrompt(string text) { Sent.Add(text); }
             public void SetEchoHidden(bool hidden) { }
-            public void DisconnectWithMessage(string message) { }
-            public void Disconnect(bool flush) { }
+            public void DisconnectWithMessage(string message) { Closes.Add("message:" + message); }
+            public void Disconnect(bool flush) { Closes.Add("disconnect:" + flush); }
         }
 
         private static readonly SessionId Id = new SessionId("test");
@@ -97,6 +98,45 @@ namespace MUD.Tests
             sink.SetTerminal(Id, "ansi");
             sink.Prompt(Id, "%^Red%^> ");
             Assert.Equal("%^Red%^> ", connection.Sent.Single());
+        }
+
+        [Fact]
+        public void SessionEndedForAStoppingWorldTellsTheClientTheWorldIsRestartingThenCloses()
+        {
+            var connection = new RecordingConnection();
+            var sink = new TelnetSessionSink(connection);
+            sink.Close(Id, string.Empty, true);
+            sink.SessionEnded(Id, SessionEndReason.WorldStopping);
+            Assert.Equal(new[] { TelnetSessionSink.WorldRestartingMessage }, connection.Sent.ToArray());
+            Assert.Equal(new[] { "disconnect:True" }, connection.Closes.ToArray());
+        }
+
+        [Theory]
+        [InlineData(SessionEndReason.Quit)]
+        [InlineData(SessionEndReason.TakenOver)]
+        [InlineData(SessionEndReason.Flood)]
+        [InlineData(SessionEndReason.Idle)]
+        public void OtherEndReasonsDoNotSendTheRestartMessage(SessionEndReason reason)
+        {
+            var connection = new RecordingConnection();
+            var sink = new TelnetSessionSink(connection);
+            sink.Close(Id, string.Empty, true);
+            sink.SessionEnded(Id, reason);
+            Assert.Empty(connection.Sent);
+            Assert.Equal(new[] { "disconnect:True" }, connection.Closes.ToArray());
+        }
+
+        [Fact]
+        public void AFarewellIsWrittenBeforeTheCloseAndTheConnectionClosesOnce()
+        {
+            var connection = new RecordingConnection();
+            var sink = new TelnetSessionSink(connection);
+            sink.Close(Id, "Goodbye.", false);
+            Assert.Empty(connection.Closes);
+            sink.SessionEnded(Id, SessionEndReason.Flood);
+            sink.SessionEnded(Id, SessionEndReason.Flood);
+            Assert.Equal(new[] { "Goodbye." }, connection.Sent.ToArray());
+            Assert.Equal(new[] { "disconnect:True" }, connection.Closes.ToArray());
         }
 
         [Fact]

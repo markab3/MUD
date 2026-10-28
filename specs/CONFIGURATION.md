@@ -16,6 +16,12 @@ executable). Nothing secret is committed.
 | Content directory | `WorldSettings:ContentDirectory` | `Content` | relative to the executable |
 | Import on startup | `WorldSettings:ImportOnStartup` | `true` | |
 
+Which project reads what: `MUD.Main` reads every setting above and is the only place
+that does. The telnet limits (`MUD_*` variables read by `TelnetLimits.FromEnvironment`
+in `MUD.Telnet`) configure the telnet server; `MUD.Main` passes the login-throttle
+numbers from them to the throttle in `MUD.Core`, so telnet and any later front end
+share one throttle. Bind address and port belong to the telnet front end only.
+
 The old `--db` command-line option is gone: the connection string is never
 accepted on the command line (it would show up in `ps` output).
 

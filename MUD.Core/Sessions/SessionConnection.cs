@@ -2,7 +2,6 @@ using System;
 using System.Threading;
 using MUD.CoreApi;
 using MUD.Core.GameObjects;
-using MUD.Telnet;
 
 namespace MUD.Core.Sessions
 {
@@ -11,11 +10,8 @@ namespace MUD.Core.Sessions
     /// event is forwarded to the front end's own sink and returns at once, because the sink must never block
     /// (decision D42). Once the session has ended (core closed it, or the front end reported it closed), further events
     /// are dropped, as writing to a closed connection is today.
-    ///
-    /// It is also still an <see cref="IClientConnection"/>, only so that the telnet login dialogue (which is moved to the
-    /// core API by a later card) keeps working against it. The player does not use that contract.
     /// </summary>
-    public sealed class SessionConnection : IClientConnection, IFrontEndSink
+    public sealed class SessionConnection : IFrontEndSink
     {
         private const int Open = 0;
         private const int ClosedByCore = 1;
@@ -89,31 +85,10 @@ namespace MUD.Core.Sessions
             Sink.SessionEnded(Id, reason);
         }
 
-        // IClientConnection: the telnet login dialogue.
-
+        /// <summary>Core's own message to the session (login errors, the input-limit notice), on the system channel.</summary>
         public void Send(string text)
         {
             Output(Id, OutputChannel.System, text, false);
-        }
-
-        public void SendPrompt(string text)
-        {
-            Prompt(Id, text);
-        }
-
-        public void SetEchoHidden(bool hidden)
-        {
-            SetEchoHidden(Id, hidden);
-        }
-
-        public void DisconnectWithMessage(string message)
-        {
-            Terminate(message, DefaultReason(), true);
-        }
-
-        public void Disconnect(bool flush)
-        {
-            Terminate(string.Empty, DefaultReason(), flush);
         }
 
         /// <summary>
@@ -131,11 +106,6 @@ namespace MUD.Core.Sessions
         public void Detach()
         {
             Interlocked.Exchange(ref _state, Detached);
-        }
-
-        private SessionEndReason DefaultReason()
-        {
-            return _worldIsStopping() ? SessionEndReason.WorldStopping : SessionEndReason.Quit;
         }
     }
 }
