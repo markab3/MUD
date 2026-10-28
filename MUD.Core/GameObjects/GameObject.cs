@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MUD.Core.Components;
+using MUD.Core.Events;
 using MUD.Data;
 
 namespace MUD.Core.GameObjects
@@ -63,6 +64,7 @@ namespace MUD.Core.GameObjects
                 Components[moduleName] = named;
             }
             named[componentName] = data.DeepClone().AsBsonDocument;
+            ChangeEvents.EmitComponentSet(this, fullName, data);
         }
 
         // Returns true when a component was removed. An emptied module entry is dropped so no empty documents are stored.
@@ -72,6 +74,7 @@ namespace MUD.Core.GameObjects
             if (Components == null || !Components.TryGetValue(moduleName, out var named) || named == null) { return false; }
             bool removed = named.Remove(componentName);
             if (named.Count == 0) { Components.Remove(moduleName); }
+            if (removed) { ChangeEvents.EmitComponentRemove(this, fullName); }
             return removed;
         }
 

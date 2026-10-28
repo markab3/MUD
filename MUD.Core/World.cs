@@ -12,6 +12,7 @@ using MUD.Core.Sessions;
 using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Core.GameObjects;
+using MUD.Core.Events;
 using MUD.Data;
 using System.IO;
 using System.Reflection;
@@ -51,6 +52,9 @@ namespace MUD.Core
         private IClock _clock;
 
         private GameLoop _loop;
+
+        /// <summary>The event queue and After-phase dispatcher (owner decisions D4, D9). Used on the game thread only.</summary>
+        public EventDispatcher Events { get; }
 
         private PersistenceWorker _persistence;
 
@@ -113,7 +117,8 @@ namespace MUD.Core
 
             Players = new List<Player>();
 
-            _loop = new GameLoop(Clock, handleInbound, onTick, () => doHeartbeat(null));
+            Events = new EventDispatcher();
+            _loop = new GameLoop(Clock, handleInbound, onTick, () => doHeartbeat(null), null, () => Events.Pump());
             _loop.OnFatal = beginShutdown;
         }
 
@@ -212,13 +217,17 @@ namespace MUD.Core
         public void Start()
         {
             Thread persistenceThread = startPersistence();
+            IDisposable eventBinding = null;
             try
             {
                 Volatile.Write(ref _gameThreadId, Thread.CurrentThread.ManagedThreadId);
+                // Component and behavior edits on this thread now emit their change events to Events.
+                eventBinding = Events.Bind();
                 _loop.Run();
             }
             finally
             {
+                if (eventBinding != null) { eventBinding.Dispose(); }
                 Volatile.Write(ref _gameThreadId, 0);
                 // Normally a no-op: shutdown has already run. Covers a loop that stopped some other way.
                 if (!_shuttingDown) { beginShutdown(); }

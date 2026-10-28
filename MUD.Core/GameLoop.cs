@@ -72,13 +72,16 @@ namespace MUD.Core
         private readonly Action _onTick;
         private readonly Action _onHeartbeat;
         private readonly Action<string> _log;
+        private readonly Action _processEvents;
         private readonly BlockingCollection<InboundItem> _inbound = new BlockingCollection<InboundItem>(new ConcurrentQueue<InboundItem>());
         private DateTime _nextTick;
         private int _tickCount;
         private volatile bool _stopRequested;
 
-        public GameLoop(IClock clock, Action<InboundItem> handle, Action onTick, Action onHeartbeat, Action<string> log = null)
+        /// <param name="processEvents">Optional. Called after the inbound items and again after a tick; it processes queued events up to its own per-pass budget (EventLimits.MaxEventsPerPass), which is the event queue's share of the pass (owner decision D9).</param>
+        public GameLoop(IClock clock, Action<InboundItem> handle, Action onTick, Action onHeartbeat, Action<string> log = null, Action processEvents = null)
         {
+            _processEvents = processEvents;
             _clock = clock;
             _handle = handle;
             _onTick = onTick;
@@ -148,6 +151,7 @@ namespace MUD.Core
                 }
                 while (handled < MaxItemsPerPass && !_stopRequested && _inbound.TryTake(out item, TimeSpan.Zero));
             }
+            ProcessEvents();
 
             DateTime now = _clock.Now;
             if (now >= _nextTick)
@@ -155,6 +159,7 @@ namespace MUD.Core
                 Tick();
                 _nextTick += TickInterval;
                 if (_nextTick < now) { _nextTick = now + TickInterval; } // skip missed ticks, no catch-up burst
+                ProcessEvents();
             }
             return handled;
         }
@@ -178,6 +183,14 @@ namespace MUD.Core
             {
                 _log(string.Format("WARNING: tick took {0:0} ms (interval {1:0} ms).", took.TotalMilliseconds, TickInterval.TotalMilliseconds));
             }
+        }
+
+        // Events queued by what the inbound items and the tick just did. Events over the budget wait for the next call.
+        private void ProcessEvents()
+        {
+            if (_processEvents == null) { return; }
+            try { _processEvents(); }
+            catch (Exception ex) { _log("Exception processing events: " + ex); }
         }
 
         private void Handle(InboundItem item)
