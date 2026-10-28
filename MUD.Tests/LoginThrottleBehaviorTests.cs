@@ -1,5 +1,5 @@
 using System;
-using MUD.Telnet;
+using MUD.Core;
 using Xunit;
 
 namespace MUD.Tests

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace MUD.Telnet
+namespace MUD.Core
 {
     /// <summary>
     /// In-memory throttle for failed logins. After <c>maxFailures</c> failures from one address, that address

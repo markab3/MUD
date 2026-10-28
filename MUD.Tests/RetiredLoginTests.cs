@@ -65,7 +65,7 @@ namespace MUD.Tests
             f.Players.Stored[f.Ann.Id]["Retired"] = true;
             f.Players.Stored[f.Ann.Id]["Rev"] = 1;
 
-            Assert.False(f.World.DoLogin("Ann", "secret", f.Client));
+            Assert.Equal(LoginResult.Retired, f.World.DoLogin("Ann", "secret", f.Client));
 
             Assert.Contains(PlayerAccounts.RetiredMessage, f.Sink.Sent);
             Assert.Equal("This character has been retired and can no longer be played.", PlayerAccounts.RetiredMessage);
@@ -79,7 +79,7 @@ namespace MUD.Tests
             var f = new Fixture();
             f.Players.Stored[f.Ann.Id]["Retired"] = true;
 
-            Assert.False(f.World.DoLogin("Ann", "wrong", f.Client));
+            Assert.Equal(LoginResult.BadCredentials, f.World.DoLogin("Ann", "wrong", f.Client));
 
             Assert.DoesNotContain(PlayerAccounts.RetiredMessage, f.Sink.Sent);
         }
@@ -90,7 +90,7 @@ namespace MUD.Tests
             var f = new Fixture();
             f.Players.Stored[f.Ann.Id]["Retired"] = true; // Rev unchanged: a direct database edit
 
-            Assert.False(f.World.DoLogin("Ann", "secret", f.Client));
+            Assert.Equal(LoginResult.Retired, f.World.DoLogin("Ann", "secret", f.Client));
             Assert.Contains(PlayerAccounts.RetiredMessage, f.Sink.Sent);
         }
 
@@ -101,7 +101,7 @@ namespace MUD.Tests
             f.AddRoom("t.start");
             f.Ann.CurrentLocationId = "t.start";
 
-            Assert.True(f.World.DoLogin("Ann", "secret", f.Client));
+            Assert.Equal(LoginResult.Success, f.World.DoLogin("Ann", "secret", f.Client));
 
             Assert.Contains(f.Ann, f.World.Players);
             Assert.DoesNotContain(PlayerAccounts.RetiredMessage, f.Sink.Sent);
@@ -117,7 +117,7 @@ namespace MUD.Tests
             f.Players.Stored[f.Ann.Id]["Retired"] = false;
             f.Players.Stored[f.Ann.Id]["Rev"] = 2;
 
-            Assert.True(f.World.DoLogin("Ann", "secret", f.Client));
+            Assert.Equal(LoginResult.Success, f.World.DoLogin("Ann", "secret", f.Client));
             Assert.False(f.Ann.Retired);
         }
 
@@ -130,7 +130,7 @@ namespace MUD.Tests
             var start = f.AddRoom("t.start");
             f.Ann.CurrentLocationId = "t.deleted";
 
-            Assert.True(f.World.DoLogin("Ann", "secret", f.Client));
+            Assert.Equal(LoginResult.Success, f.World.DoLogin("Ann", "secret", f.Client));
 
             Assert.Equal("t.start", f.Ann.CurrentLocationId);
             Assert.Same(start, f.Ann.CurrentLocation);
@@ -146,7 +146,7 @@ namespace MUD.Tests
             var hall = f.AddRoom("t.hall");
             f.Ann.CurrentLocationId = "t.hall";
 
-            Assert.True(f.World.DoLogin("Ann", "secret", f.Client));
+            Assert.Equal(LoginResult.Success, f.World.DoLogin("Ann", "secret", f.Client));
 
             Assert.Equal("t.hall", f.Ann.CurrentLocationId);
             Assert.DoesNotContain(World.LostLocationMessage, f.Ann.Messages);

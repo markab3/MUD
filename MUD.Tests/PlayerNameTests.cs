@@ -11,6 +11,7 @@ using MUD.Core;
 using MUD.Core.GameObjects;
 using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
+using MUD.CoreApi;
 using MUD.Data;
 using Xunit;
 
@@ -273,7 +274,7 @@ namespace MUD.Tests
             var client = Connect(out TcpClient peer);
             try
             {
-                Assert.False(world.DoCreateUser(name, "pw", world.OpenSession("test", "test", new ClientSink(client))));
+                Assert.NotEqual(LoginResult.Success, world.DoCreateUser(name, "pw", world.OpenSession("test", "test", new ClientSink(client))));
                 Assert.Contains(expected, ReadAvailable(peer));
                 Assert.Empty(repo.Stored);
             }
@@ -288,8 +289,9 @@ namespace MUD.Tests
             var client = Connect(out TcpClient peer);
             try
             {
-                Assert.False(world.DoCreateUser("hOLEN", "pw", world.OpenSession("test", "test", new ClientSink(client))));
-                Assert.Contains("already someone", ReadAvailable(peer));
+                // Core only reports the taken name; the telnet login dialogue words it ("There is already someone by
+                // the name of ...", LoginSessionTests.Create_NameTaken_Reports).
+                Assert.Equal(LoginResult.NameTaken, world.DoCreateUser("hOLEN", "pw", world.OpenSession("test", "test", new ClientSink(client))));
                 Assert.Single(repo.Stored);
             }
             finally { peer.Close(); }
