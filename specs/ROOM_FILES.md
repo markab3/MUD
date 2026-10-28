@@ -4,6 +4,7 @@
 > The area YAML is only an optional, manually triggered one-off import/export format; the database is the sole source of truth and there is no recurring sync.
 > Obsolete: section 4.5 and section 7 (properties and the behavior registry; replaced by behavior entries on entities), section 6 (re-import semantics) and section 9 (`local_modified`, `source_hash`, `--force`/`--adopt`).
 > Section 8 (`class:` room subclass) is superseded by the plain room kind plus behavior entries. Import must be collision-safe (never silently overwrite). The rest of this file is unchanged and still describes the format and today's code.
+> Since card P2-4 the `search` property is stored as the room's core `search` component (`search.entries[]`: `id`, `target`, `refreshMilliseconds`, `reward`, `nextRewardAt`), not in `ExtendedProperties`, which no longer exists. The YAML `properties:` form of 4.5 is unchanged for rooms; features no longer accept `properties:`. The cooldown (`nextRewardAt`) is stored, so it survives a restart (section 7.4).
 
 Status: DRAFT specification. Docs only; nothing here is implemented.
 Task: t_2c9f6235. Branch: roomspec (based on `hermes`).

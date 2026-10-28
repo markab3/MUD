@@ -20,6 +20,9 @@ namespace MUD.Core.Commands
         // Only livings with something queued are present, so a tick does not scan everyone.
         private readonly Dictionary<Living, LinkedList<CommandExecution>> _queues = new Dictionary<Living, LinkedList<CommandExecution>>();
 
+        /// <summary>The current game time, as this queue sees it.</summary>
+        public DateTime Now { get { return _clock.Now; } }
+
         public CommandQueue(IClock clock)
         {
             _clock = clock ?? SystemClock.Instance;

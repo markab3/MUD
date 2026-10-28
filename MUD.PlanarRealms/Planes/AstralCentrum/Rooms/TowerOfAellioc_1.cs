@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties;
 using MUD.Core.Repositories.Interfaces;
 
 namespace MUD.PlanarRealms.Planes.Neutral.Rooms

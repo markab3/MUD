@@ -20,7 +20,7 @@ namespace MUD.Core.Import
     }
 
     // The inverse of AreaImporter (specs/ROOM_FILES.md section 4). Reads stored rooms, keeps only
-    // definition fields (section 5), and writes an area file. Items and property runtime state are
+    // definition fields (section 5), and writes an area file. Items and search runtime state are
     // never written. The output is checked with a dry-run import before it is returned, so a file the
     // importer would reject is never produced.
     public class AreaExporter
@@ -164,8 +164,7 @@ namespace MUD.Core.Import
                     Detail = NullIfEmpty(Str(featureDoc, "DetailDescription")),
                     Handles = StrList(featureDoc, "Handles", fctx, errors),
                     Adjectives = StrList(featureDoc, "Adjectives", fctx, errors),
-                    Plurals = StrList(featureDoc, "Plurals", fctx, errors),
-                    Properties = BuildProperties(featureDoc, fctx, errors)
+                    Plurals = StrList(featureDoc, "Plurals", fctx, errors)
                 };
                 if (feature.Short == null) { errors.Add(fctx + ": ShortDescription is required."); }
                 if (feature.Long == null) { errors.Add(fctx + ": LongDescription is required."); }
@@ -204,31 +203,27 @@ namespace MUD.Core.Import
         private static List<SearchPropertyDefinition> BuildProperties(BsonDocument owner, string ctx, List<string> errors)
         {
             var result = new List<SearchPropertyDefinition>();
-            foreach (var propDoc in Docs(owner, "ExtendedProperties", ctx, errors))
+            var searchValue = owner.GetValue("search", BsonNull.Value);
+            var searchDoc = searchValue.IsBsonDocument ? searchValue.AsBsonDocument : null;
+            if (searchDoc == null) { return result; }
+
+            // The room's "search" component holds the entries; the cooldown (nextRewardAt) is runtime state and is not exported.
+            foreach (var propDoc in Docs(searchDoc, "entries", ctx, errors))
             {
-                var id = Str(propDoc, "_id");
-                var pctx = string.Format("{0}, property '{1}'", ctx, id);
-                if (id == null) { errors.Add(ctx + ": a property has no _id."); }
+                var id = Str(propDoc, "id");
+                var pctx = string.Format("{0}, search entry '{1}'", ctx, id);
+                if (id == null) { errors.Add(ctx + ": a search entry has no id."); }
 
-                // 'search' (BasicSearchProperty) is the only room-file behavior. Anything else cannot be
-                // written, and would be removed from the room by the next import. RefreshInterval is an int,
-                // so it is always stored; SearchTarget may be null.
-                if (!propDoc.Contains("RefreshInterval"))
-                {
-                    errors.Add(pctx + ": not a room-file behavior, so it cannot be exported (only 'search' is supported).");
-                    continue;
-                }
+                var prop = new SearchPropertyDefinition { Id = id, Target = Str(propDoc, "target") };
+                if (prop.Target == null) { errors.Add(pctx + ": target is missing."); }
 
-                var prop = new SearchPropertyDefinition { Id = id, Target = Str(propDoc, "SearchTarget") };
-                if (prop.Target == null) { errors.Add(pctx + ": SearchTarget is missing."); }
-
-                var refresh = Int(propDoc, "RefreshInterval");
-                if (refresh == null) { errors.Add(pctx + ": RefreshInterval is missing."); }
+                var refresh = Int(propDoc, "refreshMilliseconds");
+                if (refresh == null) { errors.Add(pctx + ": refreshMilliseconds is missing."); }
                 else { prop.RefreshMs = refresh.Value; }
 
-                var reward = propDoc.GetValue("Reward", BsonNull.Value);
+                var reward = propDoc.GetValue("reward", BsonNull.Value);
                 if (reward.IsBsonDocument) { prop.Reward = BuildItem(reward.AsBsonDocument, pctx + ", reward", errors); }
-                else { errors.Add(pctx + ": Reward is missing."); }
+                else { errors.Add(pctx + ": reward is missing."); }
 
                 result.Add(prop);
             }
@@ -418,7 +413,6 @@ namespace MUD.Core.Import
                 WriteList(sb, item, "handles", feature.Handles);
                 WriteList(sb, item, "adjectives", feature.Adjectives);
                 WriteList(sb, item, "plurals", feature.Plurals);
-                WriteProperties(sb, item, feature.Properties);
             }
         }
 

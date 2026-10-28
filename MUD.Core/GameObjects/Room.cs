@@ -22,6 +22,17 @@ namespace MUD.Core.GameObjects
 
         private List<MUD.Core.Components.BehaviorRef> _behaviors;
 
+        // The search configuration and cooldown (core component "search", owner decisions D2, D13). Never null,
+        // including for a stored document that has no search element. The cooldown is stored with the room.
+        [BsonElement("search")]
+        public MUD.Core.Components.Search Search
+        {
+            get { return _search ?? (_search = new MUD.Core.Components.Search()); }
+            set { _search = value; }
+        }
+
+        private MUD.Core.Components.Search _search;
+
         // Area prefix this room belongs to (e.g. "castle"). Definition field.
         public string Area { get; set; }
 
@@ -159,7 +170,7 @@ namespace MUD.Core.GameObjects
             Adjectives = source.Adjectives;
             Plurals = source.Plurals;
             Components = source.Components;
-            ExtendedProperties = source.ExtendedProperties;
+            Search.ApplyDefinition(source.Search);
             Features = source.Features;
             Exits = source.Exits;
             Area = source.Area;
@@ -278,6 +289,30 @@ namespace MUD.Core.GameObjects
             catch (System.Exception ex)
             {
                 System.Console.WriteLine("Exception encountered while saving room: " + ex.Message);
+            }
+            return false;
+        }
+
+        // Persists the search component (its cooldown is runtime state, ROOM_FILES 7.4). Call after a reward is found.
+        public bool SaveSearchState()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(Id)) { return Save(); }
+
+                var whole = MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this);
+                var state = new MongoDB.Bson.BsonDocument("search", whole["search"]);
+                if (Sink != null)
+                {
+                    Post(MUD.Data.PersistKind.SetFields, state, whole);
+                    return true;
+                }
+                if (_roomRepository.UpdateFields(Id, state)) { return true; }
+                return Save();
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("Exception encountered while saving room search state: " + ex.Message);
             }
             return false;
         }

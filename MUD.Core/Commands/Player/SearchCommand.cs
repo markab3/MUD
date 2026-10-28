@@ -1,7 +1,5 @@
 using System.Linq;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties;
-using MUD.Core.Properties.Interfaces;
 
 namespace MUD.Core.Commands
 {
@@ -53,10 +51,13 @@ namespace MUD.Core.Commands
 
             bool success = false;
 
-            var searchProp = commandIssuer.CurrentLocation.ExtendedProperties.FirstOrDefault(ep => ep is ISearchable);
-            if (searchProp != null)
+            // Search is baked into core (D2): the room's "search" component holds the reward and the cooldown.
+            Room room = commandIssuer.CurrentLocation;
+            success = room.Search.TrySearch(commandIssuer, target, _commandQueue.Now);
+            if (success)
             {
-                success = ((ISearchable)searchProp).DoSearch(commandIssuer, target);
+                // The cooldown is stored with the room, so it does not reset when the game restarts.
+                room.SaveSearchState();
             }
 
             if (!success)

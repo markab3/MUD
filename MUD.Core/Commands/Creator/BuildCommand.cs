@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using MUD.Core.GameObjects;
 using MUD.Core.Components;
-using MUD.Core.Properties.RoomProperties;
 using MUD.Core.Repositories.Interfaces;
 
 namespace MUD.Core.Commands
@@ -56,13 +55,12 @@ namespace MUD.Core.Commands
                     LongDescription = "Debris covers the floor. It is presumably what remains of the shop's inventory, though it appears everything that is left is broken or worthless."
                  }
             };
-            newRoom.ExtendedProperties = new List<Properties.ExtendedProperty>() {
-                new BasicSearchProperty() {
-                    SearchTarget = "debris",
-                    Reward = new InventoryItem() { ShortDescription = "emerald", LongDescription = "A small, green emerald." },
-                    RefreshInterval = 10000
-                }
-            };
+            newRoom.Search.Entries.Add(new MUD.Core.Components.SearchEntry() {
+                EntryId = "debris_search",
+                Target = "debris",
+                Reward = new InventoryItem() { ShortDescription = "emerald", LongDescription = "A small, green emerald." },
+                RefreshMilliseconds = 10000
+            });
             newRoom.Exits = new List<Exit>() {
                 new Exit() { Name = "out", DestinationId= _settings.StartRoomKey }
             };

@@ -6,8 +6,6 @@ using MongoDB.Bson.Serialization.Attributes;
 using MUD.CoreApi;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
-using MUD.Core.Properties;
-using MUD.Core.Properties.Interfaces;
 
 namespace MUD.Core.GameObjects
 {
@@ -104,10 +102,15 @@ namespace MUD.Core.GameObjects
 
         public virtual void DoHeartbeat()
         {
-            var heartbeatProperties = ExtendedProperties.OfType<IHeartbeat>().ToList();
-            foreach (IHeartbeat currentProperty in heartbeatProperties)
+            // Heartbeat behavior entries are resolved to in-process handlers by (Module, Type). An entry nothing is
+            // registered for is dormant and skipped (D10, D60). Event-bus dispatch comes in phase 3; until then this
+            // is the only caller, and it still reaches players only (World.doHeartbeat).
+            foreach (var entry in Behaviors.Where(b => b != null && b.Hook == MUD.Core.Components.BehaviorHooks.Heartbeat).ToList())
             {
-                currentProperty.DoHeartbeat();
+                if (MUD.Core.Components.InProcessBehaviorRegistry.Shared.TryGetHeartbeat(entry.Module, entry.Type, out var handler))
+                {
+                    handler(this, entry);
+                }
             }
         }
 
