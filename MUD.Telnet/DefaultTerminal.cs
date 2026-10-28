@@ -1,6 +1,4 @@
-using System.Collections.Generic;
-
-namespace MUD.Core.Formatting
+namespace MUD.Telnet
 {
     public class DefaultTerminalHandler: ITerminalHandler
     {
@@ -8,7 +6,7 @@ namespace MUD.Core.Formatting
 
         public string[] Aliases => null;
 
-        public string GetReplacement(EFormatOptions option)
+        public string GetReplacement(string tokenName)
         {
             return "";
         }

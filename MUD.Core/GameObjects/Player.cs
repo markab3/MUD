@@ -204,6 +204,15 @@ namespace MUD.Core.GameObjects
             _sessionId = sessionId;
             _frontEndSink = sink;
             _remoteKey = remoteKey ?? string.Empty;
+            if (sink != null) { sink.SetTerminal(sessionId, SelectedTerm); }
+        }
+
+        /// <summary>Changes the persisted terminal choice and tells the session's front end, which does the conversion.</summary>
+        public void ChangeTerminal(string terminalName)
+        {
+            SelectedTerm = terminalName;
+            IFrontEndSink sink = _frontEndSink;
+            if (sink != null) { sink.SetTerminal(_sessionId, terminalName); }
         }
 
         [BsonIgnore]

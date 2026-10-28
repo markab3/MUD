@@ -389,7 +389,7 @@ namespace MUD.Main
         {
             Console.WriteLine("CONNECTED: " + client);
 
-            SessionId sessionId = _gameWorld.OpenSession("telnet", client.RemoteKey, new LegacyConnectionSink(client));
+            SessionId sessionId = _gameWorld.OpenSession("telnet", client.RemoteKey, new TelnetSessionSink(client));
             _sessionIds.Add(client, sessionId);
             IClientConnection connection = _gameWorld.GetSessionConnection(sessionId);
             client.DataReceived += (s, line) => _gameWorld.SubmitLine(sessionId, line);
@@ -465,7 +465,7 @@ namespace MUD.Main
             if (session.IsLoggedIn)
             {
                 // Lines from now on go to the player (World routes by connection).
-                var legacySink = ((SessionConnection)client).Sink as LegacyConnectionSink;
+                var legacySink = ((SessionConnection)client).Sink as TelnetSessionSink;
                 var telnetClient = legacySink == null ? null : legacySink.Connection as Client;
                 if (telnetClient != null) { telnetClient.IsLoggedIn = true; }
             }

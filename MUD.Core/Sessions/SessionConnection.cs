@@ -68,6 +68,12 @@ namespace MUD.Core.Sessions
             Sink.Prompt(Id, text);
         }
 
+        public void SetTerminal(SessionId id, string terminalName)
+        {
+            if (HasEnded) { return; }
+            Sink.SetTerminal(Id, terminalName);
+        }
+
         /// <summary>Asks the front end to close the session. Happens once; later calls, and calls after a detach, do nothing.</summary>
         public void Close(SessionId id, string farewellMarkup, bool flush)
         {

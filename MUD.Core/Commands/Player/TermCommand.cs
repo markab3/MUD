@@ -10,9 +10,11 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Default; }
 
-        public string HelpText { get => string.Format("Set your terminal type. Current types include: {0}\r\n \r\nSyntax: term <terminal type>", _terminalTypes.GetListText()); }
+        public string HelpText { get => string.Format("Set your terminal type. Current types include: {0}\r\n \r\nSyntax: term <terminal type>", TerminalTypes.GetListText()); }
 
-        private string[] _terminalTypes = null;
+        // The terminal names a player may choose. The telnet front end maps each name to its conversion (see TelnetSessionSink);
+        // a name it does not know leaves the markup as it is. Fixed here so core does not depend on the front end.
+        public static readonly string[] TerminalTypes = new string[] { "ansi", "default", "gmud", "mudlet" };
 
         private World _world;
 
@@ -28,19 +30,6 @@ namespace MUD.Core.Commands
 
         public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
-            if (_terminalTypes == null)
-            {
-                _terminalTypes = _world.TerminalHandlers.Select(t => t.TerminalName.ToLower()).ToArray();
-                var terminalAliases = _world.TerminalHandlers.Where(a => a.Aliases != null).Select(t => t.Aliases);
-                if (terminalAliases != null && terminalAliases.Count() > 0)
-                {
-                    foreach (var currentAliasSet in terminalAliases)
-                    {
-                        _terminalTypes = _terminalTypes.Union(currentAliasSet.Select(a => a.ToLower())).ToArray();
-                    }
-                }
-            }
-
             if (commandArgs == null || commandArgs.Length == 0 || string.IsNullOrWhiteSpace((string)commandArgs[0]))
             {
                 commandIssuer.ReceiveMessage(string.Format("Terminal currently set to: {0}", ((Player)commandIssuer).SelectedTerm));
@@ -48,14 +37,14 @@ namespace MUD.Core.Commands
             }
 
             string newTermValue = ((string)commandArgs[0]).Trim().ToLower();
-            if (_terminalTypes.Contains(newTermValue))
+            if (TerminalTypes.Contains(newTermValue))
             {
-                ((Player)commandIssuer).SelectedTerm = newTermValue;
+                ((Player)commandIssuer).ChangeTerminal(newTermValue);
                 commandIssuer.ReceiveMessage(string.Format("Terminal type set to {0}.", newTermValue));
             }
             else
             {
-                commandIssuer.ReceiveMessage(string.Format("Terminal type {0} not recognized. Current types include: {1}", newTermValue, _terminalTypes.GetListText()));
+                commandIssuer.ReceiveMessage(string.Format("Terminal type {0} not recognized. Current types include: {1}", newTermValue, TerminalTypes.GetListText()));
             }
         }
     }

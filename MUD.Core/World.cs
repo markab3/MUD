@@ -30,8 +30,6 @@ namespace MUD.Core
 
         public CommandSource AdminCommands;
 
-        public List<ITerminalHandler> TerminalHandlers;
-
         // Shared with the pre-login flow so wrong passwords typed into in-game commands count too. May be null.
         public LoginThrottle LoginThrottle { get; set; }
 
@@ -112,8 +110,6 @@ namespace MUD.Core
             CreatorCommands = new CommandSource(loadedCommands.Where(c => c.CommandCategory == CommandCategories.Creator).ToList());
             AdminCommands = new CommandSource(loadedCommands.Where(c => c.CommandCategory == CommandCategories.Admin).ToList());
 
-            TerminalHandlers = _serviceProvider.GetServices<ITerminalHandler>().ToList();
-
             _commandQueue = _serviceProvider.GetService<CommandQueue>();
 
             Players = new List<Player>();
@@ -150,14 +146,6 @@ namespace MUD.Core
                 .Scan(scan => scan
                     .FromAssemblies(libAssemblies)
                     .AddClasses(classes => classes.AssignableTo<ICommand>().Where(t => t.Name != "AnonymousCommand"))
-                    .AsImplementedInterfaces()
-                    .WithSingletonLifetime()
-                )
-
-                // Load all terminals
-                .Scan(scan => scan
-                    .FromAssemblies(libAssemblies)
-                    .AddClasses(classes => classes.AssignableTo<ITerminalHandler>())
                     .AsImplementedInterfaces()
                     .WithSingletonLifetime()
                 )
@@ -570,8 +558,7 @@ namespace MUD.Core
 
         private void AttachPlayer(Player player, SessionConnection connection)
         {
-            var converting = new TerminalConvertingSink(connection, TerminalHandlers, id => player.SelectedTerm);
-            player.Attach(connection.Id, converting, connection.RemoteKey);
+            player.Attach(connection.Id, connection, connection.RemoteKey);
             connection.Player = player;
         }
 

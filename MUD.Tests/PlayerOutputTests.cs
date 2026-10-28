@@ -1,5 +1,6 @@
 using MUD.Core;
 using MUD.Core.GameObjects;
+using MUD.Telnet;
 using Xunit;
 
 namespace MUD.Tests
@@ -14,13 +15,14 @@ namespace MUD.Tests
         private static string Received(string selectedTerminal)
         {
             var world = new World(new MongoDB.Driver.MongoClient("mongodb://127.0.0.1:1"), new WorldSettings(), new FakeClock());
-            var sink = new FakeSink();
+            var connection = new RecordingConnection();
+            var sink = new TelnetSessionSink(connection);
             var player = new Player(world, null, new FakePlayerRepo()) { PlayerName = "tester", SelectedTerm = selectedTerminal };
             world.AttachPlayer(player, world.OpenSession("test", "test", sink));
 
             player.ReceiveMessage(Markup);
 
-            return Assert.Single(sink.Sent);
+            return Assert.Single(connection.Sent);
         }
 
         [Theory]
@@ -45,6 +47,17 @@ namespace MUD.Tests
         public void NoMatchingTerminalLeavesMarkupAlone(string terminal)
         {
             Assert.Equal(Markup, Received(terminal));
+        }
+
+        private class RecordingConnection : IClientConnection
+        {
+            public readonly System.Collections.Generic.List<string> Sent = new System.Collections.Generic.List<string>();
+            public string RemoteKey { get { return "test"; } }
+            public void Send(string text) { Sent.Add(text); }
+            public void SendPrompt(string text) { Sent.Add(text); }
+            public void SetEchoHidden(bool hidden) { }
+            public void DisconnectWithMessage(string message) { }
+            public void Disconnect(bool flush) { }
         }
     }
 }
