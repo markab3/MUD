@@ -58,12 +58,12 @@ New projects (names proposed; csproj changes happen in the cards, not here):
 | Project | Contents | References |
 |---|---|---|
 | `MUD.CoreApi` (new) | the front-end-neutral surface only: interfaces and small value types, no game logic: `ICoreApi`, `IFrontEndSink`, `SessionId`, `OutputChannel`, `LoginResult`, `SessionEndReason` | none (net8.0 class library, no packages) |
-| `MUD.FrontEnd.Telnet` (new; created by moving `MUD.Telnet` code, see below) | everything telnet: socket server, option negotiation, limits, `LoginSession`, markup-to-ANSI conversion (`ITerminalHandler` and its three implementations), the `ITerminalHandler`-backed `TelnetSessionSink` | `MUD.CoreApi` only (no `MUD.Core`, no `MUD.Data`) |
+| `MUD.Telnet` (existing project, kept and extended; D47) | everything telnet: socket server, option negotiation, limits, `LoginSession`, markup-to-ANSI conversion (`ITerminalHandler` and its three implementations), the `ITerminalHandler`-backed `TelnetSessionSink` | `MUD.CoreApi` only (no `MUD.Core`, no `MUD.Data`) |
 | `MUD.Core` | implements `ICoreApi`; keeps `World`, `GameLoop`, commands, players | `MUD.CoreApi`, `MUD.Data` (no `MUD.Telnet`) |
-| `MUD.Main` | host: builds `World`, builds the telnet front end, connects them | `MUD.Core`, `MUD.CoreApi`, `MUD.FrontEnd.Telnet`, `MUD.Data` |
+| `MUD.Main` | host: builds `World`, builds the telnet front end, connects them | `MUD.Core`, `MUD.CoreApi`, `MUD.Telnet`, `MUD.Data` |
 
 Why this shape: `MUD.CoreApi` is the one seam both sides depend on, so core can drop its `MUD.Telnet` reference without core referencing the front end and without the front end referencing core. The same
-interface later becomes the gRPC `Session` service (CORE_API 7.2) in phase 7 and is what the web uses in phase 6, with a thin client implementation of `ICoreApi`. Whether the rename `MUD.Telnet` -> `MUD.FrontEnd.Telnet` happens (it touches `MUD.sln`, `MUD.Main.csproj`, `MUD.Tests.csproj`, `scripts/deploy.sh` publishes only `MUD.Main`, `MUD.PlanarRealms`, `MUD.Web` so it is unaffected) or the existing `MUD.Telnet` project is kept and extended is cosmetic; the plan keeps the name **`MUD.Telnet`** to minimise churn in test files and `using` lines and says so in each card. (Recommendation; owner may choose the other.)
+interface later becomes the gRPC `Session` service (CORE_API 7.2) in phase 7 and is what the web uses in phase 6, with a thin client implementation of `ICoreApi`. The project keeps the name **`MUD.Telnet`** (owner decision D47); there is no rename to `MUD.FrontEnd.Telnet`. The existing project is kept and extended, which avoids churn in `MUD.sln`, `MUD.Main.csproj`, `MUD.Tests.csproj` and `using` lines (`scripts/deploy.sh` publishes only `MUD.Main`, `MUD.PlanarRealms`, `MUD.Web`, so it is unaffected).
 
 The surface (all calls are made on a caller thread and only enqueue; they never run game logic inline):
 
@@ -110,7 +110,7 @@ How `Authenticate` completes is a card-level decision with a constraint: login m
 ### Cards (proposed; none created)
 
 **P1-1. Introduce `MUD.CoreApi` and session ids in core (no behavior change).**
-Scope: add the project with `ICoreApi`, `IFrontEndSink`, `SessionId` (opaque string, core-generated, G31), `OutputChannel` (say, tell, room, combat, system), `LoginResult`, `SessionEndReason`. In `MUD.Core`: add a session registry
+Scope: add the project with `ICoreApi`, `IFrontEndSink`, `SessionId` (opaque string, core-generated, G31), `OutputChannel` (say, tell, room, combat, system, chat; D44), `LoginResult`, `SessionEndReason`. In `MUD.Core`: add a session registry
 (`SessionId` -> sink + Player), implement `OpenSession`, `SubmitLine`, `CloseSession` by wrapping the existing `EnqueueLine`/`EnqueueDisconnect`/`_sessions`. `IClientConnection` still exists and an adapter (`LegacyConnectionSink : IFrontEndSink` in `MUD.Main`) lets the old telnet code keep working while later cards cut over. Output channel tagging: `Living.ReceiveMessage(string)` stays (default channel `system`); add `ReceiveMessage(string, OutputChannel)` and update `SayCommand`, `TellCommand`, `Room.TellRoom` to tag (G29: chat tag is the owner's call; until answered chat stays `system`).
 Depends on: none. Size: M.
 Files: new `MUD.CoreApi/*`; `MUD.sln`; `MUD.Core/MUD.Core.csproj` (+ reference); `MUD.Core/World.cs`, `MUD.Core/GameLoop.cs`; `MUD.Core/GameObjects/Living.cs`, `Room.cs`; `MUD.Core/Commands/Player/{Say,Tell,Chat}Command.cs`; `MUD.Main/Program.cs`; new tests under `MUD.Tests/`.
@@ -251,7 +251,7 @@ Not verifiable here: all four (no build was run in this task).
 **P4-2. Core gRPC host and handshake.** Add ASP.NET Core to `MUD.Main` as the spike found; Kestrel on `modules.sock` (and `frontends.sock` stub); `Hello` with token, strict contract equality, manifest receipt, grants check against `~/.config/mud/module-grants.yaml`; `Subscribe`, `Ping`, `Ready`; inbound items for module calls with a bounded queue and per-pass share. Depends on P4-1, P3-3. Size L. Files: `MUD.Main/*`, new `MUD.Core/Modules/*` (host side), run-directory locking (`flock`, stale sockets).
 **P4-3. Supervisor, launch entries, `required` gate.** Spawn children with token in env, connection watch, backoff/crash-loop (numbers from config, defaults flagged), stale-process check (G27), `modules` admin commands (`list`, `reload`, `diff`, `token`, G26/G28), required-module gate holding the telnet front end until Ready, start-up timeout exit with a clear error (D21), systemd unit restart limit in `planar-realms.service`/DEPLOYMENT.md. Depends on P4-2. Size L.
 **P4-4. Remote behavior dispatch: verdicts, emit, state, timers.** Wire the phase 3 dictionary to connected modules: deliveries on the server stream, `SubmitVerdict` (late dropped), `Emit` with capability checks, `SetState/GetState` (new `module_state` collection through the repository path, size/rate limits configurable), `ScheduleTimer`. Depends on P4-2. Size L.
-**P4-5. Trivial module, SDK helpers and harness.** `MUD.Modules.Hello` (or similar), `MUD.Modules.Sdk` (connection loop, ping, `ctx` wrapper, G1), `ModuleTestHarness`, docs. Integration test with a real UDS in a temp dir. Depends on P4-4. Size M.
+**P4-5. Trivial module, SDK helpers and harness.** `MUD.Modules.Hello` (or similar), `MUD.Modules.Sdk` (connection loop, ping, context wrapper with named helper methods, G1/D40), `ModuleTestHarness`, docs. Integration test with a real UDS in a temp dir. Depends on P4-4. Size M.
 
 Risk: high (learning curve, new dependencies, hosting). Deployable: a core with an empty launch-entry file is the current game plus an idle Kestrel; if the spike fails, the plan reshapes here. Size L.
 Not verified: package/version compatibility beyond the nuspec reading in CORE_API 8; any behavior under load.
@@ -313,16 +313,20 @@ Risk: low-medium; main risks are session loss on restart and output back-pressur
 
 ---
 
-## Decisions this plan needs from the owner (not made here)
+## Decisions this plan needed from the owner (answered)
 
-Collected from the above and CORE_API section 9; none blocks starting phase 1 except where noted.
+The six questions raised by the first version of this plan were answered by the owner after the spec revision (decisions D40-D49 in `owner-decisions.md`, Kanban store). Nothing below blocks starting phase 1.
 
-1. Keep the project name `MUD.Telnet` (plan) or rename to `MUD.FrontEnd.Telnet`.
-2. G29: does `chat` get its own channel tag (an addition to the D28 list)? Blocks only the tag mapping in P1-1.
-3. G24, G30, G31: confirm the recommendations used by phase 1 and 2 cards (throttle in core; web reads the new role field in P2-3; core-generated session ids).
-4. G17: flip `ImportOnStartup` to false in P2-5.
-5. Whether the optional kind-collapse (remove `Living`/`Player`/`NPC` subclasses) is in V2 at all.
-6. Whether the in-process handler registry stays after phase 4 (ARCHITECTURE_V2 4.3).
+1. Project name: keep `MUD.Telnet`, no rename (D47).
+2. `chat` gets its own channel tag; the channel list is say, tell, room, combat, system, chat; untagged messages default to `system` (D44, G29).
+3. Confirmed: the login throttle moves into core and the dialogue stays in the telnet project (D43, G24); core generates session ids (D46, G31); the phase 2 card that introduces the `Roles` component also changes the web's two read paths (D45, G30).
+4. `ImportOnStartup` defaults to false in P2-5; the manual `import` command stays (D41, G17).
+5. The optional kind-collapse (remove `Living`/`Player`/`NPC` subclasses) is not on the V2 critical path; it stays an optional separate card at the end of phase 2, taken later or never (D48).
+6. In-process handler registration stays permanently after phase 4 as a second adapter for core-shipped behaviors (D49; ARCHITECTURE_V2 4.3).
+
+Also decided after the revision: G22 (the front-end sink output method must never block, enforced by a test with a deliberately slow fake front end; D42) and G1 (dedicated wire calls for state and timers plus a generic emit, with named helper methods in the C# SDK; D40).
+
+Gaps G2-G16, G18-G21, G23 and G25-G28 in CORE_API section 9 are still undecided. They are decided when the phase that needs them is cut into cards, and are listed on the Kanban card "[deferred] MUD V2 redesign: parked decisions and later work".
 
 ## What could not be verified (collected)
 

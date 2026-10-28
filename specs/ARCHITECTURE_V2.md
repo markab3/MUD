@@ -281,13 +281,14 @@ Everything that mutates the world must serialise on one thread (GAME_LOOP.md own
 would need distributed transactions for no gain at this scale. The extension points are therefore modules (behavior) and
 front ends (I/O). Both are clients of core over UDS.
 
-### 4.3 In-process modules (phase 3 only)
+### 4.3 In-process handlers (introduced in phase 3, permanent; D49)
 
 Phase 3 builds the event bus before any IPC exists. During phase 3 the behaviors that exist (search, bleeding) run
 in-process as C# handlers registered in the same (Module, Type) dictionary that phase 4 later fills with remote modules. The contract is the
-same: a handler gets an immutable snapshot and returns Allow/Deny plus emitted events. The in-process registration is a
-test seam and a migration device, not a lasting second mechanism. Whether it stays after phase 4 is left to the phase-4 cards
-(listed in V2_PHASES.md as a decision the card must raise, not made here).
+same: a handler gets an immutable snapshot and returns Allow/Deny plus emitted events. The in-process registration is
+not a throwaway: the owner decided (D49) that it stays permanently after phase 4 as a second adapter for core-shipped behaviors.
+There is one contract and one `(Module, Type)` lookup with two adapters, and the same contract tests run against both. It is not for
+example or third-party modules, and an in-process handler is not isolated and cannot be unloaded safely.
 
 ## 5. Entity and behavior model
 
@@ -459,7 +460,7 @@ kept is not decided by the owner; the draft's explicit verb table is left as a r
 
 ### 7.2 Output and rendering (D28)
 
-Core output to front ends is the existing `%^Color%^` markup string plus a **channel tag** (say, tell, room, combat, system).
+Core output to front ends is the existing `%^Color%^` markup string plus a **channel tag** (say, tell, room, combat, system, chat; D44).
 The telnet project converts markup to ANSI (the `ITerminalHandler`s move out of `MUD.Core/Formatting` into it); the web
 needs a markup-to-HTML converter with correct escaping. Structured spans are deferred. Modules use the existing channels. The `term`
 command becomes a front-end-local setting, with the stored preference still in `Account` (details in V2_PHASES.md phase 1).

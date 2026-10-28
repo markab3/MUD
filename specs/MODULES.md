@@ -451,4 +451,4 @@ Core spawns and supervises modules as child processes (token in env, connection 
   contract DTOs only, so unit tests need no sockets.
 - **Integration**: a test starting a real core against fake repositories (as `ServerLifecycleTests` does for telnet) with a real UDS in a temp dir and the trivial module of phase 4 (needs the gRPC packages restored).
 - **No contract tests (D26)**: no golden files, descriptor diffs or `buf` until the contract settles after phases 3-5. **No conformance suite (D25).**
-- **Module SDK helpers** (C#, optional, G1): connection loop, `Ping` loop, dev-token handling, a typed event router, a `ctx` wrapper that builds event records. Deliberately small; the protocol can be spoken without it.
+- **Module SDK helpers** (C#, optional, G1): connection loop, `Ping` loop, dev-token handling, a typed event router, a context wrapper (an object a behavior uses to call core: named methods that build event records). Deliberately small; the protocol can be spoken without it.
