@@ -7,6 +7,8 @@ using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using Microsoft.Extensions.DependencyInjection;
 using MUD.Telnet;
+using MUD.CoreApi;
+using MUD.Core.Sessions;
 using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Core.GameObjects;
@@ -16,7 +18,7 @@ using System.Reflection;
 
 namespace MUD.Core
 {
-    public class World
+    public class World : ICoreApi
     {
         public List<Player> Players;
 
@@ -59,6 +61,9 @@ namespace MUD.Core
         // Per-connection inbound accounting; touched from socket threads, so it is concurrent.
         private readonly System.Collections.Concurrent.ConcurrentDictionary<IClientConnection, ClientInbox> _inboxes =
             new System.Collections.Concurrent.ConcurrentDictionary<IClientConnection, ClientInbox>();
+
+        // Open sessions: session id to sink and player (decision D46). Safe from any thread.
+        private readonly SessionRegistry _sessionRegistry = new SessionRegistry();
 
         private readonly ManualResetEventSlim _stopped = new ManualResetEventSlim(false);
 
@@ -272,7 +277,9 @@ namespace MUD.Core
                 Interlocked.Decrement(ref inbox.Pending);
                 if (Interlocked.Increment(ref inbox.Dropped) >= MaxDroppedLinesBeforeDisconnect)
                 {
-                    client.DisconnectWithMessage("You are sending too much input. Goodbye.");
+                    var flooded = client as SessionConnection;
+                    if (flooded != null) { flooded.Terminate("You are sending too much input. Goodbye.", SessionEndReason.Flood, true); }
+                    else { client.DisconnectWithMessage("You are sending too much input. Goodbye."); }
                 }
                 else
                 {
@@ -281,6 +288,49 @@ namespace MUD.Core
                 return;
             }
             if (!_loop.Post(InboundItem.ForLine(client, line))) { Interlocked.Decrement(ref inbox.Pending); }
+        }
+
+        /// <summary>
+        /// ICoreApi: opens a session. Core generates the id and keeps the sink in its registry; the session is not
+        /// logged in yet. Safe from any thread; never blocks.
+        /// </summary>
+        public SessionId OpenSession(string frontEnd, string remoteKey, IFrontEndSink sink)
+        {
+            return _sessionRegistry.Open(frontEnd, remoteKey, sink, () => _shuttingDown).Id;
+        }
+
+        /// <summary>ICoreApi: the same as EnqueueLine for the session's connection, including the per-session pending cap. Unknown ids are ignored.</summary>
+        public void SubmitLine(SessionId id, string rawLine)
+        {
+            SessionConnection connection;
+            if (_sessionRegistry.TryGet(id, out connection)) { EnqueueLine(connection, rawLine); }
+        }
+
+        /// <summary>
+        /// ICoreApi: the front end has closed the session. The session leaves the registry and core stops calling
+        /// its sink; the logout then runs on the game thread exactly as EnqueueDisconnect does. Unknown ids are ignored.
+        /// </summary>
+        public void CloseSession(SessionId id, SessionEndReason reason)
+        {
+            SessionConnection connection;
+            if (_sessionRegistry.Remove(id, out connection))
+            {
+                connection.Detach();
+                EnqueueDisconnect(connection);
+            }
+        }
+
+        /// <summary>Number of open sessions in the registry.</summary>
+        public int OpenSessionCount { get { return _sessionRegistry.Count; } }
+
+        /// <summary>
+        /// The core-side connection for a session id, for hosts that still run the login dialogue against the
+        /// IClientConnection contract (until the login cut-over). Null for unknown ids.
+        /// </summary>
+        public IClientConnection GetSessionConnection(SessionId id)
+        {
+            SessionConnection connection;
+            return _sessionRegistry.TryGet(id, out connection) ? connection : null;
         }
 
         /// <summary>Called on socket threads when a connection closes, for any reason.</summary>
@@ -484,6 +534,8 @@ namespace MUD.Core
             {
                 _sessions.Remove(old);
                 old.Send("You have been logged in from another location.");
+                var oldSession = old as SessionConnection;
+                if (oldSession != null) { oldSession.MarkTakenOver(); }
             }
             player.ClearPromptHandler();
             player.Connection = newConnection;
@@ -547,7 +599,7 @@ namespace MUD.Core
             player.ReceiveMessage(LostLocationMessage);
         }
 
-        public bool DoCreateUser(string userName, string password, Client connectingClient)
+        public bool DoCreateUser(string userName, string password, IClientConnection connectingClient)
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
 

@@ -2,6 +2,8 @@
 using System.Net;
 using Microsoft.Extensions.Configuration;
 using MUD.Telnet;
+using MUD.CoreApi;
+using MUD.Core.Sessions;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using MUD.Core;
@@ -22,7 +24,9 @@ namespace MUD.Main
         private static World _gameWorld;
         private static Server _serverInstance;
         private static TelnetLimits _telnetLimits = TelnetLimits.FromEnvironment();
-        private static readonly ConditionalWeakTable<Client, LoginSession> _loginSessions = new ConditionalWeakTable<Client, LoginSession>();
+        private static readonly ConditionalWeakTable<IClientConnection, LoginSession> _loginSessions = new ConditionalWeakTable<IClientConnection, LoginSession>();
+        // The core session id of each telnet client; core generates the ids.
+        private static readonly ConditionalWeakTable<Client, object> _sessionIds = new ConditionalWeakTable<Client, object>();
         private static LoginThrottle _loginThrottle = new LoginThrottle(_telnetLimits.LoginMaxFailures, _telnetLimits.LoginThrottleDuration);
         private static string alternateMessage =
 @"
@@ -385,19 +389,23 @@ namespace MUD.Main
         {
             Console.WriteLine("CONNECTED: " + client);
 
-            client.DataReceived += (s, line) => _gameWorld.EnqueueLine(client, line);
+            SessionId sessionId = _gameWorld.OpenSession("telnet", client.RemoteKey, new LegacyConnectionSink(client));
+            _sessionIds.Add(client, sessionId);
+            IClientConnection connection = _gameWorld.GetSessionConnection(sessionId);
+            client.DataReceived += (s, line) => _gameWorld.SubmitLine(sessionId, line);
             client.Send(welcomeMessage);
             // Pre-login handling reads world state, so it runs on the game thread, after the welcome text.
             _gameWorld.Post(() =>
             {
-                messageReceived(client, "who");
-                client.Send("");
+                messageReceived(connection, "who");
+                connection.Send("");
             });
         }
 
         private static void clientDisconnected(object sender, Client client)
         {
-            _gameWorld.EnqueueDisconnect(client);
+            object sessionId;
+            if (_sessionIds.TryGetValue(client, out sessionId)) { _gameWorld.CloseSession((SessionId)sessionId, SessionEndReason.ClientClosed); }
             Console.WriteLine("DISCONNECTED: " + client);
         }
 
@@ -408,7 +416,7 @@ namespace MUD.Main
 
         private static void messageReceived(object sender, string message)
         {
-            Client client = (Client)sender;
+            IClientConnection client = (IClientConnection)sender;
             message = message.TrimEnd('\n').TrimEnd('\r');
 
             LoginSession session = _loginSessions.GetValue(client, k => new LoginSession(k, new WorldLoginHandler(_gameWorld, k), _loginThrottle));
@@ -422,7 +430,7 @@ namespace MUD.Main
             }
             else if (message == "quit" || message.StartsWith("quit "))
             {
-                client.Disconnect();
+                client.Disconnect(false);
             }
             else if (message == "who" || message.StartsWith("who "))
             {
@@ -457,16 +465,18 @@ namespace MUD.Main
             if (session.IsLoggedIn)
             {
                 // Lines from now on go to the player (World routes by connection).
-                client.IsLoggedIn = true;
+                var legacySink = ((SessionConnection)client).Sink as LegacyConnectionSink;
+                var telnetClient = legacySink == null ? null : legacySink.Connection as Client;
+                if (telnetClient != null) { telnetClient.IsLoggedIn = true; }
             }
         }
 
         private class WorldLoginHandler : ILoginHandler
         {
             private readonly World _world;
-            private readonly Client _client;
+            private readonly IClientConnection _client;
 
-            public WorldLoginHandler(World world, Client client)
+            public WorldLoginHandler(World world, IClientConnection client)
             {
                 _world = world;
                 _client = client;

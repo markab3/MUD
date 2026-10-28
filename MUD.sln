@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MUD.Web", "MUD.Web\MUD.Web.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MUD.Web.Tests", "MUD.Web.Tests\MUD.Web.Tests.csproj", "{3511F7C5-9297-4E63-8298-18520C43F76C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MUD.CoreApi", "MUD.CoreApi\MUD.CoreApi.csproj", "{0C651477-9F54-4A15-9854-C4CB4CE6C247}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -114,5 +116,17 @@ Global
 		{3511F7C5-9297-4E63-8298-18520C43F76C}.Release|x64.Build.0 = Release|Any CPU
 		{3511F7C5-9297-4E63-8298-18520C43F76C}.Release|x86.ActiveCfg = Release|Any CPU
 		{3511F7C5-9297-4E63-8298-18520C43F76C}.Release|x86.Build.0 = Release|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Debug|x64.Build.0 = Debug|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Debug|x86.Build.0 = Debug|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Release|x64.ActiveCfg = Release|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Release|x64.Build.0 = Release|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Release|x86.ActiveCfg = Release|Any CPU
+		{0C651477-9F54-4A15-9854-C4CB4CE6C247}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

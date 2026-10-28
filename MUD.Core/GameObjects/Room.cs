@@ -4,6 +4,7 @@ using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
+using MUD.CoreApi;
 using MUD.Core.Repositories.Interfaces;
 
 namespace MUD.Core.GameObjects
@@ -71,7 +72,7 @@ namespace MUD.Core.GameObjects
             _roomRepository = roomRepository;
         }
 
-        public void TellRoom(string message, Living[] exclusionList = null)
+        public void TellRoom(string message, Living[] exclusionList = null, OutputChannel channel = OutputChannel.Room)
         {
             var recipients = _occupants.ToList();
             if (exclusionList != null)
@@ -80,7 +81,7 @@ namespace MUD.Core.GameObjects
             }
             foreach (var currentOccupant in recipients)
             {
-                currentOccupant.ReceiveMessage(message);
+                currentOccupant.ReceiveMessage(message, channel);
             }
         }
 
