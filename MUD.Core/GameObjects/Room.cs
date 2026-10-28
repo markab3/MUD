@@ -9,8 +9,19 @@ using MUD.Core.Repositories.Interfaces;
 
 namespace MUD.Core.GameObjects
 {
-    public class Room : GameObject
+    public class Room : GameObject, MUD.Core.Components.IBehaviorHolder
     {
+        // Behavior entries (owner decisions D5, D53): stored as the embedded array "behaviors". Not dispatched yet.
+        [BsonElement("behaviors")]
+        public List<MUD.Core.Components.BehaviorRef> Behaviors
+        {
+            // Never null, including for a stored document that has no behaviors element.
+            get { return _behaviors ?? (_behaviors = new List<MUD.Core.Components.BehaviorRef>()); }
+            set { _behaviors = value; }
+        }
+
+        private List<MUD.Core.Components.BehaviorRef> _behaviors;
+
         // Area prefix this room belongs to (e.g. "castle"). Definition field.
         public string Area { get; set; }
 

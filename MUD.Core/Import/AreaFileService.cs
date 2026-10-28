@@ -21,7 +21,7 @@ namespace MUD.Core.Import
         public bool IsConfigured { get { return !string.IsNullOrWhiteSpace(_contentDirectory); } }
 
         // Imports <contentDirectory>/<area>.yaml. Returns lines suitable for showing to a user.
-        public List<string> ImportArea(string area, bool dryRun)
+        public List<string> ImportArea(string area, bool dryRun, bool replaceBehaviors = false)
         {
             var lines = new List<string>();
             if (!IsConfigured) { lines.Add("No content directory is configured (WorldSettings:ContentDirectory)."); return lines; }
@@ -34,7 +34,7 @@ namespace MUD.Core.Import
             var path = Path.Combine(_contentDirectory, area + ".yaml");
             if (!File.Exists(path)) { lines.Add("No such area file: " + path); return lines; }
 
-            var result = _importer.Import(File.ReadAllText(path, Encoding.UTF8), dryRun);
+            var result = _importer.Import(File.ReadAllText(path, Encoding.UTF8), dryRun, replaceBehaviors);
             Describe(area, result, lines);
             return lines;
         }
@@ -65,6 +65,8 @@ namespace MUD.Core.Import
                         plan.Action == ImportAction.Update ? " (" + string.Join(", ", plan.ChangedFields) + ")" : ""));
                 }
                 foreach (var orphan in result.Orphans) { lines.Add("  orphaned (kept): " + orphan); }
+                foreach (var skipped in result.SkippedBehaviors) { lines.Add("  " + skipped + " Use 'import <area> replace' to replace stored entries."); }
+                foreach (var replaced in result.ReplacedBehaviors) { lines.Add("  " + replaced); }
             }
         }
     }

@@ -12,8 +12,20 @@ using MUD.Core.Properties.PlayerProperties;
 
 namespace MUD.Core.GameObjects
 {
-    public class Living : GameObject
+    public class Living : GameObject, MUD.Core.Components.IBehaviorHolder
     {
+        // Behavior entries (owner decisions D5, D53): stored as the embedded array "behaviors", on players and NPCs.
+        // Not dispatched yet.
+        [BsonElement("behaviors")]
+        public List<MUD.Core.Components.BehaviorRef> Behaviors
+        {
+            // Never null, including for a stored document that has no behaviors element.
+            get { return _behaviors ?? (_behaviors = new List<MUD.Core.Components.BehaviorRef>()); }
+            set { _behaviors = value; }
+        }
+
+        private List<MUD.Core.Components.BehaviorRef> _behaviors;
+
         protected Room _currentLocation;
 
         protected World _world;

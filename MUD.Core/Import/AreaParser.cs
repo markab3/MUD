@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using MongoDB.Bson;
 using System.Text.RegularExpressions;
 using YamlDotNet.Core;
 using YamlDotNet.RepresentationModel;
@@ -116,7 +118,7 @@ namespace MUD.Core.Import
         private RoomDefinition ParseRoom(YamlMappingNode node, int index, string prefix, int? defaultZ)
         {
             var ctx = string.Format("rooms[{0}]", index);
-            CheckKeys(node, new[] { "key", "short", "long", "handles", "adjectives", "plurals", "coords", "exits", "features", "properties", "class" }, ctx);
+            CheckKeys(node, new[] { "key", "short", "long", "handles", "adjectives", "plurals", "coords", "exits", "features", "properties", "behaviors", "class" }, ctx);
 
             var room = new RoomDefinition();
             room.LocalKey = Scalar(node, "key", ctx, true);
@@ -212,7 +214,81 @@ namespace MUD.Core.Import
             }
 
             room.Properties = ParseProperties(node, ctx);
+            room.Behaviors = ParseBehaviors(node, ctx);
             return room;
+        }
+
+        // The 'behaviors:' list of a room: hook, module, type, and optional priority, config (a mapping) and
+        // schema_version. Every problem is collected; a duplicate (hook, module, type) in one list is an error.
+        private List<MUD.Core.Components.BehaviorRef> ParseBehaviors(YamlMappingNode owner, string ctx)
+        {
+            var result = new List<MUD.Core.Components.BehaviorRef>();
+            var bctx = ctx + ".behaviors";
+            foreach (var behaviorNode in Sequence(owner, "behaviors", ctx))
+            {
+                var map = behaviorNode as YamlMappingNode;
+                if (map == null) { _errors.Add(bctx + ": each behavior must be a mapping."); continue; }
+                CheckKeys(map, new[] { "hook", "module", "type", "priority", "config", "schema_version" }, bctx);
+
+                var entry = new MUD.Core.Components.BehaviorRef
+                {
+                    Hook = Scalar(map, "hook", bctx, true),
+                    Module = Scalar(map, "module", bctx, true),
+                    Type = Scalar(map, "type", bctx, true),
+                    Priority = Int(map, "priority", bctx) ?? 0,
+                    SchemaVersion = Int(map, "schema_version", bctx) ?? 1
+                };
+
+                var configNode = Get(map, "config");
+                if (configNode != null)
+                {
+                    var configMap = configNode as YamlMappingNode;
+                    if (configMap == null) { _errors.Add(bctx + ": 'config' must be a mapping."); }
+                    else { entry.Config = (BsonDocument)ToBson(configMap); }
+                }
+
+                if (entry.Hook == null || entry.Module == null || entry.Type == null) { continue; }
+                var problem = entry.Validate();
+                if (problem != null) { _errors.Add(string.Format("{0} ({1}): {2}", bctx, entry, problem)); continue; }
+                if (result.Any(e => e.HasSameBinding(entry.Hook, entry.Module, entry.Type)))
+                {
+                    _errors.Add(string.Format("{0}: duplicate behavior ({1}).", bctx, entry));
+                    continue;
+                }
+                result.Add(entry);
+            }
+            return result;
+        }
+
+        // Converts a YAML node to BSON. Plain scalars become booleans, integers, doubles or null where they read as
+        // such; quoted scalars are always strings.
+        private static BsonValue ToBson(YamlNode node)
+        {
+            var map = node as YamlMappingNode;
+            if (map != null)
+            {
+                var doc = new BsonDocument();
+                foreach (var pair in map.Children)
+                {
+                    var key = ((pair.Key as YamlScalarNode)?.Value) ?? "";
+                    doc[key] = ToBson(pair.Value);
+                }
+                return doc;
+            }
+            var seq = node as YamlSequenceNode;
+            if (seq != null) { return new BsonArray(seq.Children.Select(ToBson)); }
+
+            var scalar = (YamlScalarNode)node;
+            var text = scalar.Value;
+            if (text == null) { return BsonNull.Value; }
+            if (scalar.Style != ScalarStyle.Plain) { return new BsonString(text); }
+            if (text == "~" || text == "null") { return BsonNull.Value; }
+            if (text == "true") { return BsonBoolean.True; }
+            if (text == "false") { return BsonBoolean.False; }
+            if (int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int i)) { return new BsonInt32(i); }
+            if (long.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long l)) { return new BsonInt64(l); }
+            if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double d) && !double.IsNaN(d) && !double.IsInfinity(d)) { return new BsonDouble(d); }
+            return new BsonString(text);
         }
 
         private List<SearchPropertyDefinition> ParseProperties(YamlMappingNode owner, string ctx)
