@@ -412,7 +412,9 @@ namespace MUD.Core.GameObjects
             {
                 message = selectedTerminalHandler.ResolveOutput(message);
             }
-            _connection.Send(message);
+            var taggedConnection = _connection as MUD.Core.Sessions.ITaggedConnection;
+            if (taggedConnection != null) { taggedConnection.Send(message, DeliveryChannel); }
+            else { _connection.Send(message); }
         }
 
         public override void DoHeartbeat()

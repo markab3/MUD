@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
+using MUD.CoreApi;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using MUD.Core.Properties;
@@ -57,6 +58,26 @@ namespace MUD.Core.GameObjects
         }
 
         public virtual void ReceiveMessage(string message) { }
+
+        /// <summary>
+        /// Delivers a message tagged with an output channel. By default it is the same as the untagged
+        /// ReceiveMessage(string), so a Living that only overrides that method still receives every message.
+        /// Untagged messages are on the System channel.
+        /// </summary>
+        public virtual void ReceiveMessage(string message, OutputChannel channel)
+        {
+            // The channel is carried to the one-argument method (which subclasses override) for the duration of the call.
+            OutputChannel previousChannel = _deliveryChannel;
+            _deliveryChannel = channel;
+            try { ReceiveMessage(message); }
+            finally { _deliveryChannel = previousChannel; }
+        }
+
+        private OutputChannel _deliveryChannel = OutputChannel.System;
+
+        /// <summary>The channel of the message being delivered by ReceiveMessage right now; System for untagged messages.</summary>
+        [BsonIgnore]
+        protected OutputChannel DeliveryChannel { get { return _deliveryChannel; } }
 
         public virtual void DoHeartbeat()
         {

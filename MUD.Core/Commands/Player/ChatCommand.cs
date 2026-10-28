@@ -1,4 +1,5 @@
 using MUD.Core.GameObjects;
+using MUD.CoreApi;
 
 namespace MUD.Core.Commands
 {
@@ -36,7 +37,7 @@ namespace MUD.Core.Commands
 
             foreach (Player currentPlayer in _world.Players)
             {
-                currentPlayer.ReceiveMessage(string.Format("(Chat) {0}: {1}", ((Player)commandIssuer).PlayerName, text));
+                currentPlayer.ReceiveMessage(string.Format("(Chat) {0}: {1}", ((Player)commandIssuer).PlayerName, text), OutputChannel.Chat);
             }
             if (shortened) { commandIssuer.ReceiveMessage(CommandExtensions.MessageShortenedNotice); }
         }
