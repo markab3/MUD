@@ -42,6 +42,13 @@ namespace MUD.Core.Import
         // Rooms stored under this area whose key is no longer in the file. Never deleted.
         public List<string> Orphans { get; set; } = new List<string>();
 
+        // Behavior entries of the file that were NOT written because the stored room already has an entry with the
+        // same (hook, module, type). Reported, never silently dropped (owner decision D39).
+        public List<string> SkippedBehaviors { get; set; } = new List<string>();
+
+        // Stored entries replaced by the file's entry because the replace flag was set.
+        public List<string> ReplacedBehaviors { get; set; } = new List<string>();
+
         public bool DryRun { get; set; }
 
         public bool Success { get { return Errors.Count == 0; } }
@@ -67,7 +74,7 @@ namespace MUD.Core.Import
         public static readonly string[] DefinitionFields = new[]
         {
             "ShortDescription", "LongDescription", "Handles", "Adjectives", "Plurals",
-            "Exits", "Features", "ExtendedProperties", "Area", "X", "Y", "Z"
+            "Exits", "Features", "ExtendedProperties", "behaviors", "Area", "X", "Y", "Z"
         };
 
         private readonly IRoomImportStore _store;
@@ -77,7 +84,10 @@ namespace MUD.Core.Import
             _store = store;
         }
 
-        public ImportResult Import(string yaml, bool dryRun = false)
+        // replaceBehaviors: by default a behavior entry in the file whose (hook, module, type) already exists on the
+        // stored room is reported and skipped, and stored entries absent from the file are kept (the database is the
+        // source of truth, D39). With the flag the file's entry replaces the stored one; absent entries are still kept.
+        public ImportResult Import(string yaml, bool dryRun = false, bool replaceBehaviors = false)
         {
             var result = new ImportResult { DryRun = dryRun };
 
@@ -94,7 +104,7 @@ namespace MUD.Core.Import
             foreach (var room in area.Rooms)
             {
                 var existing = _store.Find(room.FullKey);
-                var desired = BuildDesiredFields(room, area.Prefix, existing);
+                var desired = BuildDesiredFields(room, area.Prefix, existing, result, replaceBehaviors);
                 var changed = new BsonDocument();
                 foreach (var element in desired)
                 {
@@ -232,7 +242,7 @@ namespace MUD.Core.Import
 
         // Builds the complete desired value of every definition field for one room, merging in
         // state that lives inside matched list elements.
-        private BsonDocument BuildDesiredFields(RoomDefinition def, string prefix, BsonDocument existing)
+        private BsonDocument BuildDesiredFields(RoomDefinition def, string prefix, BsonDocument existing, ImportResult result, bool replaceBehaviors)
         {
             var carrier = new Room(null)
             {
@@ -248,6 +258,7 @@ namespace MUD.Core.Import
                 Z = def.Z,
                 Exits = def.Exits.Select(e => new Exit { Name = e.Dir, DestinationId = e.To }).ToList(),
                 ExtendedProperties = def.Properties.Select(ToProperty).ToList(),
+                Behaviors = def.Behaviors.Select(b => b.Clone()).ToList(),
                 Features = def.Features.Select(f =>
                 {
                     var feature = new Feature
@@ -292,8 +303,54 @@ namespace MUD.Core.Import
                     }
                 }
                 desired["Features"] = features;
+
+                var existingBehaviors = existing.GetValue("behaviors", BsonNull.Value) as BsonArray;
+                var merged = MergeBehaviors(def.FullKey, existingBehaviors, desired["behaviors"].AsBsonArray, result, replaceBehaviors);
+                if (merged.Count == 0 && existingBehaviors == null) { desired.Remove("behaviors"); }
+                else { desired["behaviors"] = merged; }
             }
             return desired;
+        }
+
+        // Collision-safe merge of behavior entries (owner decision D39). Stored entries are always kept, in their
+        // order. A file entry whose (hook, module, type) is already stored is skipped and reported, or replaces the
+        // stored entry in place when replaceBehaviors is set. File entries that are new are appended in file order.
+        private static BsonArray MergeBehaviors(string roomKey, BsonArray stored, BsonArray authored, ImportResult result, bool replaceBehaviors)
+        {
+            var merged = new BsonArray();
+            if (stored != null) { foreach (var value in stored) { merged.Add(value.DeepClone()); } }
+
+            foreach (var authoredValue in authored)
+            {
+                var authoredDoc = authoredValue.AsBsonDocument;
+                var label = string.Format("{0} {1} {2}", authoredDoc["hook"], authoredDoc["module"], authoredDoc["type"]);
+                int index = -1;
+                for (int i = 0; i < merged.Count; i++)
+                {
+                    var storedDoc = merged[i] as BsonDocument;
+                    if (storedDoc != null && SameBinding(storedDoc, authoredDoc)) { index = i; break; }
+                }
+
+                if (index < 0) { merged.Add(authoredDoc); }
+                else if (replaceBehaviors)
+                {
+                    if (!merged[index].Equals(authoredDoc)) { result.ReplacedBehaviors.Add(string.Format("Room '{0}': behavior ({1}) replaced.", roomKey, label)); }
+                    merged[index] = authoredDoc;
+                }
+                else if (!merged[index].Equals(authoredDoc))
+                {
+                    // An identical stored entry is already in place: nothing to report. Only a differing one is a collision.
+                    result.SkippedBehaviors.Add(string.Format("Room '{0}': behavior ({1}) already exists; skipped.", roomKey, label));
+                }
+            }
+            return merged;
+        }
+
+        private static bool SameBinding(BsonDocument a, BsonDocument b)
+        {
+            return a.GetValue("hook", BsonNull.Value).Equals(b.GetValue("hook", BsonNull.Value))
+                && a.GetValue("module", BsonNull.Value).Equals(b.GetValue("module", BsonNull.Value))
+                && a.GetValue("type", BsonNull.Value).Equals(b.GetValue("type", BsonNull.Value));
         }
 
         private static BsonValue ById(BsonDocument doc) { return doc.GetValue("_id", BsonNull.Value); }

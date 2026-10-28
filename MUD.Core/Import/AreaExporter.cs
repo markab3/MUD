@@ -173,7 +173,32 @@ namespace MUD.Core.Import
             }
 
             room.Properties = BuildProperties(doc, ctx, errors);
+            room.Behaviors = BuildBehaviors(doc, ctx, errors);
             return room;
+        }
+
+        private static List<MUD.Core.Components.BehaviorRef> BuildBehaviors(BsonDocument owner, string ctx, List<string> errors)
+        {
+            var result = new List<MUD.Core.Components.BehaviorRef>();
+            foreach (var behaviorDoc in Docs(owner, "behaviors", ctx, errors))
+            {
+                var entry = new MUD.Core.Components.BehaviorRef
+                {
+                    Hook = Str(behaviorDoc, "hook"),
+                    Module = Str(behaviorDoc, "module"),
+                    Type = Str(behaviorDoc, "type"),
+                    Priority = Int(behaviorDoc, "priority") ?? 0,
+                    SchemaVersion = Int(behaviorDoc, "schemaVersion") ?? 1
+                };
+                var config = behaviorDoc.GetValue("config", BsonNull.Value);
+                if (config.IsBsonDocument) { entry.Config = config.AsBsonDocument; }
+                else if (!config.IsBsonNull) { errors.Add(string.Format("{0}, behavior '{1}': config is not a document.", ctx, entry)); continue; }
+
+                var problem = entry.Validate();
+                if (problem != null) { errors.Add(string.Format("{0}, behavior '{1}': {2}", ctx, entry, problem)); continue; }
+                result.Add(entry);
+            }
+            return result;
         }
 
         private static List<SearchPropertyDefinition> BuildProperties(BsonDocument owner, string ctx, List<string> errors)
@@ -304,6 +329,45 @@ namespace MUD.Core.Import
             WriteExits(sb, body, room.Exits, prefix);
             WriteFeatures(sb, body, room.Features);
             WriteProperties(sb, body, room.Properties);
+            WriteBehaviors(sb, body, room.Behaviors);
+        }
+
+        private static void WriteBehaviors(StringBuilder sb, string indent, List<MUD.Core.Components.BehaviorRef> behaviors)
+        {
+            if (behaviors.Count == 0) { sb.Append(indent).Append("behaviors: []\n"); return; }
+            sb.Append(indent).Append("behaviors:\n");
+            var item = indent + "    ";
+            foreach (var behavior in behaviors)
+            {
+                sb.Append(indent).Append("  - hook: ").Append(Quote(behavior.Hook)).Append('\n');
+                sb.Append(item).Append("module: ").Append(Scalar(behavior.Module)).Append('\n');
+                sb.Append(item).Append("type: ").Append(Scalar(behavior.Type)).Append('\n');
+                sb.Append(item).Append("priority: ").Append(Num(behavior.Priority)).Append('\n');
+                sb.Append(item).Append("schema_version: ").Append(Num(behavior.SchemaVersion)).Append('\n');
+                sb.Append(item).Append("config: ").Append(FlowValue(behavior.Config)).Append('\n');
+            }
+        }
+
+        // A BSON value as a YAML flow value (JSON-style, which YAML reads). Strings are always quoted, so they come
+        // back as strings; numbers, booleans and null are plain. Types the importer cannot read back are refused by
+        // the dry-run import check, which would not match.
+        private static string FlowValue(BsonValue value)
+        {
+            if (value.IsBsonDocument)
+            {
+                return "{" + string.Join(", ", value.AsBsonDocument.Select(e => Quote(e.Name) + ": " + FlowValue(e.Value))) + "}";
+            }
+            if (value.IsBsonArray) { return "[" + string.Join(", ", value.AsBsonArray.Select(FlowValue)) + "]"; }
+            if (value.IsString) { return Quote(value.AsString); }
+            if (value.IsBoolean) { return value.AsBoolean ? "true" : "false"; }
+            if (value.IsInt32) { return Num(value.AsInt32); }
+            if (value.IsInt64) { return value.AsInt64.ToString(CultureInfo.InvariantCulture); }
+            if (value.IsDouble)
+            {
+                var text = value.AsDouble.ToString("R", CultureInfo.InvariantCulture);
+                return text.IndexOfAny(new[] { '.', 'E', 'e' }) < 0 ? text + ".0" : text;
+            }
+            return "null";
         }
 
         private static void WriteCoords(StringBuilder sb, string indent, RoomDefinition room)

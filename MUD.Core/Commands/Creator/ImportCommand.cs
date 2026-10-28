@@ -14,7 +14,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Creator; }
 
-        public string HelpText { get => "Import an area file from the content directory. Only authored definition fields are overwritten; items and other runtime state are kept.\r\n\r\nSyntax: import <area> [dry]"; }
+        public string HelpText { get => "Import an area file from the content directory. Only authored definition fields are overwritten; items and other runtime state are kept. A behavior entry in the file whose hook, module and type already exist on the stored room is reported and skipped; add 'replace' to replace it.\r\n\r\nSyntax: import <area> [dry] [replace]"; }
 
         public ImportCommand(IRoomRepository roomRepository, WorldSettings settings)
         {
@@ -37,13 +37,14 @@ namespace MUD.Core.Commands
 
             var args = (commandArgs != null && commandArgs.Length > 0 ? commandArgs[0] as string : null) ?? "";
             var parts = args.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 0 || parts.Length > 2 || (parts.Length == 2 && parts[1] != "dry"))
+            var flags = parts.Skip(1).ToList();
+            if (parts.Length == 0 || flags.Count > 2 || flags.Any(f => f != "dry" && f != "replace") || flags.Distinct().Count() != flags.Count)
             {
-                commandIssuer.ReceiveMessage("Syntax: import <area> [dry]");
+                commandIssuer.ReceiveMessage("Syntax: import <area> [dry] [replace]");
                 return;
             }
 
-            foreach (var line in _service.ImportArea(parts[0], parts.Length == 2))
+            foreach (var line in _service.ImportArea(parts[0], flags.Contains("dry"), flags.Contains("replace")))
             {
                 commandIssuer.ReceiveMessage(line);
             }
