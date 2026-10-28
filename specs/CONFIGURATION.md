@@ -14,7 +14,7 @@ executable). Nothing secret is committed.
 | Port | `--port`, else env `MUD_PORT`, else `TelnetSettings:Port` | `7680` | |
 | Start room | `WorldSettings:StartRoomKey` | required | see ROOM_FILES.md |
 | Content directory | `WorldSettings:ContentDirectory` | `Content` | relative to the executable |
-| Import on startup | `WorldSettings:ImportOnStartup` | `true` | |
+| Import on startup | `WorldSettings:ImportOnStartup` | `false` | The database is the source of truth. Set `true` only to import the content directory at every start; see "Importing area files" below |
 
 Which project reads what: `MUD.Main` reads every setting above and is the only place
 that does. The telnet limits (`MUD_*` variables read by `TelnetLimits.FromEnvironment`
@@ -30,6 +30,29 @@ Local run:
 ```bash
 MUD_MONGO_URI="mongodb://localhost:27017" dotnet run --project MUD.Main -- --ip 127.0.0.1 --port 7680
 ```
+
+### Importing area files (manual, one-off)
+
+Since V2 (D39, D41) the database is the only source of truth and the area YAML
+files are an optional, manually triggered import and export format. There is no
+recurring sync, so `WorldSettings:ImportOnStartup` defaults to `false`, both in
+`WorldSettings` and in `MUD.Main/appsettings.json`. If the setting is missing or
+not a valid boolean, `MUD.Main` also treats it as `false`.
+
+To load a content file into a fresh or existing database:
+
+1. Put the area file in the content directory (`WorldSettings:ContentDirectory`,
+   default `Content`, relative to the executable).
+2. Log in as a creator and run `import <area> [dry] [replace]`. `dry` reports what
+   would change without writing. Only authored definition fields are written;
+   items and other runtime state are kept. A behavior entry whose hook, module
+   and type already exist on the stored room is reported and skipped unless
+   `replace` is given, so an import never silently overwrites.
+3. `export area <prefix>` and `export room <full key>` write the other direction.
+
+Setting `WorldSettings:ImportOnStartup` to `true` makes `World` import every
+`*.yaml` file in the content directory at each start. That is the old behavior,
+kept only as an explicit opt-in (for example to rebuild a throwaway database).
 
 ### The service environment files
 
