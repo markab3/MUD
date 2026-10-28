@@ -147,6 +147,7 @@ namespace MUD.Core.GameObjects
             Handles = source.Handles;
             Adjectives = source.Adjectives;
             Plurals = source.Plurals;
+            Components = source.Components;
             ExtendedProperties = source.ExtendedProperties;
             Features = source.Features;
             Exits = source.Exits;
