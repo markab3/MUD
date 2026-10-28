@@ -261,7 +261,7 @@ namespace MUD.Main
                 contentDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, contentDirectory);
             }
             bool importOnStartup;
-            if (!bool.TryParse(config["WorldSettings:ImportOnStartup"], out importOnStartup)) { importOnStartup = true; }
+            if (!bool.TryParse(config["WorldSettings:ImportOnStartup"], out importOnStartup)) { importOnStartup = false; }
             _gameWorld = new World(dbClient, new WorldSettings { StartRoomKey = startRoomKey, DatabaseName = databaseName, ContentDirectory = contentDirectory, ImportOnStartup = importOnStartup });
             try
             {
