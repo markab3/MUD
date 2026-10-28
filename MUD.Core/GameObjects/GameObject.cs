@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MUD.Core.Components;
-using MUD.Core.Properties;
 using MUD.Data;
 
 namespace MUD.Core.GameObjects
@@ -20,8 +19,6 @@ namespace MUD.Core.GameObjects
         public List<string> Adjectives { get; set; } = new List<string>();
 
         public List<string> Handles { get; set; } = new List<string>();
-
-        public List<ExtendedProperty> ExtendedProperties { get; set; } = new List<ExtendedProperty>();
 
         // Module-owned components, stored as components.<module>.<name>. Core does not interpret the data: it is
         // kept as BSON and written back exactly as it was read, including components of modules that are not

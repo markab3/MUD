@@ -144,16 +144,16 @@ rooms:
             var importer = new AreaImporter(store);
             importer.Import(Area);
 
-            var prop = store.Docs["t.hall"]["ExtendedProperties"].AsBsonArray[0].AsBsonDocument;
-            prop["NextRewardTicks"] = 12345L; // simulated persisted cooldown state
+            var prop = store.Docs["t.hall"]["search"]["entries"].AsBsonArray[0].AsBsonDocument;
+            prop["nextRewardAt"] = 12345L; // simulated persisted cooldown state
             store.Docs["t.hall"]["SomeLaterSystemField"] = "keep me";
 
             var result = importer.Import(Replace(Area, "refresh_ms: 1000", "refresh_ms: 2000"));
 
             Assert.True(result.Success);
-            var after = store.Docs["t.hall"]["ExtendedProperties"].AsBsonArray[0].AsBsonDocument;
-            Assert.Equal(2000, after["RefreshInterval"].AsInt32);
-            Assert.Equal(12345L, after["NextRewardTicks"].AsInt64);
+            var after = store.Docs["t.hall"]["search"]["entries"].AsBsonArray[0].AsBsonDocument;
+            Assert.Equal(2000, after["refreshMilliseconds"].AsInt32);
+            Assert.Equal(12345L, after["nextRewardAt"].AsInt64);
             Assert.Equal("keep me", store.Docs["t.hall"]["SomeLaterSystemField"].AsString);
         }
 

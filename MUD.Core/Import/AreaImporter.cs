@@ -4,7 +4,6 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using MongoDB.Bson;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties.RoomProperties;
 
 namespace MUD.Core.Import
 {
@@ -74,7 +73,7 @@ namespace MUD.Core.Import
         public static readonly string[] DefinitionFields = new[]
         {
             "ShortDescription", "LongDescription", "Handles", "Adjectives", "Plurals",
-            "Exits", "Features", "ExtendedProperties", "behaviors", "Area", "X", "Y", "Z"
+            "Exits", "Features", "search", "behaviors", "Area", "X", "Y", "Z"
         };
 
         private readonly IRoomImportStore _store;
@@ -184,13 +183,6 @@ namespace MUD.Core.Import
                 {
                     errors.Add(string.Format("Room '{0}': duplicate property id '{1}'.", room.FullKey, dup.Key));
                 }
-                foreach (var feature in room.Features)
-                {
-                    foreach (var dup in feature.Properties.GroupBy(p => p.Id).Where(g => g.Key != null && g.Count() > 1))
-                    {
-                        errors.Add(string.Format("Room '{0}', feature '{1}': duplicate property id '{2}'.", room.FullKey, feature.Short, dup.Key));
-                    }
-                }
             }
 
             // Expand 'reverse' exits (in memory, before the dangling check).
@@ -257,7 +249,7 @@ namespace MUD.Core.Import
                 Y = def.Y,
                 Z = def.Z,
                 Exits = def.Exits.Select(e => new Exit { Name = e.Dir, DestinationId = e.To }).ToList(),
-                ExtendedProperties = def.Properties.Select(ToProperty).ToList(),
+                Search = new MUD.Core.Components.Search { Entries = def.Properties.Select(ToSearchEntry).ToList() },
                 Behaviors = def.Behaviors.Select(b => b.Clone()).ToList(),
                 Features = def.Features.Select(f =>
                 {
@@ -271,7 +263,6 @@ namespace MUD.Core.Import
                         Handles = new List<string>(f.Handles),
                         Adjectives = new List<string>(f.Adjectives),
                         Plurals = new List<string>(f.Plurals),
-                        ExtendedProperties = f.Properties.Select(ToProperty).ToList()
                     };
                     return feature;
                 }).ToList()
@@ -287,21 +278,14 @@ namespace MUD.Core.Import
             if (existing != null)
             {
                 // Keep state inside matched elements (spec 6.2 element-level merge).
-                var existingProps = existing.GetValue("ExtendedProperties", BsonNull.Value) as BsonArray;
-                desired["ExtendedProperties"] = MergeElements(existingProps, desired["ExtendedProperties"].AsBsonArray, ById);
+                // The search component keeps the stored cooldown (nextRewardAt) of every entry that has the same id.
+                var existingSearch = existing.GetValue("search", BsonNull.Value) as BsonDocument;
+                var existingEntries = existingSearch == null ? null : existingSearch.GetValue("entries", BsonNull.Value) as BsonArray;
+                var mergedEntries = MergeElements(existingEntries, desired["search"].AsBsonDocument["entries"].AsBsonArray, SearchEntryId);
+                desired["search"] = new BsonDocument("entries", mergedEntries);
 
                 var existingFeatures = existing.GetValue("Features", BsonNull.Value) as BsonArray;
                 var features = MergeElements(existingFeatures, desired["Features"].AsBsonArray, ByShort);
-                foreach (var featureValue in features)
-                {
-                    var featureDoc = featureValue.AsBsonDocument;
-                    var oldFeature = existingFeatures == null ? null : existingFeatures.OfType<BsonDocument>().FirstOrDefault(o => o["_id"] == featureDoc["_id"]);
-                    if (oldFeature != null)
-                    {
-                        var oldProps = oldFeature.GetValue("ExtendedProperties", BsonNull.Value) as BsonArray;
-                        featureDoc["ExtendedProperties"] = MergeElements(oldProps, featureDoc["ExtendedProperties"].AsBsonArray, ById);
-                    }
-                }
                 desired["Features"] = features;
 
                 var existingBehaviors = existing.GetValue("behaviors", BsonNull.Value) as BsonArray;
@@ -384,13 +368,15 @@ namespace MUD.Core.Import
             return merged;
         }
 
-        private static MUD.Core.Properties.ExtendedProperty ToProperty(SearchPropertyDefinition def)
+        private static BsonValue SearchEntryId(BsonDocument doc) { return doc.GetValue("id", BsonNull.Value); }
+
+        private static MUD.Core.Components.SearchEntry ToSearchEntry(SearchPropertyDefinition def)
         {
-            return new BasicSearchProperty
+            return new MUD.Core.Components.SearchEntry
             {
-                Id = def.Id,
-                SearchTarget = def.Target,
-                RefreshInterval = def.RefreshMs,
+                EntryId = def.Id,
+                Target = def.Target,
+                RefreshMilliseconds = def.RefreshMs,
                 Reward = new InventoryItem
                 {
                     Id = def.Id + ".reward",

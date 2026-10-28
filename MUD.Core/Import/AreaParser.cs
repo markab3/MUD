@@ -197,7 +197,7 @@ namespace MUD.Core.Import
             {
                 var featureMap = featureNode as YamlMappingNode;
                 if (featureMap == null) { _errors.Add(ctx + ": each feature must be a mapping."); continue; }
-                CheckKeys(featureMap, new[] { "short", "long", "room_line", "detail", "handles", "adjectives", "plurals", "properties" }, ctx + ".features");
+                CheckKeys(featureMap, new[] { "short", "long", "room_line", "detail", "handles", "adjectives", "plurals" }, ctx + ".features");
                 var fctx = ctx + ".features";
                 var feature = new FeatureDefinition
                 {
@@ -209,7 +209,6 @@ namespace MUD.Core.Import
                     Adjectives = StringList(featureMap, "adjectives", fctx),
                     Plurals = StringList(featureMap, "plurals", fctx)
                 };
-                feature.Properties = ParseProperties(featureMap, fctx);
                 room.Features.Add(feature);
             }
 

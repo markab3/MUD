@@ -5,7 +5,6 @@ using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
-using MUD.Core.Properties;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Data;
 using MUD.CoreApi;

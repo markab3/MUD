@@ -72,11 +72,9 @@ namespace MUD.Core.Import
         public List<string> Adjectives { get; set; } = new List<string>();
 
         public List<string> Plurals { get; set; } = new List<string>();
-
-        public List<SearchPropertyDefinition> Properties { get; set; } = new List<SearchPropertyDefinition>();
     }
 
-    // The only room-file behavior today: "search" -> BasicSearchProperty.
+    // The only room-file behavior today: "search" -> an entry of the room's search component.
     public class SearchPropertyDefinition
     {
         public string Id { get; set; }
