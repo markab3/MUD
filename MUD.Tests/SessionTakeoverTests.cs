@@ -1,9 +1,10 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using MUD.Core;
 using MUD.Core.Commands;
 using MUD.Core.GameObjects;
-using MUD.Telnet;
+using MUD.CoreApi;
 using Xunit;
 
 namespace MUD.Tests
@@ -17,16 +18,26 @@ namespace MUD.Tests
         }
 
         // Runs the game thread's handling of a Disconnected item without needing the loop thread.
-        private static void DeliverDisconnect(World world, IClientConnection client)
+        private static void DeliverDisconnect(World world, SessionId client)
         {
             var method = typeof(World).GetMethod("handleInbound", BindingFlags.Instance | BindingFlags.NonPublic);
             method.Invoke(world, new object[] { InboundItem.ForDisconnected(client) });
         }
 
-        private static Player LoggedInPlayer(World world, FakePlayerRepo repo, FakeConnection connection)
+        // A fake front end and the id of the session opened for it.
+        private class Session
+        {
+            public readonly FakeSink Sink = new FakeSink();
+            public readonly SessionId Id;
+            public Session(World world) { Id = world.OpenSession("test", "test", Sink); }
+            public List<string> Sent { get { return Sink.Sent; } }
+            public int Closes { get { return Sink.Events.Count(e => e.StartsWith("close:")); } }
+        }
+
+        private static Player LoggedInPlayer(World world, FakePlayerRepo repo, Session session)
         {
             var player = new Player(world, new CommandQueue(new FakeClock()), repo) { Id = "p.tester", PlayerName = "tester", Password = "x" };
-            player.Connection = connection;
+            world.AttachPlayer(player, session.Id);
             player.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
             world.AddPlayer(player);
             return player;
@@ -37,17 +48,17 @@ namespace MUD.Tests
         {
             var world = NewWorld();
             var repo = new FakePlayerRepo();
-            var oldConnection = new FakeConnection();
-            var newConnection = new FakeConnection();
+            var oldConnection = new Session(world);
+            var newConnection = new Session(world);
             var player = LoggedInPlayer(world, repo, oldConnection);
 
-            world.TakeOverSession(player, newConnection);
+            world.TakeOverSession(player, newConnection.Id);
 
             Assert.Equal(1, world.Players.Count(p => p.PlayerName == "tester"));
-            Assert.Same(newConnection, player.Connection);
+            Assert.Equal(newConnection.Id, player.SessionId);
             Assert.Equal(PlayerConnectionStatuses.LoggedIn, player.ConnectionStatus);
             Assert.Contains("You have been logged in from another location.", oldConnection.Sent);
-            Assert.Equal(1, oldConnection.Events.Count(e => e == "disconnect"));
+            Assert.Equal(1, oldConnection.Closes);
             Assert.Contains(newConnection.Sent, s => s.Contains("Reconnecting"));
             Assert.DoesNotContain("Thanks for playing!", oldConnection.Sent);
             Assert.Equal(0, repo.ReplaceCount); // no logout save
@@ -58,18 +69,18 @@ namespace MUD.Tests
         {
             var world = NewWorld();
             var repo = new FakePlayerRepo();
-            var oldConnection = new FakeConnection();
-            var newConnection = new FakeConnection();
+            var oldConnection = new Session(world);
+            var newConnection = new Session(world);
             var player = LoggedInPlayer(world, repo, oldConnection);
 
-            world.TakeOverSession(player, newConnection);
-            DeliverDisconnect(world, oldConnection); // the closed old socket reports its disconnect
+            world.TakeOverSession(player, newConnection.Id);
+            DeliverDisconnect(world, oldConnection.Id); // the closed old socket reports its disconnect
 
             Assert.Contains(player, world.Players);
             Assert.Equal(PlayerConnectionStatuses.LoggedIn, player.ConnectionStatus);
             Assert.Equal(0, repo.ReplaceCount);
             Assert.DoesNotContain("Thanks for playing!", newConnection.Sent);
-            Assert.Equal(0, newConnection.Events.Count(e => e == "disconnect"));
+            Assert.Equal(0, newConnection.Closes);
         }
 
         [Fact]
@@ -77,12 +88,12 @@ namespace MUD.Tests
         {
             var world = NewWorld();
             var repo = new FakePlayerRepo();
-            var oldConnection = new FakeConnection();
-            var newConnection = new FakeConnection();
+            var oldConnection = new Session(world);
+            var newConnection = new Session(world);
             var player = LoggedInPlayer(world, repo, oldConnection);
 
-            world.TakeOverSession(player, newConnection);
-            DeliverDisconnect(world, newConnection);
+            world.TakeOverSession(player, newConnection.Id);
+            DeliverDisconnect(world, newConnection.Id);
 
             Assert.DoesNotContain(player, world.Players);
             Assert.Equal(PlayerConnectionStatuses.Offline, player.ConnectionStatus);

@@ -18,12 +18,14 @@ namespace MUD.Tests
     public class FakeSink : IFrontEndSink
     {
         public readonly List<string> Events = new List<string>();
+        /// <summary>Every text shown to the user, in order: output lines and prompts.</summary>
+        public readonly List<string> Sent = new List<string>();
         public readonly List<(SessionId Id, OutputChannel Channel, string Text)> Outputs = new List<(SessionId, OutputChannel, string)>();
         public readonly List<SessionEndReason> Ended = new List<SessionEndReason>();
 
         public void Output(SessionId id, OutputChannel channel, string markupText, bool flush)
         {
-            lock (Events) { Outputs.Add((id, channel, markupText)); Events.Add("output:" + markupText); }
+            lock (Events) { Outputs.Add((id, channel, markupText)); Sent.Add(markupText); Events.Add("output:" + markupText); }
         }
 
         public void SetEchoHidden(SessionId id, bool hidden)
@@ -33,7 +35,7 @@ namespace MUD.Tests
 
         public void Prompt(SessionId id, string text)
         {
-            lock (Events) { Events.Add("prompt:" + text); }
+            lock (Events) { Sent.Add(text); Events.Add("prompt:" + text); }
         }
 
         public void Close(SessionId id, string farewellMarkup, bool flush)
@@ -100,7 +102,7 @@ namespace MUD.Tests
             public Fixture()
             {
                 World = new World(new MongoDB.Driver.MongoClient("mongodb://127.0.0.1:1"), new WorldSettings(), Clock);
-                World.PreLoginHandler = (connection, line) => PreLoginLines.Add((((MUD.Core.Sessions.SessionConnection)connection).Id.Value, line));
+                World.PreLoginHandler = (session, line) => PreLoginLines.Add((session.Value, line));
             }
 
             public GameLoop Loop
@@ -114,7 +116,7 @@ namespace MUD.Tests
             public Player LogIn(SessionId id, string name)
             {
                 var player = new Player(World, new CommandQueue(Clock), Repository) { Id = "p." + name, PlayerName = name, ShortDescription = name, Password = "x" };
-                player.Connection = World.GetSessionConnection(id);
+                World.AttachPlayer(player, id);
                 player.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
                 World.AddPlayer(player);
                 return player;
@@ -255,7 +257,7 @@ namespace MUD.Tests
             Player player = f.LogIn(oldId, "alice");
             oldSink.Events.Clear();
 
-            f.World.TakeOverSession(player, f.World.GetSessionConnection(newId));
+            f.World.TakeOverSession(player, newId);
 
             Assert.Contains("output:You have been logged in from another location.", oldSink.Events);
             Assert.Equal(new[] { SessionEndReason.TakenOver }, oldSink.Ended.ToArray());
@@ -388,20 +390,21 @@ namespace MUD.Tests
         public void SubmitLineAndEnqueueLineApplyTheSameCap()
         {
             var f = new Fixture();
-            var connection = new FakeConnection();
-            var handledLegacy = new List<string>();
-            f.World.PreLoginHandler = (c, line) => { if (c == connection) { handledLegacy.Add(line); } };
+            var directSink = new FakeSink();
+            var handledDirect = new List<string>();
+            SessionId direct = f.World.OpenSession("test", "key", directSink);
+            f.World.PreLoginHandler = (session, line) => { if (session == direct) { handledDirect.Add(line); } };
             SessionId id = f.World.OpenSession("test", "key", new FakeSink());
 
             for (int i = 0; i < World.MaxQueuedLinesPerClient + 5; i++)
             {
-                f.World.EnqueueLine(connection, "line" + i);
+                f.World.EnqueueLine(direct, "line" + i);
                 f.World.SubmitLine(id, "line" + i);
             }
             f.Pump();
 
-            Assert.Equal(World.MaxQueuedLinesPerClient, handledLegacy.Count);
-            Assert.Equal(5, connection.Sent.Count(s => s == "Too much input; that line was ignored."));
+            Assert.Equal(World.MaxQueuedLinesPerClient, handledDirect.Count);
+            Assert.Equal(5, directSink.Sent.Count(s => s == "Too much input; that line was ignored."));
         }
 
         // (c) a slow front end does not block the game thread -----------------------------------------------------------

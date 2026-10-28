@@ -9,7 +9,8 @@ using MUD.Core.Properties;
 using MUD.Core.Properties.PlayerProperties;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Data;
-using MUD.Telnet;
+using MUD.CoreApi;
+using MUD.Core.Sessions;
 using System.Threading;
 
 namespace MUD.Core.GameObjects
@@ -18,7 +19,10 @@ namespace MUD.Core.GameObjects
     {
         private IPlayerRepository _playerRepository;
 
-        private IClientConnection _connection;
+        // The session this player is attached to and where the player's output goes (null before login).
+        private SessionId _sessionId;
+        private IFrontEndSink _frontEndSink;
+        private string _remoteKey = string.Empty;
 
         private CommandQueue _commandQueue;
 
@@ -29,7 +33,7 @@ namespace MUD.Core.GameObjects
         // stored password is older than the in-memory one, so SyncPasswordFromStore must not "adopt" it.
         private int _unconfirmedPasswordWrites;
 
-        // True once Quit() has started for the current connection; cleared when a new connection is attached.
+        // True once Quit() has started for the current session; cleared when a new session is attached.
         private bool _isQuitting;
 
         public string PlayerName { get; set; }
@@ -179,18 +183,27 @@ namespace MUD.Core.GameObjects
 
         // Input and disconnects reach the player through the game loop (World routes lines to
         // DataReceivedHandler and calls Quit on a Disconnected item), so no event handlers are attached here.
+        /// <summary>The id of the session this player is attached to; empty before login.</summary>
         [BsonIgnore]
-        public IClientConnection Connection
+        public SessionId SessionId { get { return _sessionId; } }
+
+        /// <summary>Where this player's output goes; null before login. It never blocks (decision D42).</summary>
+        [BsonIgnore]
+        public IFrontEndSink OutputSink { get { return _frontEndSink; } }
+
+        /// <summary>
+        /// Attaches the player to a session: its id, the sink that receives its output, and the remote key the login
+        /// throttle uses. Attaching a different session starts a new session, so Quit can run again.
+        /// </summary>
+        public void Attach(SessionId sessionId, IFrontEndSink sink, string remoteKey = null)
         {
-            get { return _connection; }
-            set
+            if (sink != null && (sessionId != _sessionId || !ReferenceEquals(sink, _frontEndSink)))
             {
-                if (value != null && value != _connection)
-                {
-                    _isQuitting = false; // a new connection starts a new session
-                }
-                _connection = value;
+                _isQuitting = false; // a new session
             }
+            _sessionId = sessionId;
+            _frontEndSink = sink;
+            _remoteKey = remoteKey ?? string.Empty;
         }
 
         [BsonIgnore]
@@ -202,9 +215,12 @@ namespace MUD.Core.GameObjects
             _playerRepository = playerRepository;
         }
 
-        /// <summary>The connection as seen by prompted input (echo control, prompts). Overridable for tests.</summary>
+        /// <summary>The session as seen by prompted input (echo control, prompts), backed by the sink; null when not attached. Overridable for tests.</summary>
         [BsonIgnore]
-        public virtual ILoginConnection PromptChannel { get { return _connection; } }
+        public virtual IPromptChannel PromptChannel
+        {
+            get { return _frontEndSink == null ? null : new SinkPromptChannel(_sessionId, _frontEndSink, _remoteKey); }
+        }
 
         [BsonIgnore]
         public bool HasPrompt { get { return _promptHandler != null; } }
@@ -306,7 +322,7 @@ namespace MUD.Core.GameObjects
         // Tells a still-connected player about a persistence outcome (callbacks arrive on the game thread).
         private void Notify(string message)
         {
-            if (ConnectionStatus == PlayerConnectionStatuses.LoggedIn && _connection != null) { ReceiveMessage(message); }
+            if (ConnectionStatus == PlayerConnectionStatuses.LoggedIn && _frontEndSink != null) { ReceiveMessage(message); }
         }
 
         private bool SaveSynchronously()
@@ -387,7 +403,7 @@ namespace MUD.Core.GameObjects
 
         /// <summary>
         /// Logout (specs/GAME_LOOP.md 8.4), on the game thread, once per session: farewell, leave the world,
-        /// final snapshot to the persistence worker, then a flushing disconnect so the farewell reaches the client.
+        /// final snapshot to the persistence worker, then a flushing close so the farewell reaches the client.
         /// Logout never waits on the database: a failed final save is retried by the worker (and spooled).
         /// </summary>
         public void Quit()
@@ -401,20 +417,24 @@ namespace MUD.Core.GameObjects
             ConnectionStatus = PlayerConnectionStatuses.Offline;
             if (_world != null) { _world.RemovePlayer(this); }
             SavePlayer(true, true, false);
-            if (_world != null) { _world.RetireConnection(_connection); }
-            _connection.Disconnect(true);
+            if (_world != null) { _world.RetireConnection(_sessionId); }
+            IFrontEndSink sink = _frontEndSink;
+            if (sink != null)
+            {
+                sink.Close(_sessionId, string.Empty, true);
+                sink.SessionEnded(_sessionId, _world != null && _world.IsStopping ? SessionEndReason.WorldStopping : SessionEndReason.Quit);
+            }
         }
 
+        /// <summary>
+        /// Sends the message to the player's sink on the message's channel, as markup: the terminal conversion is
+        /// not done here (the sink the world attaches does it). Dropped when the player has no session.
+        /// </summary>
         public override void ReceiveMessage(string message)
         {
-            var selectedTerminalHandler = _world.TerminalHandlers.FirstOrDefault(th => th.TerminalName.ToLower() == SelectedTerm?.ToLower() || (th.Aliases != null && th.Aliases.Any(a => a.ToLower() == SelectedTerm?.ToLower())));
-            if (selectedTerminalHandler != null)
-            {
-                message = selectedTerminalHandler.ResolveOutput(message);
-            }
-            var taggedConnection = _connection as MUD.Core.Sessions.ITaggedConnection;
-            if (taggedConnection != null) { taggedConnection.Send(message, DeliveryChannel); }
-            else { _connection.Send(message); }
+            IFrontEndSink sink = _frontEndSink;
+            if (sink == null) { return; }
+            sink.Output(_sessionId, DeliveryChannel, message, false);
         }
 
         public override void DoHeartbeat()

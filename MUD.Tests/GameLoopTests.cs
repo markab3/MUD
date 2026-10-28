@@ -6,6 +6,7 @@ using MongoDB.Bson;
 using MUD.Core;
 using MUD.Core.Commands;
 using MUD.Core.GameObjects;
+using MUD.CoreApi;
 using MUD.Data;
 using MUD.Telnet;
 using Xunit;
@@ -17,18 +18,6 @@ namespace MUD.Tests
         public DateTime Now { get; private set; } = new DateTime(2026, 1, 1, 12, 0, 0);
 
         public void Advance(TimeSpan by) { Now += by; }
-    }
-
-    public class FakeConnection : IClientConnection
-    {
-        public List<string> Sent = new List<string>();
-        public List<string> Events = new List<string>();
-        public string RemoteKey { get { return "test"; } }
-        public void Send(string text) { Sent.Add(text); Events.Add("send:" + text); }
-        public void SendPrompt(string text) { Sent.Add(text); }
-        public void SetEchoHidden(bool hidden) { }
-        public void DisconnectWithMessage(string message) { Events.Add("disconnect"); }
-        public void Disconnect(bool flush) { Events.Add("disconnect"); }
     }
 
     // Deterministic tests: no threads, no sleeping, time only moves when the test advances the fake clock.
@@ -52,8 +41,8 @@ namespace MUD.Tests
         public void ItemsAreHandledInArrivalOrderAndDisconnectDoesNotOvertakeLines()
         {
             var loop = NewLoop();
-            var a = new FakeConnection();
-            var b = new FakeConnection();
+            var a = new SessionId("a");
+            var b = new SessionId("b");
             loop.Post(InboundItem.ForLine(a, "a1"));
             loop.Post(InboundItem.ForLine(b, "b1"));
             loop.Post(InboundItem.ForLine(a, "a2"));
@@ -113,7 +102,7 @@ namespace MUD.Tests
         {
             var handled = new List<string>();
             var loop = new GameLoop(_clock, item => { if (item.Line == "boom") { throw new InvalidOperationException("x"); } handled.Add(item.Line); }, null, null, _log.Add);
-            var c = new FakeConnection();
+            var c = new SessionId("c");
             loop.Post(InboundItem.ForLine(c, "boom"));
             loop.Post(InboundItem.ForLine(c, "ok"));
             loop.RunOnce(TimeSpan.Zero);
@@ -139,7 +128,7 @@ namespace MUD.Tests
         public void PassIsBoundedByMaxItemsPerPass()
         {
             var loop = NewLoop();
-            var c = new FakeConnection();
+            var c = new SessionId("c");
             for (int i = 0; i < GameLoop.MaxItemsPerPass + 5; i++) { loop.Post(InboundItem.ForLine(c, "x")); }
 
             Assert.Equal(GameLoop.MaxItemsPerPass, loop.RunOnce(TimeSpan.Zero));
@@ -588,17 +577,17 @@ namespace MUD.Tests
             var world = NewWorld();
             var repo = new FakePlayerRepo();
             var player = new Player(world, null, repo) { Id = "p.tester", PlayerName = "tester", Password = "x" };
-            var connection = new FakeConnection();
+            var sink = new FakeSink();
             world.Players.Add(player);
-            player.Connection = connection;
+            world.AttachPlayer(player, world.OpenSession("test", "test", sink));
             player.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
 
             player.Quit();
             player.Quit(); // once per session
 
-            Assert.True(connection.Events.IndexOf("send:Thanks for playing!") >= 0);
-            Assert.Equal(1, connection.Events.Count(e => e == "disconnect"));
-            Assert.True(connection.Events.IndexOf("send:Thanks for playing!") < connection.Events.IndexOf("disconnect"));
+            Assert.True(sink.Events.IndexOf("output:Thanks for playing!") >= 0);
+            Assert.Equal(1, sink.Events.Count(e => e.StartsWith("close:")));
+            Assert.True(sink.Events.IndexOf("output:Thanks for playing!") < sink.Events.IndexOf("close:"));
             Assert.DoesNotContain(player, world.Players);
             Assert.Equal(PlayerConnectionStatuses.Offline, player.ConnectionStatus);
         }

@@ -285,7 +285,7 @@ namespace MUD.Main
             }
             _gameWorld.EnableWebSync();
             _gameWorld.LoginThrottle = _loginThrottle;
-            _gameWorld.PreLoginHandler = (connection, line) => messageReceived(connection, line);
+            _gameWorld.PreLoginHandler = (sessionId, line) => { var connection = _gameWorld.GetSessionConnection(sessionId); if (connection != null) { messageReceived(connection, line); } };
             Thread gameWorldThread = new Thread(_gameWorld.Start);
             gameWorldThread.Start();
             Console.WriteLine("done.");
@@ -484,12 +484,12 @@ namespace MUD.Main
 
             public bool Login(string name, string password)
             {
-                return _world.DoLogin(name, password, _client);
+                return _world.DoLogin(name, password, ((SessionConnection)_client).Id);
             }
 
             public bool Create(string name, string password)
             {
-                return _world.DoCreateUser(name, password, _client);
+                return _world.DoCreateUser(name, password, ((SessionConnection)_client).Id);
             }
         }
     }

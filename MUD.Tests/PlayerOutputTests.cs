@@ -14,13 +14,13 @@ namespace MUD.Tests
         private static string Received(string selectedTerminal)
         {
             var world = new World(new MongoDB.Driver.MongoClient("mongodb://127.0.0.1:1"), new WorldSettings(), new FakeClock());
-            var connection = new FakeConnection();
+            var sink = new FakeSink();
             var player = new Player(world, null, new FakePlayerRepo()) { PlayerName = "tester", SelectedTerm = selectedTerminal };
-            player.Connection = connection;
+            world.AttachPlayer(player, world.OpenSession("test", "test", sink));
 
             player.ReceiveMessage(Markup);
 
-            return Assert.Single(connection.Sent);
+            return Assert.Single(sink.Sent);
         }
 
         [Theory]

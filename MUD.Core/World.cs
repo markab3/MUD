@@ -52,15 +52,15 @@ namespace MUD.Core
         private PersistenceWorker _persistence;
 
         // Everything below is touched only on the game thread (specs/GAME_LOOP.md section 3).
-        private Dictionary<IClientConnection, Player> _sessions;
+        private Dictionary<SessionId, Player> _sessions;
 
         private HashSet<string> _finalSavesPending;
 
         private bool _shuttingDown;
 
-        // Per-connection inbound accounting; touched from socket threads, so it is concurrent.
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<IClientConnection, ClientInbox> _inboxes =
-            new System.Collections.Concurrent.ConcurrentDictionary<IClientConnection, ClientInbox>();
+        // Per-session inbound accounting; touched from socket threads, so it is concurrent.
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<SessionId, ClientInbox> _inboxes =
+            new System.Collections.Concurrent.ConcurrentDictionary<SessionId, ClientInbox>();
 
         // Open sessions: session id to sink and player (decision D46). Safe from any thread.
         private readonly SessionRegistry _sessionRegistry = new SessionRegistry();
@@ -89,7 +89,10 @@ namespace MUD.Core
         /// Handles a line from a connection that has not logged in (connect / create / who ...). Set by the host.
         /// Runs on the game thread.
         /// </summary>
-        public Action<IClientConnection, string> PreLoginHandler { get; set; }
+        public Action<SessionId, string> PreLoginHandler { get; set; }
+
+        /// <summary>True once shutdown has begun (game thread); sessions closed from then on end with WorldStopping.</summary>
+        public bool IsStopping { get { return _shuttingDown; } }
 
         public World(IMongoClient dbClient, WorldSettings settings) : this(dbClient, settings, null)
         {
@@ -99,7 +102,7 @@ namespace MUD.Core
         {
             _settings = settings;
             _clock = clock ?? SystemClock.Instance;
-            _sessions = new Dictionary<IClientConnection, Player>();
+            _sessions = new Dictionary<SessionId, Player>();
             _finalSavesPending = new HashSet<string>();
             _serviceProvider = LoadTypes(dbClient);
 
@@ -268,26 +271,26 @@ namespace MUD.Core
         /// game thread. A client that is more than MaxQueuedLinesPerClient behind has lines dropped, and is
         /// disconnected if it keeps doing it.
         /// </summary>
-        public void EnqueueLine(IClientConnection client, string line)
+        public void EnqueueLine(SessionId session, string line)
         {
             if (_loop == null) { return; }
-            ClientInbox inbox = _inboxes.GetOrAdd(client, c => new ClientInbox());
+            ClientInbox inbox = _inboxes.GetOrAdd(session, c => new ClientInbox());
             if (Interlocked.Increment(ref inbox.Pending) > MaxQueuedLinesPerClient)
             {
                 Interlocked.Decrement(ref inbox.Pending);
+                SessionConnection connection;
+                _sessionRegistry.TryGet(session, out connection);
                 if (Interlocked.Increment(ref inbox.Dropped) >= MaxDroppedLinesBeforeDisconnect)
                 {
-                    var flooded = client as SessionConnection;
-                    if (flooded != null) { flooded.Terminate("You are sending too much input. Goodbye.", SessionEndReason.Flood, true); }
-                    else { client.DisconnectWithMessage("You are sending too much input. Goodbye."); }
+                    if (connection != null) { connection.Terminate("You are sending too much input. Goodbye.", SessionEndReason.Flood, true); }
                 }
                 else
                 {
-                    client.Send("Too much input; that line was ignored.");
+                    if (connection != null) { connection.Send("Too much input; that line was ignored."); }
                 }
                 return;
             }
-            if (!_loop.Post(InboundItem.ForLine(client, line))) { Interlocked.Decrement(ref inbox.Pending); }
+            if (!_loop.Post(InboundItem.ForLine(session, line))) { Interlocked.Decrement(ref inbox.Pending); }
         }
 
         /// <summary>
@@ -299,11 +302,11 @@ namespace MUD.Core
             return _sessionRegistry.Open(frontEnd, remoteKey, sink, () => _shuttingDown).Id;
         }
 
-        /// <summary>ICoreApi: the same as EnqueueLine for the session's connection, including the per-session pending cap. Unknown ids are ignored.</summary>
+        /// <summary>ICoreApi: the same as EnqueueLine, including the per-session pending cap. Unknown ids are ignored.</summary>
         public void SubmitLine(SessionId id, string rawLine)
         {
             SessionConnection connection;
-            if (_sessionRegistry.TryGet(id, out connection)) { EnqueueLine(connection, rawLine); }
+            if (_sessionRegistry.TryGet(id, out connection)) { EnqueueLine(id, rawLine); }
         }
 
         /// <summary>
@@ -316,7 +319,7 @@ namespace MUD.Core
             if (_sessionRegistry.Remove(id, out connection))
             {
                 connection.Detach();
-                EnqueueDisconnect(connection);
+                EnqueueDisconnect(id);
             }
         }
 
@@ -333,10 +336,10 @@ namespace MUD.Core
             return _sessionRegistry.TryGet(id, out connection) ? connection : null;
         }
 
-        /// <summary>Called on socket threads when a connection closes, for any reason.</summary>
-        public void EnqueueDisconnect(IClientConnection client)
+        /// <summary>Called on socket threads when a session closes, for any reason.</summary>
+        public void EnqueueDisconnect(SessionId session)
         {
-            if (_loop != null) { _loop.Post(InboundItem.ForDisconnected(client)); }
+            if (_loop != null) { _loop.Post(InboundItem.ForDisconnected(session)); }
         }
 
         private Thread startPersistence()
@@ -424,30 +427,30 @@ namespace MUD.Core
                 case InboundKind.Line:
                     {
                         ClientInbox inbox;
-                        if (_inboxes.TryGetValue(item.Client, out inbox)) { Interlocked.Decrement(ref inbox.Pending); }
+                        if (_inboxes.TryGetValue(item.Session, out inbox)) { Interlocked.Decrement(ref inbox.Pending); }
                         if (_shuttingDown) { return; }
 
                         Player player;
-                        if (_sessions.TryGetValue(item.Client, out player))
+                        if (_sessions.TryGetValue(item.Session, out player))
                         {
-                            // After logout has started, further input from that client is ignored.
+                            // After logout has started, further input from that session is ignored.
                             if (player.ConnectionStatus == PlayerConnectionStatuses.Offline) { return; }
-                            player.DataReceivedHandler(item.Client, item.Line);
+                            player.DataReceivedHandler(null, item.Line);
                         }
                         else if (PreLoginHandler != null)
                         {
-                            PreLoginHandler(item.Client, item.Line);
+                            PreLoginHandler(item.Session, item.Line);
                         }
                         break;
                     }
                 case InboundKind.Disconnected:
                     {
                         ClientInbox ignored;
-                        _inboxes.TryRemove(item.Client, out ignored);
+                        _inboxes.TryRemove(item.Session, out ignored);
                         Player player;
-                        if (_sessions.TryGetValue(item.Client, out player))
+                        if (_sessions.TryGetValue(item.Session, out player))
                         {
-                            _sessions.Remove(item.Client);
+                            _sessions.Remove(item.Session);
                             // Current behavior preserved: losing the connection logs the player out.
                             player.Quit();
                         }
@@ -482,18 +485,18 @@ namespace MUD.Core
         }
 
         /// <summary>
-        /// Called by Player.Quit: the connection no longer maps to a player, so a later Disconnected item for it
+        /// Called by Player.Quit: the session no longer maps to a player, so a later Disconnected item for it
         /// does not run the logout a second time.
         /// </summary>
-        public void RetireConnection(IClientConnection connection)
+        public void RetireConnection(SessionId session)
         {
-            if (connection != null && _sessions != null) { _sessions.Remove(connection); }
+            if (!session.IsEmpty && _sessions != null) { _sessions.Remove(session); }
         }
 
         public void AddPlayer(Player newPlayer)
         {
             if (newPlayer == null) { return; }
-            if (newPlayer.Connection != null) { _sessions[newPlayer.Connection] = newPlayer; }
+            if (!newPlayer.SessionId.IsEmpty) { _sessions[newPlayer.SessionId] = newPlayer; }
             Players.Add(newPlayer);
             foreach (var currentPlayer in Players)
             {
@@ -522,34 +525,61 @@ namespace MUD.Core
         }
 
         /// <summary>
-        /// Duplicate login: moves a live player to a new connection (game thread). The old connection is told why and
+        /// Duplicate login: moves a live player to a new session (game thread). The old session is told why and
         /// closed WITHOUT Quit, and its session mapping is removed first so its later Disconnected item finds no
-        /// player and cannot quit or save-and-remove it. The player stays in the world.
+        /// player and cannot quit or save-and-remove it. The player stays in the world. An unknown new session id
+        /// does nothing.
         /// </summary>
-        public void TakeOverSession(Player player, IClientConnection newConnection)
+        public void TakeOverSession(Player player, SessionId newSession)
         {
-            IClientConnection old = player.Connection;
-            bool replacing = old != null && old != newConnection;
+            SessionConnection newConnection;
+            if (!_sessionRegistry.TryGet(newSession, out newConnection)) { return; }
+            SessionId oldSession = player.SessionId;
+            IFrontEndSink oldSink = player.OutputSink;
+            bool replacing = oldSink != null && oldSession != newSession;
             if (replacing)
             {
-                _sessions.Remove(old);
-                old.Send("You have been logged in from another location.");
-                var oldSession = old as SessionConnection;
-                if (oldSession != null) { oldSession.MarkTakenOver(); }
+                _sessions.Remove(oldSession);
+                oldSink.Output(oldSession, OutputChannel.System, "You have been logged in from another location.", false);
             }
             player.ClearPromptHandler();
-            player.Connection = newConnection;
+            AttachPlayer(player, newConnection);
             player.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
-            _sessions[newConnection] = player;
-            if (replacing) { old.Disconnect(true); }
+            _sessions[newSession] = player;
+            if (replacing)
+            {
+                oldSink.Close(oldSession, string.Empty, true);
+                oldSink.SessionEnded(oldSession, SessionEndReason.TakenOver);
+            }
 
             player.ReceiveMessage("Reconnecting to your existing session.");
             player.DataReceivedHandler(null, "look");
         }
 
-        public bool DoLogin(string userName, string password, IClientConnection client)
+        /// <summary>
+        /// Attaches a player to an open session (game thread). The player's sink is the session's own sink behind the terminal conversion
+        /// that used to be done in the player (the player's selected terminal is read when each message is sent).
+        /// </summary>
+        public bool AttachPlayer(Player player, SessionId session)
+        {
+            SessionConnection connection;
+            if (player == null || !_sessionRegistry.TryGet(session, out connection)) { return false; }
+            AttachPlayer(player, connection);
+            return true;
+        }
+
+        private void AttachPlayer(Player player, SessionConnection connection)
+        {
+            var converting = new TerminalConvertingSink(connection, TerminalHandlers, id => player.SelectedTerm);
+            player.Attach(connection.Id, converting, connection.RemoteKey);
+            connection.Player = player;
+        }
+
+        public bool DoLogin(string userName, string password, SessionId session)
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
+            SessionConnection client;
+            if (!_sessionRegistry.TryGet(session, out client)) { return false; }
 
             var foundPlayer = GetPlayerAccounts().Authenticate(userName, password);
 
@@ -570,13 +600,13 @@ namespace MUD.Core
             if (foundPlayer != null && Players.Contains(foundPlayer))
             {
                 // The account already has a live player: the new connection takes it over.
-                TakeOverSession(foundPlayer, client);
+                TakeOverSession(foundPlayer, session);
                 return true;
             }
 
             if (foundPlayer != null)
             {
-                foundPlayer.Connection = client;
+                AttachPlayer(foundPlayer, client);
                 foundPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
                 MoveToDefaultRoomIfLocationMissing(foundPlayer);
                 AddPlayer(foundPlayer);
@@ -599,9 +629,11 @@ namespace MUD.Core
             player.ReceiveMessage(LostLocationMessage);
         }
 
-        public bool DoCreateUser(string userName, string password, IClientConnection connectingClient)
+        public bool DoCreateUser(string userName, string password, SessionId session)
         {
             if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
+            SessionConnection connectingClient;
+            if (!_sessionRegistry.TryGet(session, out connectingClient)) { return false; }
 
             // Every failure is reported to the client here; the caller only needs to know it did not succeed.
             var accounts = GetPlayerAccounts();
@@ -626,7 +658,7 @@ namespace MUD.Core
                 newPlayer.CurrentLocationId = _settings.StartRoomKey;
                 newPlayer.SelectedTerm = "Default"; // Or just do the subnegotiation to get a value for this...
                 newPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
-                newPlayer.Connection = connectingClient;
+                AttachPlayer(newPlayer, connectingClient);
 
                 // The unique index decides under concurrent creates: a duplicate-key error on save means the name is taken.
                 var saved = accounts.TrySave(newPlayer);

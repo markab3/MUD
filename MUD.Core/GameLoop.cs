@@ -1,17 +1,17 @@
 using System;
 using System.Collections.Concurrent;
 using MUD.Data;
-using MUD.Telnet;
+using MUD.CoreApi;
 
 namespace MUD.Core
 {
     public enum InboundKind
     {
-        /// <summary>A line of text typed by a client.</summary>
+        /// <summary>A line of text typed in a session.</summary>
         Line,
-        /// <summary>A client has connected (before login).</summary>
+        /// <summary>A session has been opened (before login).</summary>
         Connected,
-        /// <summary>A client's connection has closed, for any reason.</summary>
+        /// <summary>A session has closed, for any reason.</summary>
         Disconnected,
         /// <summary>A callback to run on the game thread (persistence outcome, shutdown request, ...).</summary>
         WorldEvent
@@ -21,25 +21,25 @@ namespace MUD.Core
     public sealed class InboundItem
     {
         public InboundKind Kind { get; private set; }
-        public IClientConnection Client { get; private set; }
+        public SessionId Session { get; private set; }
         public string Line { get; private set; }
         public Action Action { get; private set; }
 
         private InboundItem() { }
 
-        public static InboundItem ForLine(IClientConnection client, string line)
+        public static InboundItem ForLine(SessionId session, string line)
         {
-            return new InboundItem { Kind = InboundKind.Line, Client = client, Line = line };
+            return new InboundItem { Kind = InboundKind.Line, Session = session, Line = line };
         }
 
-        public static InboundItem ForConnected(IClientConnection client)
+        public static InboundItem ForConnected(SessionId session)
         {
-            return new InboundItem { Kind = InboundKind.Connected, Client = client };
+            return new InboundItem { Kind = InboundKind.Connected, Session = session };
         }
 
-        public static InboundItem ForDisconnected(IClientConnection client)
+        public static InboundItem ForDisconnected(SessionId session)
         {
-            return new InboundItem { Kind = InboundKind.Disconnected, Client = client };
+            return new InboundItem { Kind = InboundKind.Disconnected, Session = session };
         }
 
         public static InboundItem ForEvent(Action action)
