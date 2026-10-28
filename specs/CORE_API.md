@@ -262,7 +262,7 @@ shape as gRPC messages from phases 4/6; the interface is specified in V2_PHASES.
 | front end -> core | authenticate / create | `session_id`, name, password (plaintext, never logged). Returns: ok, bad credentials, retired, throttled, already online (takeover), name taken, try again later |
 | front end -> core | line | `session_id`, raw line (already stripped of telnet control codes and control characters by the front end). Output is asynchronous |
 | front end -> core | close | `session_id`, reason (client_closed, idle, flood, ...) |
-| core -> front end (session events) | output | `session_id`, `channel` (say, tell, room, combat, system), `text` (`%^Color%^` markup, D28), `flush` |
+| core -> front end (session events) | output | `session_id`, `channel` (say, tell, room, combat, system, chat; D44), `text` (`%^Color%^` markup, D28), `flush` |
 | core -> front end | set echo | `session_id`, hidden yes/no (password prompts) |
 | core -> front end | prompt | `session_id`, text without line ending |
 | core -> front end | close | `session_id`, farewell text, flush |
@@ -473,9 +473,9 @@ framework. The wire contract is language-neutral (D25); supported modules are C#
 Each item is a point where the decisions leave an obvious implementation choice and this revision did **not** choose. Options and a
 recommendation are given so the owner can decide; none is binding. (The recommendations are what the sketches above assume.)
 
-**G1. How a module's `ctx` API maps to events.**
-Options: (A) one `ctx.Emit(EventRecord)` and every effect is an event; (B) typed helpers (`ctx.SetComponent`, `ctx.Message`,
-`ctx.ScheduleTimer`, `ctx.SetState`) that build events; (C) separate RPCs for state and timers as D16 lists them, generic `Emit` for the rest.
+**G1. How a module's calls to core (the "context" object a behavior uses) map to events.** **[DECIDED, D40: owner accepted the recommendation; see OPEN_QUESTIONS_V2.md]**
+Options: (A) one `context.Emit(EventRecord)` and every effect is an event; (B) typed helpers (`context.SetComponent`, `context.Message`,
+`context.ScheduleTimer`, `context.SetState`) that build events; (C) separate RPCs for state and timers as D16 lists them, generic `Emit` for the rest.
 Recommendation: C on the wire (matches D16), B in the C# SDK so authors never hand-build event records. The sketch in 7.2 shows C.
 
 **G2. Exact `BehaviorRef` persistence shape.**
@@ -552,7 +552,7 @@ Recommendation: whole-document replace per key, last write wins, with a size lim
 Do `timer.schedule` timers survive a core restart? Recommendation: no; core timers are in memory, scoped to the module connection, and the module
 recreates them on start from its state document and components (the D13 reconciliation). `timer.fired` goes directly to the issuing module (G18).
 
-**G17. Startup import versus D39.**
+**G17. Startup import versus D39.** **[DECIDED, D41: owner accepted the recommendation; see OPEN_QUESTIONS_V2.md]**
 `ImportOnStartup` defaults true (`MUD.Core/WorldSettings.cs:15`; `MUD.Main/appsettings.json:10`) and `World.ImportContent` (`MUD.Core/World.cs:614`) imports on
 every start; ROOM_FILES section 6 re-import semantics are obsolete and D39 allows no recurring sync. Options: default the setting to false in phase 2 and keep `import` as a manual
 command; or remove startup import. The open item "import collision semantics and whether validate/plan/apply is kept" stays open.
@@ -574,14 +574,14 @@ Recommendation: capability = `emit:<event name>[:scope]` for events, plus `timer
 D22 fixes two sockets and D27 says front ends use gRPC, but not whether the session transport is a bidirectional stream (reversed for modules by D16) or the module-style stream plus unary.
 Recommendation: the module style (7.2), one mental model; the token is a mode-600 file read, as modules get theirs.
 
-**G22. In-process delivery of session output (phases 1 to 3).**
+**G22. In-process delivery of session output (phases 1 to 3).** **[DECIDED, D42: owner accepted the recommendation; see OPEN_QUESTIONS_V2.md]**
 Core calls the telnet project on the game thread; the telnet project must only enqueue to the connection's `OutboundQueue` and return.
 Recommendation: document the output method "must not block" and test it with a deliberately slow fake front end.
 
 **G23. Start gate numbers.**
 `Ready` is a separate call per D21; the start-up timeout length is unset (open item); the systemd unit needs a restart limit (D21). Nothing else to decide but the numbers.
 
-**G24. Where prompted login and the brute-force throttle live after the split.**
+**G24. Where prompted login and the brute-force throttle live after the split.** **[DECIDED, D43: owner accepted the recommendation; see OPEN_QUESTIONS_V2.md]**
 Today the dialogue is `MUD.Telnet/LoginSession.cs` (prompted connect/create plus legacy one-line forms) with `MUD.Telnet/LoginThrottle.cs` keyed by remote address;
 `PasswordChangeFlow` in `MUD.Core/Commands/Player/ChpwdCommand.cs` shares that throttle.
 Options: (A) dialogue stays in the telnet project, throttle moves into core so web and telnet share it; (B) both into core with a prompt/echo protocol; (C) both stay in telnet (web gets its own).
@@ -605,14 +605,14 @@ Recommendation: pid files under the run directory, checked and terminated at sta
 D17 requires a dev tool to issue a token; D18 defines `modules reload <name>` as the update step. Open: is the dev tool an in-game admin command, and does `reload` restart a running module process or only re-read the manifest/config on the next connect?
 Recommendation: an in-game admin command `modules token <name>` printing a one-time token valid while no supervised instance runs (not a separate CLI, D32); `reload` re-reads launch entries and grants and restarts the named module only if the owner passes it explicitly.
 
-**G29. Channel tag for `chat` and for untagged messages.**
-D28 lists the channels say, tell, room, combat, system. `Living.ReceiveMessage(string)` carries no channel today and the `chat` command has no matching channel name. Options: map chat to `say`; add `chat` to the list (changes D28's list); tag chat `system`. All other existing untagged messages default to `system`.
+**G29. Channel tag for `chat` and for untagged messages.** **[DECIDED, D44: owner accepted the recommendation; see OPEN_QUESTIONS_V2.md]**
+D28 listed the channels say, tell, room, combat, system. `Living.ReceiveMessage(string)` carries no channel today and the `chat` command had no matching channel name. DECIDED by the owner (D44): `chat` gets its own tag, giving say, tell, room, combat, system, chat; untagged messages default to `system`. Options: map chat to `say`; add `chat` to the list (changes D28's list); tag chat `system`. All other existing untagged messages default to `system`.
 Recommendation: untagged = `system`; say/tell/`TellRoom` = `say`/`tell`/`room`; ask the owner whether `chat` gets its own tag (an addition to the D28 list, so the owner's call).
 
-**G30. How the web reads roles between phase 2 and phase 6.**
+**G30. How the web reads roles between phase 2 and phase 6.** **[DECIDED, D45: owner accepted the recommendation; see OPEN_QUESTIONS_V2.md]**
 The website derives roles from the `_t` discriminators in `ExtendedProperties` (`MUD.Web/Services/MongoAccountStore.cs:59-60`, `MongoPlayerEditStore.cs:64`). Phase 2 replaces `ExtendedProperties` with a `Roles` component, and D1 forbids migration code and dual-read, but the web keeps reading Mongo directly until phase 6.
 Options: (A) the phase 2 card that introduces `Roles` also changes the two web stores to read the new field (small, same card); (B) core writes a mirror `ExtendedProperties` document until phase 6 (a dual-write, against the spirit of D1); (C) reorder so web precedes phase 2 (contradicts D37).
 Recommendation: A; D1 means no old data exists, so only the web read path changes.
 
-**G31. Where the session registry and `session_id` format live.**
+**G31. Where the session registry and `session_id` format live.** **[DECIDED, D46: owner accepted the recommendation; see OPEN_QUESTIONS_V2.md]**
 Phase 1 needs a `session_id`. Options: opaque string generated by core on `OpenSession` (random, unguessable, not reused); or caller-chosen id from the front end (as `local_conn_id` in the draft). Recommendation: core-generated opaque string (works unchanged over gRPC in phase 7, and the web has its own session token, D31).
