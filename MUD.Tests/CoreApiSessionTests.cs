@@ -97,12 +97,16 @@ namespace MUD.Tests
             public readonly FakeClock Clock = new FakeClock();
             public readonly World World;
             public readonly FakePlayerRepo Repository = new FakePlayerRepo();
-            public readonly List<(string Session, string Line)> PreLoginLines = new List<(string, string)>();
 
             public Fixture()
             {
                 World = new World(new MongoDB.Driver.MongoClient("mongodb://127.0.0.1:1"), new WorldSettings(), Clock);
-                World.PreLoginHandler = (session, line) => PreLoginLines.Add((session.Value, line));
+            }
+
+            // Number of lines a logged-in player's session has handled: each unknown command is answered once.
+            public static int Handled(FakeSink sink)
+            {
+                lock (sink.Events) { return sink.Events.Count(e => e == "output:Command not recognized."); }
             }
 
             public GameLoop Loop
@@ -154,18 +158,22 @@ namespace MUD.Tests
         }
 
         [Fact]
-        public void LinesFromASessionBeforeLoginGoToThePreLoginHandlerWithThatSessionsConnection()
+        public void LinesFromASessionBeforeLoginAreLeftToTheFrontEndAndCoreSaysNothing()
         {
             var f = new Fixture();
-            SessionId a = f.World.OpenSession("test", "key", new FakeSink());
-            SessionId b = f.World.OpenSession("test", "key", new FakeSink());
+            var sinkA = new FakeSink();
+            var sinkB = new FakeSink();
+            SessionId a = f.World.OpenSession("test", "key", sinkA);
+            SessionId b = f.World.OpenSession("test", "key", sinkB);
 
             f.World.SubmitLine(a, "a1");
             f.World.SubmitLine(b, "b1");
             f.World.SubmitLine(a, "a2");
-            f.Pump();
+            int handled = f.Pump();
 
-            Assert.Equal(new[] { (a.Value, "a1"), (b.Value, "b1"), (a.Value, "a2") }, f.PreLoginLines.ToArray());
+            Assert.Equal(3, handled); // taken off the queue and counted, but not answered: the login dialogue is the front end's
+            Assert.Empty(sinkA.Events);
+            Assert.Empty(sinkB.Events);
         }
 
         [Fact]
@@ -186,7 +194,6 @@ namespace MUD.Tests
 
             Assert.Contains("output:Command not recognized.", sinkA.Events);
             Assert.Empty(sinkB.Events);
-            Assert.Empty(f.PreLoginLines);
         }
 
         [Fact]
@@ -225,7 +232,6 @@ namespace MUD.Tests
             f.World.CloseSession(new SessionId("not-a-session"), SessionEndReason.ClientClosed);
             f.Pump();
 
-            Assert.Empty(f.PreLoginLines);
             Assert.Empty(sink.Events);
         }
 
@@ -358,18 +364,19 @@ namespace MUD.Tests
             var f = new Fixture();
             var sink = new FakeSink();
             SessionId id = f.World.OpenSession("test", "key", sink);
+            f.LogIn(id, "alice");
+            sink.Events.Clear();
 
             for (int i = 0; i < World.MaxQueuedLinesPerClient + 5; i++) { f.World.SubmitLine(id, "line" + i); }
 
             Assert.Equal(5, sink.Events.Count(e => e == "output:Too much input; that line was ignored."));
             f.Pump();
-            Assert.Equal(World.MaxQueuedLinesPerClient, f.PreLoginLines.Count);
-            Assert.Equal("line0", f.PreLoginLines.First().Line);
+            Assert.Equal(World.MaxQueuedLinesPerClient, Fixture.Handled(sink));
 
             // Once handled, the session has room again.
             f.World.SubmitLine(id, "again");
             f.Pump();
-            Assert.Equal("again", f.PreLoginLines.Last().Line);
+            Assert.Equal(World.MaxQueuedLinesPerClient + 1, Fixture.Handled(sink));
         }
 
         [Fact]
@@ -391,10 +398,12 @@ namespace MUD.Tests
         {
             var f = new Fixture();
             var directSink = new FakeSink();
-            var handledDirect = new List<string>();
             SessionId direct = f.World.OpenSession("test", "key", directSink);
-            f.World.PreLoginHandler = (session, line) => { if (session == direct) { handledDirect.Add(line); } };
+            f.LogIn(direct, "alice");
             SessionId id = f.World.OpenSession("test", "key", new FakeSink());
+            f.LogIn(id, "bob");
+            directSink.Events.Clear();
+            directSink.Sent.Clear();
 
             for (int i = 0; i < World.MaxQueuedLinesPerClient + 5; i++)
             {
@@ -403,7 +412,7 @@ namespace MUD.Tests
             }
             f.Pump();
 
-            Assert.Equal(World.MaxQueuedLinesPerClient, handledDirect.Count);
+            Assert.Equal(World.MaxQueuedLinesPerClient, Fixture.Handled(directSink));
             Assert.Equal(5, directSink.Sent.Count(s => s == "Too much input; that line was ignored."));
         }
 

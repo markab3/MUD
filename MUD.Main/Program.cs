@@ -24,7 +24,8 @@ namespace MUD.Main
         private static World _gameWorld;
         private static Server _serverInstance;
         private static TelnetLimits _telnetLimits = TelnetLimits.FromEnvironment();
-        private static readonly ConditionalWeakTable<IClientConnection, LoginSession> _loginSessions = new ConditionalWeakTable<IClientConnection, LoginSession>();
+        // The pre-login dialogue of each telnet client; it lives in the telnet project and calls the core API.
+        private static readonly ConditionalWeakTable<Client, PreLoginHandler> _preLoginHandlers = new ConditionalWeakTable<Client, PreLoginHandler>();
         // The core session id of each telnet client; core generates the ids.
         private static readonly ConditionalWeakTable<Client, object> _sessionIds = new ConditionalWeakTable<Client, object>();
         private static LoginThrottle _loginThrottle = new LoginThrottle(_telnetLimits.LoginMaxFailures, _telnetLimits.LoginThrottleDuration);
@@ -285,7 +286,6 @@ namespace MUD.Main
             }
             _gameWorld.EnableWebSync();
             _gameWorld.LoginThrottle = _loginThrottle;
-            _gameWorld.PreLoginHandler = (sessionId, line) => { var connection = _gameWorld.GetSessionConnection(sessionId); if (connection != null) { messageReceived(connection, line); } };
             Thread gameWorldThread = new Thread(_gameWorld.Start);
             gameWorldThread.Start();
             Console.WriteLine("done.");
@@ -391,15 +391,22 @@ namespace MUD.Main
 
             SessionId sessionId = _gameWorld.OpenSession("telnet", client.RemoteKey, new TelnetSessionSink(client));
             _sessionIds.Add(client, sessionId);
-            IClientConnection connection = _gameWorld.GetSessionConnection(sessionId);
-            client.DataReceived += (s, line) => _gameWorld.SubmitLine(sessionId, line);
-            client.Send(welcomeMessage);
-            // Pre-login handling reads world state, so it runs on the game thread, after the welcome text.
-            _gameWorld.Post(() =>
+            var preLogin = new PreLoginHandler(_gameWorld, sessionId, client);
+            _preLoginHandlers.Add(client, preLogin);
+            client.DataReceived += (s, line) =>
             {
-                messageReceived(connection, "who");
-                connection.Send("");
-            });
+                if (preLogin.IsLoggedIn)
+                {
+                    // Lines from now on go to the player (core routes by session).
+                    _gameWorld.SubmitLine(sessionId, line);
+                    return;
+                }
+                preLogin.HandleLine(line);
+                if (preLogin.IsLoggedIn) { client.IsLoggedIn = true; }
+            };
+            client.Send(welcomeMessage);
+            preLogin.ShowWho();
+            client.Send("");
         }
 
         private static void clientDisconnected(object sender, Client client)
@@ -412,85 +419,6 @@ namespace MUD.Main
         private static void connectionBlocked(IPEndPoint ep)
         {
             Console.WriteLine(string.Format("BLOCKED: {0}:{1} at {2}", ep.Address, ep.Port, DateTime.Now));
-        }
-
-        private static void messageReceived(object sender, string message)
-        {
-            IClientConnection client = (IClientConnection)sender;
-            message = message.TrimEnd('\n').TrimEnd('\r');
-
-            LoginSession session = _loginSessions.GetValue(client, k => new LoginSession(k, new WorldLoginHandler(_gameWorld, k), _loginThrottle));
-
-            // Never log a line that may contain a password.
-            Console.WriteLine("MESSAGE: " + session.Loggable(message));
-
-            if (session.State != LoginState.Idle)
-            {
-                session.HandleLine(message);
-            }
-            else if (message == "quit" || message.StartsWith("quit "))
-            {
-                client.Disconnect(false);
-            }
-            else if (message == "who" || message.StartsWith("who "))
-            {
-                // Show the list of logged in players
-                if (_gameWorld.Players == null || _gameWorld.Players.Count == 0)
-                {
-                    client.Send("No one is logged on.");
-                }
-                else if (_gameWorld.Players.Count == 1)
-                {
-                    client.Send(String.Format("{0} is logged on.", _gameWorld.Players.First().PlayerName));
-                }
-                else
-                {
-                    client.Send(String.Format("{0} are logged on.", _gameWorld.Players.Select(p => p.PlayerName).GetListText()));
-                }
-            }
-            else if (session.HandleLine(message))
-            {
-                // Consumed by the login flow.
-            }
-            else
-            {
-                string commandString = message;
-                if (message.Contains(" "))
-                {
-                    message = message.Substring(0, message.IndexOf(" "));
-                }
-                client.Send(string.Format("Command {0} was not recognized.", commandString));
-            }
-
-            if (session.IsLoggedIn)
-            {
-                // Lines from now on go to the player (World routes by connection).
-                var legacySink = ((SessionConnection)client).Sink as TelnetSessionSink;
-                var telnetClient = legacySink == null ? null : legacySink.Connection as Client;
-                if (telnetClient != null) { telnetClient.IsLoggedIn = true; }
-            }
-        }
-
-        private class WorldLoginHandler : ILoginHandler
-        {
-            private readonly World _world;
-            private readonly IClientConnection _client;
-
-            public WorldLoginHandler(World world, IClientConnection client)
-            {
-                _world = world;
-                _client = client;
-            }
-
-            public bool Login(string name, string password)
-            {
-                return _world.DoLogin(name, password, ((SessionConnection)_client).Id);
-            }
-
-            public bool Create(string name, string password)
-            {
-                return _world.DoCreateUser(name, password, ((SessionConnection)_client).Id);
-            }
         }
     }
 }

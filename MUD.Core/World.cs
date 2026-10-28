@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
@@ -30,8 +31,13 @@ namespace MUD.Core
 
         public CommandSource AdminCommands;
 
-        // Shared with the pre-login flow so wrong passwords typed into in-game commands count too. May be null.
+        // The one brute-force limit for every front end (decision D43); wrong passwords typed into in-game commands count too. May be null.
         public LoginThrottle LoginThrottle { get; set; }
+
+        /// <summary>How long a front end's Authenticate, CreatePlayer or GetOnlineNames call waits for the game thread before giving up.</summary>
+        public TimeSpan ApiCallTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+        private int _gameThreadId;
 
         private IServiceProvider _serviceProvider;
 
@@ -82,12 +88,6 @@ namespace MUD.Core
 
         /// <summary>The time source used by the loop, command timing and autosave. Replaceable for tests.</summary>
         public IClock Clock { get { return _clock ?? SystemClock.Instance; } }
-
-        /// <summary>
-        /// Handles a line from a connection that has not logged in (connect / create / who ...). Set by the host.
-        /// Runs on the game thread.
-        /// </summary>
-        public Action<SessionId, string> PreLoginHandler { get; set; }
 
         /// <summary>True once shutdown has begun (game thread); sessions closed from then on end with WorldStopping.</summary>
         public bool IsStopping { get { return _shuttingDown; } }
@@ -209,10 +209,12 @@ namespace MUD.Core
             Thread persistenceThread = startPersistence();
             try
             {
+                Volatile.Write(ref _gameThreadId, Thread.CurrentThread.ManagedThreadId);
                 _loop.Run();
             }
             finally
             {
+                Volatile.Write(ref _gameThreadId, 0);
                 // Normally a no-op: shutdown has already run. Covers a loop that stopped some other way.
                 if (!_shuttingDown) { beginShutdown(); }
                 if (persistenceThread != null && !persistenceThread.Join(ShutdownTimeout + TimeSpan.FromSeconds(5)))
@@ -314,14 +316,70 @@ namespace MUD.Core
         /// <summary>Number of open sessions in the registry.</summary>
         public int OpenSessionCount { get { return _sessionRegistry.Count; } }
 
-        /// <summary>
-        /// The core-side connection for a session id, for hosts that still run the login dialogue against the
-        /// IClientConnection contract (until the login cut-over). Null for unknown ids.
-        /// </summary>
-        public IClientConnection GetSessionConnection(SessionId id)
+        /// <summary>ICoreApi: true while the key has had too many failed logins.</summary>
+        public bool IsThrottled(string remoteKey)
         {
-            SessionConnection connection;
-            return _sessionRegistry.TryGet(id, out connection) ? connection : null;
+            LoginThrottle throttle = LoginThrottle;
+            return throttle != null && throttle.IsBlocked(remoteKey ?? string.Empty);
+        }
+
+        /// <summary>ICoreApi: counts a failed login against the key, or clears its failure count after a success.</summary>
+        public void RecordLoginOutcome(string remoteKey, bool success)
+        {
+            LoginThrottle throttle = LoginThrottle;
+            if (throttle == null) { return; }
+            if (success) { throttle.RecordSuccess(remoteKey ?? string.Empty); }
+            else { throttle.RecordFailure(remoteKey ?? string.Empty); }
+        }
+
+        /// <summary>ICoreApi: logs the session in on the game thread; the caller waits (bounded) for the result.</summary>
+        public LoginResult Authenticate(SessionId id, string name, string password)
+        {
+            return RunOnGameThread(() => DoLogin(name, password, id), LoginResult.TryAgainLater);
+        }
+
+        /// <summary>ICoreApi: creates a character on the game thread; the caller waits (bounded) for the result.</summary>
+        public LoginResult CreatePlayer(SessionId id, string name, string password)
+        {
+            return RunOnGameThread(() => DoCreateUser(name, password, id), LoginResult.TryAgainLater);
+        }
+
+        /// <summary>ICoreApi: the names of the players online, read on the game thread.</summary>
+        public IReadOnlyList<string> GetOnlineNames()
+        {
+            return RunOnGameThread(() => (IReadOnlyList<string>)Players.Select(p => p.PlayerName).ToList(), new List<string>());
+        }
+
+        // Runs work on the game thread and waits for it, at most ApiCallTimeout. Called on the game thread itself the
+        // work runs at once. If the wait runs out before the game thread has started the work, the work is cancelled
+        // (so a login nobody is waiting for never happens) and valueWhenUnavailable is returned; if it had already
+        // started, its result is awaited.
+        private T RunOnGameThread<T>(Func<T> work, T valueWhenUnavailable)
+        {
+            if (Thread.CurrentThread.ManagedThreadId == Volatile.Read(ref _gameThreadId)) { return work(); }
+
+            const int pending = 0, started = 1, abandoned = 2;
+            int state = pending;
+            var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+            bool posted = Post(() =>
+            {
+                if (Interlocked.CompareExchange(ref state, started, pending) != pending) { return; }
+                try { completion.SetResult(work()); }
+                catch (Exception ex) { completion.SetException(ex); }
+            });
+            if (!posted) { return valueWhenUnavailable; }
+
+            try
+            {
+                if (completion.Task.Wait(ApiCallTimeout)) { return completion.Task.Result; }
+                if (Interlocked.CompareExchange(ref state, abandoned, pending) == pending) { return valueWhenUnavailable; }
+                return completion.Task.GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Exception running a front-end request on the game thread: " + ex);
+                return valueWhenUnavailable;
+            }
         }
 
         /// <summary>Called on socket threads when a session closes, for any reason.</summary>
@@ -425,10 +483,7 @@ namespace MUD.Core
                             if (player.ConnectionStatus == PlayerConnectionStatuses.Offline) { return; }
                             player.DataReceivedHandler(null, item.Line);
                         }
-                        else if (PreLoginHandler != null)
-                        {
-                            PreLoginHandler(item.Session, item.Line);
-                        }
+                        // A line from a session that has not logged in is not core's: the front end runs the login dialogue.
                         break;
                     }
                 case InboundKind.Disconnected:
@@ -562,11 +617,15 @@ namespace MUD.Core
             connection.Player = player;
         }
 
-        public bool DoLogin(string userName, string password, SessionId session)
+        /// <summary>
+        /// Logs the session in (game thread). Returns the outcome; the retired and still-saving explanations are also
+        /// sent to the session's sink, as before.
+        /// </summary>
+        public LoginResult DoLogin(string userName, string password, SessionId session)
         {
-            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return LoginResult.BadCredentials; }
             SessionConnection client;
-            if (!_sessionRegistry.TryGet(session, out client)) { return false; }
+            if (!_sessionRegistry.TryGet(session, out client)) { return LoginResult.BadCredentials; }
 
             var foundPlayer = GetPlayerAccounts().Authenticate(userName, password);
 
@@ -574,21 +633,21 @@ namespace MUD.Core
             {
                 // Only reached with the right password. A retired character cannot be played (specs/WEB_EDITING.md 15).
                 client.Send(PlayerAccounts.RetiredMessage);
-                return false;
+                return LoginResult.Retired;
             }
 
             if (foundPlayer != null && IsFinalSavePending(foundPlayer.Id))
             {
                 // The previous session's logout save is still queued; logging in now could load stale data.
                 client.Send("Your previous session is still being saved, try again in a moment.");
-                return false;
+                return LoginResult.TryAgainLater;
             }
 
             if (foundPlayer != null && Players.Contains(foundPlayer))
             {
                 // The account already has a live player: the new connection takes it over.
                 TakeOverSession(foundPlayer, session);
-                return true;
+                return LoginResult.AlreadyOnline;
             }
 
             if (foundPlayer != null)
@@ -597,9 +656,9 @@ namespace MUD.Core
                 foundPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
                 MoveToDefaultRoomIfLocationMissing(foundPlayer);
                 AddPlayer(foundPlayer);
-                return true;
+                return LoginResult.Success;
             }
-            return false;
+            return LoginResult.BadCredentials;
         }
 
         public const string LostLocationMessage = "While you were away the world shifted, and the place you remember is gone. The currents of the realm carry you back to where all journeys begin.";
@@ -616,13 +675,17 @@ namespace MUD.Core
             player.ReceiveMessage(LostLocationMessage);
         }
 
-        public bool DoCreateUser(string userName, string password, SessionId session)
+        /// <summary>
+        /// Creates a character and logs the session in as it (game thread). A name that is not allowed and a failed
+        /// save are explained to the session's sink here; a taken name is only returned as NameTaken, for the front
+        /// end to word.
+        /// </summary>
+        public LoginResult DoCreateUser(string userName, string password, SessionId session)
         {
-            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return LoginResult.BadCredentials; }
             SessionConnection connectingClient;
-            if (!_sessionRegistry.TryGet(session, out connectingClient)) { return false; }
+            if (!_sessionRegistry.TryGet(session, out connectingClient)) { return LoginResult.BadCredentials; }
 
-            // Every failure is reported to the client here; the caller only needs to know it did not succeed.
             var accounts = GetPlayerAccounts();
             userName = PlayerAccounts.Clean(userName);
 
@@ -630,7 +693,7 @@ namespace MUD.Core
             if (nameProblem != null)
             {
                 connectingClient.Send(nameProblem);
-                return false;
+                return LoginResult.BadCredentials;
             }
 
             if (accounts.FindByName(userName) == null)
@@ -649,22 +712,17 @@ namespace MUD.Core
 
                 // The unique index decides under concurrent creates: a duplicate-key error on save means the name is taken.
                 var saved = accounts.TrySave(newPlayer);
-                if (saved == PlayerSaveResult.NameTaken)
-                {
-                    connectingClient.Send(string.Format("There is already someone by the name of {0}.", userName));
-                    return false;
-                }
+                if (saved == PlayerSaveResult.NameTaken) { return LoginResult.NameTaken; }
                 if (saved != PlayerSaveResult.Saved)
                 {
                     connectingClient.Send("Unable to create your character right now. Please try again later.\r\n");
-                    return false;
+                    return LoginResult.TryAgainLater;
                 }
 
                 AddPlayer(newPlayer);
-                return true;
+                return LoginResult.Success;
             }
-            connectingClient.Send(string.Format("There is already someone by the name of {0}.", userName));
-            return false;
+            return LoginResult.NameTaken;
         }
 
         // Backfills Player.NameKey for stored players and creates the unique NameKey index. Never throws:

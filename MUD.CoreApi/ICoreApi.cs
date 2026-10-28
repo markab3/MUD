@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace MUD.CoreApi
 {
     /// <summary>
@@ -21,5 +23,33 @@ namespace MUD.CoreApi
 
         /// <summary>Closes the session from the front end's side (connection lost, idle, ...). Unknown ids are ignored.</summary>
         void CloseSession(SessionId id, SessionEndReason reason);
+
+        /// <summary>
+        /// Logs the session in as an existing character. Core runs the login on the game thread and the caller waits
+        /// for the result, for a bounded time; it is therefore never called from the game thread's own callbacks by a
+        /// front end. When the result is not a success core may already have sent an explanation to the session's sink
+        /// (retired character, previous session still saving); the front end adds only its own generic text. A wait
+        /// that runs out returns <see cref="LoginResult.TryAgainLater"/> and the login is not carried out.
+        /// <see cref="LoginResult.AlreadyOnline"/> means the account was online and this session took it over: the
+        /// session is logged in. Does not consult the throttle; the front end does that with <see cref="IsThrottled"/>
+        /// and <see cref="RecordLoginOutcome"/>.
+        /// </summary>
+        LoginResult Authenticate(SessionId id, string name, string password);
+
+        /// <summary>
+        /// Creates a character and logs the session in as it. Waits the same way as <see cref="Authenticate"/>. A
+        /// <see cref="LoginResult.NameTaken"/> result carries no text from core; the front end words it. Other failures
+        /// (a name that is not allowed, a character that could not be saved) have already been explained to the sink.
+        /// </summary>
+        LoginResult CreatePlayer(SessionId id, string name, string password);
+
+        /// <summary>True while too many logins have failed from this key (an address-like string); the front end refuses further attempts.</summary>
+        bool IsThrottled(string remoteKey);
+
+        /// <summary>Counts a failed login against the key, or clears its failure count after a success.</summary>
+        void RecordLoginOutcome(string remoteKey, bool success);
+
+        /// <summary>The names of the players who are online, for the pre-login "who". Read only; waits like <see cref="Authenticate"/>.</summary>
+        IReadOnlyList<string> GetOnlineNames();
     }
 }

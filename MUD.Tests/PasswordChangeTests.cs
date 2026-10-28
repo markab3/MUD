@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using MongoDB.Bson;
+using MUD.Core;
 using MUD.Core.Commands;
 using MUD.Core.GameObjects;
 using MUD.Core.Repositories;

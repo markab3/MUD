@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using MUD.Core;
+using MUD.CoreApi;
 using MUD.Telnet;
 using Xunit;
 
@@ -20,19 +22,45 @@ namespace MUD.Tests
             public void DisconnectWithMessage(string message) { Disconnected = message; }
         }
 
-        private class FakeHandler : ILoginHandler
+        // A fake core: records the calls the login dialogue makes and answers them from the flags. The throttle is core's
+        // own class, so the dialogue's use of IsThrottled and RecordLoginOutcome is tested against the real rules.
+        private class FakeHandler : ICoreApi
         {
             public bool LoginResult, CreateResult;
             public List<string> Calls = new List<string>();
-            public bool Login(string name, string password) { Calls.Add("login:" + name + ":" + password); return LoginResult; }
-            public bool Create(string name, string password) { Calls.Add("create:" + name + ":" + password); return CreateResult; }
+            public LoginThrottle Throttle;
+
+            public LoginResult Authenticate(SessionId id, string name, string password)
+            {
+                Calls.Add("login:" + name + ":" + password);
+                return LoginResult ? MUD.CoreApi.LoginResult.Success : MUD.CoreApi.LoginResult.BadCredentials;
+            }
+
+            public LoginResult CreatePlayer(SessionId id, string name, string password)
+            {
+                Calls.Add("create:" + name + ":" + password);
+                return CreateResult ? MUD.CoreApi.LoginResult.Success : MUD.CoreApi.LoginResult.NameTaken;
+            }
+
+            public bool IsThrottled(string remoteKey) { return Throttle != null && Throttle.IsBlocked(remoteKey); }
+
+            public void RecordLoginOutcome(string remoteKey, bool success)
+            {
+                if (Throttle == null) { return; }
+                if (success) { Throttle.RecordSuccess(remoteKey); } else { Throttle.RecordFailure(remoteKey); }
+            }
+
+            public IReadOnlyList<string> GetOnlineNames() { return new List<string>(); }
+            public SessionId OpenSession(string frontEnd, string remoteKey, IFrontEndSink sink) { return new SessionId("fake"); }
+            public void SubmitLine(SessionId id, string rawLine) { }
+            public void CloseSession(SessionId id, SessionEndReason reason) { }
         }
 
         private static LoginSession Make(out FakeConnection conn, out FakeHandler handler, LoginThrottle throttle = null)
         {
             conn = new FakeConnection();
-            handler = new FakeHandler();
-            return new LoginSession(conn, handler, throttle);
+            handler = new FakeHandler { Throttle = throttle };
+            return new LoginSession(conn, handler, new SessionId("fake"));
         }
 
         [Fact]

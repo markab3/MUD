@@ -1,4 +1,5 @@
 using System;
+using MUD.CoreApi;
 
 namespace MUD.Telnet
 {
@@ -25,15 +26,6 @@ namespace MUD.Telnet
         void DisconnectWithMessage(string message);
     }
 
-    /// <summary>
-    /// Performs the actual login/creation. Name validation and matching rules belong to the implementation.
-    /// </summary>
-    public interface ILoginHandler
-    {
-        bool Login(string name, string password);
-        bool Create(string name, string password);
-    }
-
     public enum LoginState
     {
         /// <summary>Not in a prompted flow; lines are treated as pre-login commands.</summary>
@@ -45,7 +37,8 @@ namespace MUD.Telnet
 
     /// <summary>
     /// Per-connection pre-login state machine: the prompted "connect"/"create" flow plus the legacy one-line forms.
-    /// Passwords are never logged or echoed.
+    /// It asks core to log in or create through <see cref="ICoreApi"/>, which also holds the brute-force throttle
+    /// (decision D43). Passwords are never logged or echoed.
     /// </summary>
     public class LoginSession
     {
@@ -53,18 +46,18 @@ namespace MUD.Telnet
             "Note: your password was visible on that line. The prompted form is preferred: type 'connect' or 'create' on its own.";
 
         private readonly ILoginConnection _connection;
-        private readonly ILoginHandler _handler;
-        private readonly LoginThrottle _throttle;
+        private readonly ICoreApi _core;
+        private readonly SessionId _sessionId;
 
         private bool _creating;
         private string _name;
         private string _password;
 
-        public LoginSession(ILoginConnection connection, ILoginHandler handler, LoginThrottle throttle)
+        public LoginSession(ILoginConnection connection, ICoreApi core, SessionId sessionId)
         {
             _connection = connection;
-            _handler = handler;
-            _throttle = throttle;
+            _core = core;
+            _sessionId = sessionId;
         }
 
         public LoginState State { get; private set; } = LoginState.Idle;
@@ -211,31 +204,33 @@ namespace MUD.Telnet
         private void attemptLogin(string name, string password)
         {
             string key = _connection.RemoteKey ?? string.Empty;
-            if (_throttle != null && _throttle.IsBlocked(key))
+            if (_core.IsThrottled(key))
             {
                 _connection.DisconnectWithMessage("Too many failed login attempts. Please try again later.");
                 return;
             }
 
-            if (_handler.Login(name, password))
+            LoginResult result = _core.Authenticate(_sessionId, name, password);
+            if (result == LoginResult.Success || result == LoginResult.AlreadyOnline)
             {
                 IsLoggedIn = true;
-                if (_throttle != null) { _throttle.RecordSuccess(key); }
+                _core.RecordLoginOutcome(key, true);
             }
             else
             {
-                if (_throttle != null) { _throttle.RecordFailure(key); }
+                _core.RecordLoginOutcome(key, false);
                 _connection.Send(string.Format("Login failed for {0}.", name));
             }
         }
 
         private void attemptCreate(string name, string password)
         {
-            if (_handler.Create(name, password))
+            LoginResult result = _core.CreatePlayer(_sessionId, name, password);
+            if (result == LoginResult.Success)
             {
                 IsLoggedIn = true;
             }
-            else
+            else if (result == LoginResult.NameTaken)
             {
                 _connection.Send(string.Format("There is already someone by the name of {0}.", name));
             }
