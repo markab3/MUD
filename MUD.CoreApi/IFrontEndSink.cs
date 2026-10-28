@@ -21,6 +21,13 @@ namespace MUD.CoreApi
         /// <summary>Core asks the front end to close the session after writing the farewell text (which may be empty).</summary>
         void Close(SessionId id, string farewellMarkup, bool flush);
 
+        /// <summary>
+        /// The terminal the player chose for the session (the persisted setting, pushed at login and whenever the player
+        /// changes it). The front end converts the markup of later output for that terminal; a name it does not know
+        /// leaves the markup as it is. A front end with no use for it keeps this default, which does nothing.
+        /// </summary>
+        void SetTerminal(SessionId id, string terminalName) { }
+
         /// <summary>The session is over, with the reason.</summary>
         void SessionEnded(SessionId id, SessionEndReason reason);
     }
