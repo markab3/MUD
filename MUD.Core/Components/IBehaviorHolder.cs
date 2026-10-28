@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
+using MUD.Core.Events;
+using MUD.Core.GameObjects;
 
 namespace MUD.Core.Components
 {
@@ -30,13 +32,16 @@ namespace MUD.Core.Components
             }
             if (holder.Behaviors == null) { holder.Behaviors = new List<BehaviorRef>(); }
             holder.Behaviors.Add(entry.Clone());
+            if (holder is GameObject target) { ChangeEvents.EmitBehaviorAdd(target, entry); }
             return null;
         }
 
         public static bool RemoveBehavior(this IBehaviorHolder holder, string hook, string module, string type)
         {
             if (holder.Behaviors == null) { return false; }
-            return holder.Behaviors.RemoveAll(b => b != null && b.HasSameBinding(hook, module, type)) > 0;
+            bool removed = holder.Behaviors.RemoveAll(b => b != null && b.HasSameBinding(hook, module, type)) > 0;
+            if (removed && holder is GameObject target) { ChangeEvents.EmitBehaviorRemove(target, hook, module, type); }
+            return removed;
         }
     }
 }
