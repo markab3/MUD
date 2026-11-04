@@ -34,6 +34,9 @@ namespace MUD.Core.Commands
             if (newCommand.CommandObject.GetType() == typeof(StopCommand))
             {
                 Clear(issuer);
+                // Also ends a Before chain this living is parked on, unless its commit has begun (D62): the commit is one
+                // synchronous step on the game thread, so a stop that arrives here is always before it.
+                issuer.CancelWaitingChains();
                 return;
             }
 
@@ -45,7 +48,8 @@ namespace MUD.Core.Commands
             }
             queue.AddLast(newCommand);
 
-            if (_clock.Now < issuer.NextActionAt)
+            // A parked living (waiting on a Before chain) keeps its new commands queued, like one that is busy (D62).
+            if (_clock.Now < issuer.NextActionAt || issuer.IsParked)
             {
                 issuer.ReceiveMessage("Command queued.");
                 return;
@@ -88,7 +92,7 @@ namespace MUD.Core.Commands
             // Snapshot: commands may queue or clear commands for anyone.
             foreach (Living living in _queues.Keys.ToList())
             {
-                if (_clock.Now >= living.NextActionAt) { DispatchOne(living); }
+                if (_clock.Now >= living.NextActionAt && !living.IsParked) { DispatchOne(living); }
             }
         }
 

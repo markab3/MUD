@@ -14,5 +14,11 @@ namespace MUD.Core.Events
         // events cannot starve input and a flood of input cannot starve events. Events over the budget stay queued and
         // are processed on the next pass.
         public int MaxEventsPerPass { get; set; } = 50;
+
+        // The single deadline of one Before chain (owner decision D15): handlers that have not answered when it passes
+        // are misses and follow the fail policy. For command.entered, which asks one behavior at a time (D63), it is the
+        // deadline of each hop. The owner has not set it; the spec's unmeasured proposal of 150 ms per chain (CORE_API
+        // 2.3) is used, chosen by card P3-2 and flagged in its pull request. There is no separate per-handler deadline.
+        public System.TimeSpan BeforeChainDeadline { get; set; } = System.TimeSpan.FromMilliseconds(150);
     }
 }

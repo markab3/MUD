@@ -25,13 +25,18 @@ namespace MUD.Core.Events
 
         public string[] Hooks { get; }
 
-        public EventParty(string role, GameObject entity, string[] hooks = null)
+        // Only used by a sequential Before chain (command.entered, owner decision D63): lower groups are asked first. For
+        // that hook 0 is the player, 1 the player's inventory, 2 the room, 3 the room's items. Ignored everywhere else.
+        public int Group { get; }
+
+        public EventParty(string role, GameObject entity, string[] hooks = null, int group = 0)
         {
             if (string.IsNullOrEmpty(role)) { throw new ArgumentException("A party needs a role.", nameof(role)); }
             if (entity == null) { throw new ArgumentNullException(nameof(entity)); }
             Role = role;
             Entity = entity;
             Hooks = hooks ?? NoHooks;
+            Group = group;
         }
 
         public override string ToString()

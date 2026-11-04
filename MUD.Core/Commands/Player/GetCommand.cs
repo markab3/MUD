@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using MUD.Core.Components;
 using MUD.Core.Formatting;
 using MUD.Core.GameObjects;
 
@@ -30,31 +31,39 @@ namespace MUD.Core.Commands
             var matchedObjects = commandIssuer.MatchObjects(((string)commandArgs[0]).ToLower(), false, true, false, false);
             if (matchedObjects != null && matchedObjects.Length > 0)
             {
-                // Only move items that were actually removed from the room.
-                var movedObjects = new List<GameObject>();
-                foreach (GameObject currentItem in matchedObjects)
+                // The items go through the item.take hook (a Before chain only when something is hooked, D3, D54); the
+                // commit below is the move as it always was.
+                var candidates = matchedObjects.OfType<InventoryItem>().ToList();
+                string requested = (string)commandArgs[0];
+                commandIssuer.MoveItemsThrough(BehaviorHooks.ItemTake, "get", candidates, allowed =>
                 {
-                    if (commandIssuer.CurrentLocation.Items.Remove((InventoryItem)currentItem))
+                    // Only move items that were actually removed from the room.
+                    var movedObjects = new List<GameObject>();
+                    foreach (InventoryItem currentItem in allowed)
                     {
-                        commandIssuer.Inventory.Add((InventoryItem)currentItem);
-                        movedObjects.Add(currentItem);
+                        if (commandIssuer.CurrentLocation.Items.Remove(currentItem))
+                        {
+                            commandIssuer.Inventory.Add(currentItem);
+                            movedObjects.Add(currentItem);
+                        }
                     }
-                }
 
-                if (movedObjects.Count > 0)
-                {
-                    // Write-through. Player first, then room: a crash between the two duplicates the item rather than losing it.
-                    (commandIssuer as Player)?.Save(true);
-                    commandIssuer.CurrentLocation.SaveState();
+                    if (movedObjects.Count > 0)
+                    {
+                        // Write-through. Player first, then room: a crash between the two duplicates the item rather than losing it.
+                        (commandIssuer as Player)?.Save(true);
+                        commandIssuer.CurrentLocation.SaveState();
 
-                    string itemList = movedObjects.Select(ob => ob.ShortDescription).GetListText();
-                    commandIssuer.ReceiveMessage(string.Format("You get {0}.", itemList));
-                    commandIssuer.CurrentLocation.TellRoom(string.Format("{0} gets {1}.", commandIssuer.ShortDescription, itemList), new Living[] { commandIssuer });
-                }
-                else
-                {
-                    commandIssuer.ReceiveMessage(string.Format("You can't get any {0}.", (string)commandArgs[0]));
-                }
+                        string itemList = movedObjects.Select(ob => ob.ShortDescription).GetListText();
+                        commandIssuer.ReceiveMessage(string.Format("You get {0}.", itemList));
+                        commandIssuer.CurrentLocation.TellRoom(string.Format("{0} gets {1}.", commandIssuer.ShortDescription, itemList), new Living[] { commandIssuer });
+                    }
+                    else
+                    {
+                        commandIssuer.ReceiveMessage(string.Format("You can't get any {0}.", requested));
+                    }
+                    return movedObjects;
+                });
             }
             else
             {
