@@ -104,16 +104,12 @@ namespace MUD.Core.GameObjects
 
         public virtual void DoHeartbeat()
         {
-            // Heartbeat behavior entries are resolved to in-process handlers by (Module, Type). An entry nothing is
-            // registered for is dormant and skipped (D10, D60). Event-bus dispatch comes in phase 3; until then this
-            // is the only caller, and it still reaches players only (World.doHeartbeat).
-            foreach (var entry in Behaviors.Where(b => b != null && b.Hook == MUD.Core.Components.BehaviorHooks.Heartbeat).ToList())
-            {
-                if (MUD.Core.Components.InProcessBehaviorRegistry.Shared.TryGetHeartbeat(entry.Module, entry.Type, out var handler))
-                {
-                    handler(this, entry);
-                }
-            }
+            // Delivers this living's own heartbeat entries through the dispatcher: each is resolved by (Module, Type), and
+            // an entry nothing is registered for is dormant, skipped and counted (D10, D60). The world calls this for
+            // every player; other entities with an entry are reached through the heartbeat index (D56). Without a bound
+            // dispatcher (tests, tools) a throwaway one with the in-process registry does the same work.
+            if (!MUD.Core.Events.EventDispatcher.HasEntry(this, MUD.Core.Components.BehaviorHooks.Heartbeat)) { return; }
+            (MUD.Core.Events.EventDispatcher.Current ?? new MUD.Core.Events.EventDispatcher(log: message => { })).DeliverHeartbeat(this);
         }
 
         public override string Examine()

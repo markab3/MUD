@@ -20,5 +20,10 @@ namespace MUD.Core.Events
         // deadline of each hop. The owner has not set it; the spec's unmeasured proposal of 150 ms per chain (CORE_API
         // 2.3) is used, chosen by card P3-2 and flagged in its pull request. There is no separate per-handler deadline.
         public System.TimeSpan BeforeChainDeadline { get; set; } = System.TimeSpan.FromMilliseconds(150);
+
+        // How often skipped dormant behavior entries (owner decision D10: the module is not loaded, so nothing is registered
+        // for the entry) are summarised in the log: at most one line per interval, however many entries were skipped. The
+        // owner has not set it; 60 seconds was chosen by card P3-3 and is flagged in its pull request.
+        public System.TimeSpan DormantLogInterval { get; set; } = System.TimeSpan.FromSeconds(60);
     }
 }

@@ -12,7 +12,7 @@ namespace MUD.Core.Events
     }
 
     // Maps (Module, Type) to a handler. Returns false when nothing is registered, which makes the entry dormant (D10).
-    // Core registers none yet: the in-process registry is card P3-3.
+    // The in-process registry (InProcessBehaviorRegistry) is the default resolver.
     public interface IEventHandlerResolver
     {
         bool TryResolve(string module, string type, out IEventHandler handler);

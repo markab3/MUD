@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using MUD.Core.Components;
+using MUD.Core.GameObjects;
 using MUD.Data;
 
 namespace MUD.Core.Events
@@ -57,8 +58,25 @@ namespace MUD.Core.Events
             public EventOrigin Origin;
         }
 
-        // Maps (Module, Type) to handlers. Replaceable; the in-process registry (card P3-3) is set here.
+        // Maps (Module, Type) to handlers. Replaceable; the default is the in-process registry (owner decision D49).
         public IEventHandlerResolver Resolver { get; set; }
+
+        // The entities that carry a heartbeat entry (D56).
+        public HeartbeatIndex Heartbeats { get; } = new HeartbeatIndex();
+
+        // The tick number the next heartbeat deliveries carry in their payload (set by the world once per heartbeat).
+        public long HeartbeatTick { get; set; }
+
+        // Dormant entries (D10): behavior entries skipped because nothing is registered for their (Module, Type). The total
+        // counts every skip since start; the per-interval counts are summarised in the log at most once per
+        // EventLimits.DormantLogInterval and then reset.
+        public long DormantSkips { get; private set; }
+
+        public long DormantLogLines { get; private set; }
+
+        private readonly Dictionary<(string Module, string Type), long> _dormantSinceLastLog = new Dictionary<(string Module, string Type), long>();
+        private DateTime _lastDormantLog = DateTime.MinValue;
+        private readonly List<GameObject> _heartbeatBuffer = new List<GameObject>();
 
         // The game clock the Before chain deadline is measured on (a fake clock in tests).
         public IClock Clock { get; }
@@ -90,7 +108,7 @@ namespace MUD.Core.Events
 
         public EventDispatcher(IEventHandlerResolver resolver = null, EventLimits limits = null, Action<string> log = null, IClock clock = null)
         {
-            Resolver = resolver ?? NoEventHandlers.Instance;
+            Resolver = resolver ?? InProcessBehaviorRegistry.Shared;
             Limits = limits ?? new EventLimits();
             _log = log ?? Console.WriteLine;
             Clock = clock ?? SystemClock.Instance;
@@ -202,6 +220,7 @@ namespace MUD.Core.Events
                 // Chains whose deadline has passed end first (their handlers become misses, D15); finishing a chain may
                 // commit an action and queue events, which the loop below then processes.
                 ExpireChains();
+                ReportDormant();
                 while (processed < maxEvents && (_requests.Count > 0 || _queue.Count > 0))
                 {
                     if (_requests.Count > 0) { RunRequest(_requests.Dequeue()); }
@@ -417,13 +436,17 @@ namespace MUD.Core.Events
             _log("Exception in Before handler " + (entry == null ? "(chain completion)" : entry.Module + "/" + entry.Type) + " for " + gameEvent + ": " + ex);
         }
 
-        // A handler that could not answer (D10, D60). Counting and the once-per-interval log of unresolved entries belong
-        // to card P3-3; here a miss is counted, and logged unless the entry is simply unresolved.
+        // A handler that could not answer (D10, D60). A miss is counted; an unresolved entry is also counted as dormant and
+        // reported once per interval (ReportDormant) instead of being logged each time.
         internal void CountMiss(BehaviorRef entry, string hook, string why, bool failClosed)
         {
             BeforeMisses++;
             if (failClosed) { BeforeClosedMisses++; }
-            if (why.StartsWith("unresolved", StringComparison.Ordinal)) { return; }
+            if (why.StartsWith("unresolved", StringComparison.Ordinal))
+            {
+                NoteDormant(entry);
+                return;
+            }
             _log("Before handler " + entry.Module + "/" + entry.Type + " (" + hook + ") " + why + "; " + (failClosed ? "failing closed." : "failing open."));
         }
 
@@ -562,12 +585,119 @@ namespace MUD.Core.Events
             }
         }
 
+        // ---- Dormant entries (D10) ----
+
+        // Counts one skipped entry. The log line is written by ReportDormant, not here, so a flood of skips costs a
+        // dictionary update and nothing else.
+        private void NoteDormant(BehaviorRef entry)
+        {
+            DormantSkips++;
+            var key = (entry.Module ?? string.Empty, entry.Type ?? string.Empty);
+            long seen;
+            _dormantSinceLastLog.TryGetValue(key, out seen);
+            _dormantSinceLastLog[key] = seen + 1;
+        }
+
+        // The skips counted since the last report, per (Module, Type). A copy.
+        public IReadOnlyDictionary<(string Module, string Type), long> DormantSinceLastLog
+        {
+            get { return new Dictionary<(string Module, string Type), long>(_dormantSinceLastLog); }
+        }
+
+        // Writes one log line summarising the dormant entries skipped since the last line, when there are any and at least
+        // DormantLogInterval has passed since the last line; then resets the per-interval counts. Called on every Pump.
+        private void ReportDormant()
+        {
+            if (_dormantSinceLastLog.Count == 0) { return; }
+            DateTime now = Clock.Now;
+            if (now - _lastDormantLog < Limits.DormantLogInterval) { return; }
+
+            long total = 0;
+            var parts = new List<string>(_dormantSinceLastLog.Count);
+            foreach (KeyValuePair<(string Module, string Type), long> pair in _dormantSinceLastLog)
+            {
+                total += pair.Value;
+                parts.Add(pair.Key.Module + "/" + pair.Key.Type + " x" + pair.Value);
+            }
+            parts.Sort(StringComparer.Ordinal);
+            _dormantSinceLastLog.Clear();
+            _lastDormantLog = now;
+            DormantLogLines++;
+            _log("Dormant behavior entries skipped (" + total + " in this interval, " + DormantSkips + " since start; no handler is registered for them): " + string.Join(", ", parts) + ".");
+        }
+
+        // ---- Heartbeat (G8, D56) ----
+
+        private static readonly string[] HeartbeatHooks = { BehaviorHooks.Heartbeat };
+
+        // Delivers one heartbeat event to every heartbeat entry the entity carries, now, on the game thread. Entries nothing
+        // is registered for are dormant and skipped. A handler that throws is logged and does not stop the others. Events a
+        // handler emits are caused by the heartbeat event and are queued like any other. Does nothing, and allocates nothing,
+        // for an entity with no heartbeat entry.
+        public void DeliverHeartbeat(GameObject entity)
+        {
+            if (entity == null || !HasEntry(entity, BehaviorHooks.Heartbeat)) { return; }
+
+            // Copied first: a handler may remove its own entry (bleeding does when it ends).
+            List<BehaviorRef> entries = ((IBehaviorHolder)entity).Behaviors;
+            var matching = new List<BehaviorRef>(entries.Count);
+            for (int index = 0; index < entries.Count; index++)
+            {
+                BehaviorRef entry = entries[index];
+                if (entry != null && string.Equals(entry.Hook, BehaviorHooks.Heartbeat, StringComparison.Ordinal)) { matching.Add(entry); }
+            }
+
+            var party = new EventParty("self", entity, HeartbeatHooks);
+            GameEvent created = Create(EventNames.Heartbeat, EventPhase.After, new[] { party },
+                new Dictionary<string, object> { { "tick", HeartbeatTick } }, _currentEvent, _currentOrigin);
+            if (created == null) { return; }
+            for (int index = 0; index < matching.Count; index++)
+            {
+                Deliver(created, party, matching[index], BehaviorHooks.Heartbeat);
+            }
+        }
+
+        // Delivers the heartbeat to every indexed entity (players are ticked by the world and deliver their own entries).
+        // An entity that has lost its last heartbeat entry is dropped from the index. One entity's failure does not stop
+        // the rest. Returns how many entities were delivered to.
+        public int DeliverIndexedHeartbeats()
+        {
+            if (Heartbeats.Count == 0) { return 0; }
+            Heartbeats.CopyTo(_heartbeatBuffer);
+            int delivered = 0;
+            for (int index = 0; index < _heartbeatBuffer.Count; index++)
+            {
+                GameObject entity = _heartbeatBuffer[index];
+                if (!HasEntry(entity, BehaviorHooks.Heartbeat))
+                {
+                    Heartbeats.Untrack(entity);
+                    continue;
+                }
+                try
+                {
+                    DeliverHeartbeat(entity);
+                    delivered++;
+                }
+                catch (Exception ex)
+                {
+                    HandlerFailures++;
+                    _log("Exception delivering the heartbeat to " + entity.Id + ": " + ex);
+                }
+            }
+            _heartbeatBuffer.Clear();
+            return delivered;
+        }
+
         private void Deliver(GameEvent gameEvent, EventParty party, BehaviorRef entry, string hook)
         {
             IEventHandler handler;
-            // Unresolved: the entry is dormant. After verdicts are ignored, so skipping is all there is to do here;
-            // dormant counting and the once-per-interval log belong to card P3-3 (D10).
-            if (!Resolver.TryResolve(entry.Module, entry.Type, out handler) || handler == null) { return; }
+            // Unresolved: the entry is dormant. After verdicts are ignored, so skipping and counting is all there is to do
+            // here (D10).
+            if (!Resolver.TryResolve(entry.Module, entry.Type, out handler) || handler == null)
+            {
+                NoteDormant(entry);
+                return;
+            }
 
             GameEvent previousEvent = _currentEvent;
             EventOrigin previousOrigin = _currentOrigin;

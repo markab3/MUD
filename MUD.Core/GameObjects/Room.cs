@@ -118,6 +118,15 @@ namespace MUD.Core.GameObjects
                 TellRoom(entranceMessage);
             }
             _occupants.Add(newOccupant);
+
+            // A room or a living that carries a heartbeat entry joins the heartbeat index (D56) when it is entered, which
+            // covers entities that were loaded after the world started.
+            MUD.Core.Events.EventDispatcher dispatcher = MUD.Core.Events.EventDispatcher.Current;
+            if (dispatcher != null)
+            {
+                dispatcher.Heartbeats.Track(this);
+                dispatcher.Heartbeats.Track(newOccupant);
+            }
         }
 
         public void ExitRoom(Living occupant, string exitMessage = null)

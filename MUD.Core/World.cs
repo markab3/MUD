@@ -117,7 +117,7 @@ namespace MUD.Core
 
             Players = new List<Player>();
 
-            Events = new EventDispatcher(clock: Clock);
+            Events = new EventDispatcher(clock: Clock); // resolves (Module, Type) through the in-process registry
             // A handler redirects by denying and emitting a new entity.move (D6). The request needs a "mover" living and a
             // "to" room; it runs its own Before chain through the same MoveToRoom path as a walk.
             Events.RegisterAction(EventNames.EntityMove, request =>
@@ -241,6 +241,7 @@ namespace MUD.Core
                 Volatile.Write(ref _gameThreadId, Thread.CurrentThread.ManagedThreadId);
                 // Component and behavior edits on this thread now emit their change events to Events.
                 eventBinding = Events.Bind();
+                IndexStoredHeartbeatEntries();
                 _loop.Run();
             }
             finally
@@ -769,6 +770,24 @@ namespace MUD.Core
             return new PlayerAccounts(_serviceProvider.GetService<IPlayerRepository>(), Console.WriteLine);
         }
 
+        // Puts the stored rooms that carry a heartbeat entry in the heartbeat index (D56), so they tick from the start rather
+        // than from the first time somebody enters them. Rooms are never evicted, so loading them all is no extra
+        // residency. Needs the database, which is not available to the tests: a failure is logged and the rooms are
+        // indexed when first entered instead.
+        private void IndexStoredHeartbeatEntries()
+        {
+            try
+            {
+                var rooms = _serviceProvider.GetService<IRoomRepository>();
+                if (rooms == null) { return; }
+                foreach (Room room in rooms.GetAll()) { Events.Heartbeats.Track(room); }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Could not index the stored rooms with heartbeat entries: " + ex.Message);
+            }
+        }
+
         // Imports every area file in the configured content directory (no-op when none is configured).
         public void ImportContent()
         {
@@ -795,6 +814,7 @@ namespace MUD.Core
         {
             // Do heartbeat updates. Iterate a snapshot so players added or removed during the tick
             // cannot break enumeration, and catch per player so one failure cannot stop the timer.
+            if (Events != null) { Events.HeartbeatTick = _loop == null ? 0 : _loop.TickCount; }
             foreach (Player currentPlayer in Players.ToList())
             {
                 try
@@ -806,6 +826,9 @@ namespace MUD.Core
                     Console.WriteLine(string.Format("Exception encountered during heartbeat for {0}: {1}", currentPlayer.PlayerName, ex));
                 }
             }
+
+            // Rooms, NPCs and anything else that carries a heartbeat entry (owner decision D56). Nothing else is visited.
+            if (Events != null) { Events.DeliverIndexedHeartbeats(); }
         }
     }
 }
