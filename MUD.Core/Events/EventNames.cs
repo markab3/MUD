@@ -7,5 +7,6 @@ namespace MUD.Core.Events
         public const string EntityMove = "entity.move";
         public const string ItemMove = "item.move";
         public const string CommandEntered = "command.entered";
+        public const string Heartbeat = "heartbeat";
     }
 }

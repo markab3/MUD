@@ -32,7 +32,12 @@ namespace MUD.Core.Components
             }
             if (holder.Behaviors == null) { holder.Behaviors = new List<BehaviorRef>(); }
             holder.Behaviors.Add(entry.Clone());
-            if (holder is GameObject target) { ChangeEvents.EmitBehaviorAdd(target, entry); }
+            if (holder is GameObject target)
+            {
+                // A heartbeat entry puts the entity in the heartbeat index (D56).
+                if (entry.Hook == BehaviorHooks.Heartbeat && EventDispatcher.Current != null) { EventDispatcher.Current.Heartbeats.Track(target); }
+                ChangeEvents.EmitBehaviorAdd(target, entry);
+            }
             return null;
         }
 
