@@ -117,7 +117,25 @@ namespace MUD.Core
 
             Players = new List<Player>();
 
-            Events = new EventDispatcher();
+            Events = new EventDispatcher(clock: Clock);
+            // A handler redirects by denying and emitting a new entity.move (D6). The request needs a "mover" living and a
+            // "to" room; it runs its own Before chain through the same MoveToRoom path as a walk.
+            Events.RegisterAction(EventNames.EntityMove, request =>
+            {
+                MUD.Core.Events.EventParty mover = null, destination = null;
+                foreach (MUD.Core.Events.EventParty party in request.Parties)
+                {
+                    if (party.Role == "mover") { mover = party; }
+                    else if (party.Role == "to") { destination = party; }
+                }
+                var living = mover == null ? null : mover.Entity as Living;
+                var room = destination == null ? null : destination.Entity as Room;
+                if (living == null || room == null) { return false; }
+                object reason;
+                string reasonText = request.Payload != null && request.Payload.TryGetValue("reason", out reason) && reason is string ? (string)reason : "redirect";
+                living.MoveToRoom(room, string.Format("{0} leaves.", living.ShortDescription), null, reasonText);
+                return true;
+            });
             _loop = new GameLoop(Clock, handleInbound, onTick, () => doHeartbeat(null), null, () => Events.Pump());
             _loop.OnFatal = beginShutdown;
         }

@@ -4,6 +4,8 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using MUD.Core.Commands;
+using MUD.Core.Components;
+using MUD.Core.Events;
 using MUD.Core.Formatting;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Data;
@@ -468,6 +470,28 @@ namespace MUD.Core.GameObjects
                     ReceiveMessage("Do not type a password on the command line. You will be prompted for it.");
                 }
             }
+
+            // A line is offered to command.entered behaviors before the built-in command runs (D63, D64). Only quit is
+            // protected: it never reaches behaviors. A stop typed while a chain is waiting also goes straight to the queue,
+            // because it is what ends the wait (D62). With no command.entered entry anywhere nothing changes.
+            if (!(matchedCommand is QuitCommand) && !(IsParked && matchedCommand is StopCommand) && _world != null && _world.Events != null)
+            {
+                if (_lineChain != null)
+                {
+                    // Parked on an earlier line's chain: this line waits its turn (D62).
+                    _heldLines.Enqueue(message);
+                    ReceiveMessage("Command queued.");
+                    return;
+                }
+                if (OfferLineToBehaviors(message, matchedCommand)) { return; }
+            }
+
+            RunLine(message, matchedCommand);
+        }
+
+        // The built-in path for a typed line: queue the resolved command, or say it is not recognized.
+        private void RunLine(string message, ICommand matchedCommand)
+        {
             if (matchedCommand != null) // Move this logic to something else..something to match Command classes with input.
             {
                 _commandQueue.AddCommand(new CommandExecution(this, message, matchedCommand));
@@ -475,6 +499,83 @@ namespace MUD.Core.GameObjects
             else
             {
                 ReceiveMessage("Command not recognized.");
+            }
+        }
+
+        private BeforeChain _lineChain;
+        private readonly System.Collections.Generic.Queue<string> _heldLines = new System.Collections.Generic.Queue<string>();
+
+        private static readonly string[] CommandEnteredHooks = { BehaviorHooks.CommandEntered };
+
+        // True when the line was given to a sequential command.entered chain (the chain, not this method, then decides what
+        // happens to it). False when no entity near the player carries a command.entered entry: the caller carries on.
+        private bool OfferLineToBehaviors(string line, ICommand matchedCommand)
+        {
+            Room room = CurrentLocation;
+            bool hooked = EventDispatcher.HasEntry(this, BehaviorHooks.CommandEntered);
+            if (!hooked) { foreach (InventoryItem item in Inventory) { if (EventDispatcher.HasEntry(item, BehaviorHooks.CommandEntered)) { hooked = true; break; } } }
+            if (!hooked && room != null)
+            {
+                hooked = EventDispatcher.HasEntry(room, BehaviorHooks.CommandEntered);
+                if (!hooked) { foreach (InventoryItem item in room.Items) { if (EventDispatcher.HasEntry(item, BehaviorHooks.CommandEntered)) { hooked = true; break; } } }
+            }
+            if (!hooked) { return false; }
+
+            // The snapshot is the player, the room, and everything in the room and in the inventory (D63). Group order is
+            // the order they are asked in: the player, the player's inventory, the room, the room's items.
+            var parties = new System.Collections.Generic.List<EventParty>();
+            parties.Add(new EventParty("actor", this, CommandEnteredHooks, 0));
+            foreach (InventoryItem item in Inventory) { parties.Add(new EventParty("inventory", item, CommandEnteredHooks, 1)); }
+            if (room != null)
+            {
+                parties.Add(new EventParty("room", room, CommandEnteredHooks, 2));
+                foreach (InventoryItem item in room.Items) { parties.Add(new EventParty("item", item, CommandEnteredHooks, 3)); }
+                foreach (Living occupant in room.Occupants) { if (!ReferenceEquals(occupant, this)) { parties.Add(new EventParty("occupant", occupant, null, 4)); } }
+            }
+            var payload = new System.Collections.Generic.Dictionary<string, object> { { "line", line } };
+
+            BeforeChain chain = null;
+            chain = _world.Events.BeginBefore(EventNames.CommandEntered, parties, payload, true, outcome =>
+            {
+                if (chain != null) { UnregisterWaitingChain(chain); }
+                if (ReferenceEquals(_lineChain, chain)) { _lineChain = null; }
+                FinishLine(line, matchedCommand, outcome);
+            });
+            if (chain != null && !chain.IsComplete) { _lineChain = chain; RegisterWaitingChain(chain); }
+            return true;
+        }
+
+        private void FinishLine(string line, ICommand matchedCommand, BeforeOutcome outcome)
+        {
+            switch (outcome.Result)
+            {
+                case BeforeResult.Cancelled:
+                    ReceiveMessage("You stop.");
+                    _heldLines.Clear();
+                    return;
+                case BeforeResult.Refused:
+                    RunLine(line, matchedCommand);
+                    break;
+                case BeforeResult.Denied:
+                    if (!string.IsNullOrEmpty(outcome.Message)) { ReceiveMessage(outcome.Message); }
+                    break;
+                default:
+                    if (outcome.Handled)
+                    {
+                        // A behavior took the line: nothing else runs for it (D63).
+                        if (!string.IsNullOrEmpty(outcome.Message)) { ReceiveMessage(outcome.Message); }
+                    }
+                    else
+                    {
+                        RunLine(line, matchedCommand);
+                    }
+                    break;
+            }
+
+            // Lines typed while the chain waited are offered now, in order, unless one of them starts another wait.
+            while (_heldLines.Count > 0 && _lineChain == null && ConnectionStatus != PlayerConnectionStatuses.Offline)
+            {
+                DataReceivedHandler(null, _heldLines.Dequeue());
             }
         }
     }

@@ -144,6 +144,7 @@ namespace MUD.Core.GameObjects
 
                 _roomCommandSource.AddCommand(new AnonymousCommand()
                 {
+                    ExitName = currentExit.Name,
                     CommandKeywords = keywords,
                     ParseCommandHandler = ((Living commandIssuer, string input) =>
                         {
@@ -153,7 +154,7 @@ namespace MUD.Core.GameObjects
                     {
                         if (commandArgs[0] != null && commandArgs[0] is Exit)
                         {
-                            commandIssuer.MoveToRoom(((Exit)commandArgs[0]).DestinationId);
+                            commandIssuer.MoveToRoom(((Exit)commandArgs[0]).DestinationId, ((Exit)commandArgs[0]).Name);
                         }
                     })
                 });
