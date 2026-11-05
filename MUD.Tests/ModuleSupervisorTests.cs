@@ -240,8 +240,7 @@ namespace MUD.Tests
 
             supervisor.RequestRescan();
             supervisor.Start();
-            Assert.True(WaitFor(() => StatusOf(supervisor, "quiet") != null));
-            Assert.Equal(1, DescribeRuns("quiet"));
+            Assert.True(WaitFor(() => DescribeRuns("quiet") == 1 && StatusOf(supervisor, "quiet") != null && StatusOf(supervisor, "quiet").Version == "1.0"));
 
             supervisor.RequestRescan();
             Thread.Sleep(500);
