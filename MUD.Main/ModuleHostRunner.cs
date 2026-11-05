@@ -18,8 +18,8 @@ namespace MUD.Main
 {
     /// <summary>
     /// Kestrel on two Unix domain sockets inside the core process (owner decision D22, spike findings in specs/V2_SPIKE_RESULTS.md):
-    /// modules.sock serves the module service; frontends.sock is a stub in this card (the front-end service is a later card, D66)
-    /// and serves no gRPC service yet. A call for a service that does not belong to an endpoint is answered 404.
+    /// modules.sock serves the module service; frontends.sock serves the Admin service when one is given (card P6-1; the
+    /// session service for telnet is phase 7, D66). A call for a service that does not belong to an endpoint is answered 404.
     /// Started after the run directory lock is held; stopping it ends every module stream first.
     /// </summary>
     public sealed class ModuleHostRunner : IDisposable
@@ -33,10 +33,13 @@ namespace MUD.Main
         private readonly Func<Action, bool> _postToGameThread;
         private readonly Core.Modules.ModuleDispatcher _dispatcher;
         private readonly Action<string> _log;
+        private readonly MUD.Core.Administration.AdminApi _adminApi;
         private WebApplication _application;
 
-        public ModuleHostRunner(RunDirectory runDirectory, ModuleRegistry registry, Func<Action, bool> postToGameThread, Action<string> log = null, Core.Modules.ModuleDispatcher dispatcher = null)
+        /// <param name="adminApi">The Admin service logic (card P6-1), served on frontends.sock. Null serves no Admin service, as before.</param>
+        public ModuleHostRunner(RunDirectory runDirectory, ModuleRegistry registry, Func<Action, bool> postToGameThread, Action<string> log = null, Core.Modules.ModuleDispatcher dispatcher = null, MUD.Core.Administration.AdminApi adminApi = null)
         {
+            _adminApi = adminApi;
             _dispatcher = dispatcher;
             _runDirectory = runDirectory ?? throw new ArgumentNullException(nameof(runDirectory));
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
@@ -71,12 +74,16 @@ namespace MUD.Main
             builder.Services.AddGrpc();
             builder.Services.AddSingleton(_registry);
             builder.Services.AddSingleton<ModuleHostService>(_ => new ModuleHostService(_registry, _postToGameThread, _dispatcher));
+            if (_adminApi != null)
+            {
+                builder.Services.AddSingleton<MUD.Core.Administration.AdminService>(_ => new MUD.Core.Administration.AdminService(_adminApi));
+            }
             builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = _registry.Options.StopTimeout);
 
             WebApplication application = builder.Build();
             application.Use(async (context, next) =>
             {
-                // Module services belong on modules.sock only (D22). Front-end services will be mapped for frontends.sock by P4's later cards.
+                // Module services belong on modules.sock only and the Admin service on frontends.sock only (D22).
                 var items = context.Features.Get<IConnectionItemsFeature>();
                 object endpoint = null;
                 if (items != null) { items.Items.TryGetValue(EndpointItem, out endpoint); }
@@ -86,9 +93,16 @@ namespace MUD.Main
                     context.Response.StatusCode = StatusCodes.Status404NotFound;
                     return;
                 }
+                bool isAdminCall = context.Request.Path.StartsWithSegments("/mud.Admin");
+                if (isAdminCall && !FrontEndsEndpoint.Equals(endpoint))
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
                 await next();
             });
             application.MapGrpcService<ModuleHostService>();
+            if (_adminApi != null) { application.MapGrpcService<MUD.Core.Administration.AdminService>(); }
 
             application.StartAsync().GetAwaiter().GetResult();
             try
@@ -103,7 +117,7 @@ namespace MUD.Main
                 throw;
             }
             _application = application;
-            _log("Module host listening on " + _runDirectory.ModulesSocketPath + " (modules) and " + _runDirectory.FrontEndsSocketPath + " (front ends, stub).");
+            _log("Module host listening on " + _runDirectory.ModulesSocketPath + " (modules) and " + _runDirectory.FrontEndsSocketPath + (_adminApi != null ? " (front ends: Admin service)." : " (front ends, no service)."));
         }
 
         /// <summary>Ends every module stream, then stops Kestrel (the host would otherwise wait for open streams, spike Q6).</summary>

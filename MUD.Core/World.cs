@@ -435,6 +435,46 @@ namespace MUD.Core
             return RunOnGameThread(() => (IReadOnlyList<string>)Players.Select(p => p.PlayerName).ToList(), new List<string>());
         }
 
+        /// <summary>
+        /// Runs work on the game thread and waits for it, at most ApiCallTimeout. Returns false when the work did not run (the game is
+        /// stopping, the queue is full, the wait ran out before it started) or when it threw. Used by the Admin service.
+        /// </summary>
+        public bool TryRunOnGameThread<T>(Func<T> work, out T result)
+        {
+            Tuple<bool, T> outcome = RunOnGameThread(() => Tuple.Create(true, work()), Tuple.Create(false, default(T)));
+            result = outcome.Item2;
+            return outcome.Item1;
+        }
+
+        /// <summary>The player repository (live players), for the Admin service.</summary>
+        public IPlayerRepository GetPlayerRepository()
+        {
+            return _serviceProvider.GetService<IPlayerRepository>();
+        }
+
+        /// <summary>The room repository (live rooms), for the Admin service.</summary>
+        public IRoomRepository GetRoomRepository()
+        {
+            return _serviceProvider.GetService<IRoomRepository>();
+        }
+
+        /// <summary>
+        /// Builds the Admin service logic (phase 6, card P6-1) on this world: web session tokens, room and player edits and the audit trail.
+        /// Core is the only process that talks to the database, so the Admin service reads and writes it from here.
+        /// </summary>
+        public MUD.Core.Administration.AdminApi CreateAdminApi(IMongoDatabase database)
+        {
+            return new MUD.Core.Administration.AdminApi(
+                new MUD.Core.Administration.WorldAdminHost(this, _settings.StartRoomKey),
+                GetPlayerRepository(),
+                GetRoomRepository(),
+                new MUD.Core.Administration.MongoAdminQueries(database),
+                new MUD.Core.Administration.MongoAuditStore(database),
+                new MUD.Core.Administration.AdminSessions(),
+                Clock,
+                Console.WriteLine);
+        }
+
         // Runs work on the game thread and waits for it, at most ApiCallTimeout. Called on the game thread itself the
         // work runs at once. If the wait runs out before the game thread has started the work, the work is cancelled
         // (so a login nobody is waiting for never happens) and valueWhenUnavailable is returned; if it had already

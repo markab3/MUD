@@ -328,7 +328,9 @@ namespace MUD.Main
             moduleGrants.Reload();
             var moduleRegistry = new ModuleRegistry(new ModuleTokenRegistry(), moduleGrants, ContractVersion.Current, moduleHostOptions);
             ModuleDispatcher moduleDispatcher = _gameWorld.AttachModules(moduleRegistry, moduleHostOptions);
-            _moduleHost = new ModuleHostRunner(_runDirectory, moduleRegistry, action => _gameWorld.PostModuleCall(action), null, moduleDispatcher);
+            // The Admin service (card P6-1) is served on frontends.sock for the web front end. Core is the only process that reads and writes the database for it.
+            var adminApi = _gameWorld.CreateAdminApi(dbClient.GetDatabase(databaseName));
+            _moduleHost = new ModuleHostRunner(_runDirectory, moduleRegistry, action => _gameWorld.PostModuleCall(action), null, moduleDispatcher, adminApi);
             try
             {
                 _moduleHost.Start();
