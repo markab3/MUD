@@ -478,28 +478,28 @@ Options: (A) one `context.Emit(EventRecord)` and every effect is an event; (B) t
 `context.ScheduleTimer`, `context.SetState`) that build events; (C) separate RPCs for state and timers as D16 lists them, generic `Emit` for the rest.
 Recommendation: C on the wire (matches D16), B in the C# SDK so authors never hand-build event records. The sketch in 7.2 shows C.
 
-**G2. Exact `BehaviorRef` persistence shape.**
+**G2. Exact `BehaviorRef` persistence shape.** **[DECIDED, D53: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 Options: (A) embedded array on the entity document `behaviors: [{hook, module, type, priority, config, schemaVersion}]`; (B) a separate
 `behavior` collection keyed by entity id; (C) under `components.behaviors`.
 Recommendation: A. Entities already carry their own list (D5) and the entity document is the persisted unit (write-through snapshots).
 Also unset: whether `Config` is a BSON document or a JSON string, and its size cap; recommend BSON document with a cap.
 
-**G3. Which of the five initial hooks are flavor (fail open) and which rule (fail closed).**
+**G3. Which of the five initial hooks are flavor (fail open) and which rule (fail closed).** **[DECIDED, D60: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 Options: all open; `command entered` and `item dropped/taken` closed, the rest open; per behavior only via the policy file.
 Recommendation: default all five to open (a dead module never strands players); the core policy file marks specific `(Module, Type)` closed. The owner should say which behaviors are rules.
 
-**G4. Snapshot content and delivery identity.**
+**G4. Snapshot content and delivery identity.** **[DECIDED, D57: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 What a `PartySnapshot` contains: (A) core components + the module's own namespace; (B) everything (privacy and size cost);
 (C) core components only (needs G11 for more). Delivery id: one `event_id` per handler call plus a `root_event_id`, or one per event.
 Recommendation: A, one `event_id` per handler call.
 
-**G5. Semantics of an emitted batch when one event is rejected.**
+**G5. Semantics of an emitted batch when one event is rejected.** **[DECIDED, D61: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 D16 assumes a `SubmitVerdict` batch is atomic on the game thread; what if one emitted event violates a capability, a quota or the
 re-entrancy guard? Options: reject the whole batch; apply the valid ones and report the rest; all-or-nothing for the emitted events
 but the verdict still counts.
 Recommendation: the verdict (ALLOW/DENY) always counts; emitted events apply all-or-nothing; rejection is reported in `Ack` and logged.
 
-**G6. Parked-entity corner cases, simultaneous actions, and the stale-snapshot race.**
+**G6. Parked-entity corner cases, simultaneous actions, and the stale-snapshot race.** **[DECIDED, D62: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 (a) May a parked entity be targeted by another chain, be killed, quit, or be moved by a third party? (b) Two players enter the trapped
 room together: both snapshots say `armed`, both handlers Deny and redirect; D7/D8 give no transaction. (c) `stop` while parked.
 Options for (b): module-side serialisation (one module process keeps an in-memory per-room flag); a precondition field on
@@ -507,48 +507,48 @@ Options for (b): module-side serialisation (one module process keeps an in-memor
 Recommendation: module-side serialisation for the examples (no contract field); revisit a precondition field after phase 5. For (a)/(c):
 a parked entity queues new commands, still receives output, and `stop` cancels the wait unless commit has begun.
 
-**G7. How a behavior sees a typed command, and what "handled" means.**
+**G7. How a behavior sees a typed command, and what "handled" means.** **[DECIDED, D63, D64: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 `command entered` is a hook (D3) but the parties are not specified, and the verdict has only ALLOW/DENY. Parties: (A) actor + actor's room;
 (B) A + items resolved from the line by `MatchObjects`; (C) A + everything in the room and inventory. "Handled": (i) the behavior
 returns `DENY(message)` meaning "consumed, show this", doing its work with emitted events; (ii) a new verdict flag (changes D6).
 Recommendation: A and (i) for the first cut (the room-level lever of D14 needs only the room); flagged for the owner because it overloads Deny. The immovable-item lever needs B.
 
-**G8. Heartbeat recipients and cost.**
+**G8. Heartbeat recipients and cost.** **[DECIDED, D56: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 Today only players receive heartbeats (`World.doHeartbeat`, `MUD.Core/World.cs:633`). D3 lists heartbeat as a hook. Which entities get it?
 Options: all; only entities carrying a `heartbeat` behavior entry; only those in rooms with players.
 Recommendation: only entities carrying a `heartbeat` entry, found via an index core maintains; interval stays 20 ticks (2 s). Rooms and NPCs thereby gain heartbeats for the first time (behavior change to note).
 
-**G9. How module-set state reaches `look` text.**
+**G9. How module-set state reaches `look` text.** **[DECIDED, D71, D72: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 `look` is core (D2). Options: (A) modules only `message.send`; `look` unchanged; (B) a core convention, e.g. components named `<ns>.description_append` that `look` appends;
 (C) a Before-style describe event with an IPC hop on `look`.
 Recommendation: A for phase 5 (the examples use it); B if the owner wants storm text in `look`; not C (latency on the most common command).
 
-**G10. The SchemaVersion contract.**
+**G10. The SchemaVersion contract.** **[DECIDED, D51: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 D10: an unreadable SchemaVersion is refused and treated as a miss. Who declares readable versions, and when is it checked?
 Recommendation: declared in the manifest (`BehaviorDecl.schema_versions`), checked at call time against the entry.
 
-**G11. Whether modules can read the world beyond a delivery's snapshot.**
+**G11. Whether modules can read the world beyond a delivery's snapshot.** **[DECIDED, D58: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 D16 lists verdicts, state, timers and emit; reads are not listed. Without reads a module cannot, for example, learn which rooms exist or
 reconcile components after a restart. Options: (A) no reads; (B) add `GetEntity` / `QueryEntities` / `GetAreaGraph`.
 Recommendation: A for the first cut (the examples are written to work with A and say where B would help); reopen after phase 5.
 
-**G12. Typed versus generic payloads.**
+**G12. Typed versus generic payloads.** **[DECIDED, D52: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 Events are generic string-named records (D4); the sketch uses `google.protobuf.Struct` (numbers become doubles). Options: Struct everywhere;
 typed `oneof` for well-known events plus Struct; JSON string. Recommendation: Struct now, a typed payload for `entity.move`/`item.move` later if needed.
 
-**G13. Who may write which component; naming; validation; Mongo shape.**
+**G13. Who may write which component; naming; validation; Mongo shape.** **[DECIDED, D50: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 Proposed: a module writes only `<its name>.*` components; no module writes a core component in v1; an optional JSON Schema per component
 in the manifest that core validates if present; shape `components.<module>.<name>`. None is decided.
 Recommendation: namespace rule yes; schema validation deferred; shape as stated.
 
-**G14. Features embedded in the room or separate entities** (draft Q8; no decision answers it). D14 keeps features inert, so this does not block phases 1-5.
+**G14. Features embedded in the room or separate entities** **[DEFERRED, D14/D72: features stay inert; only module add/remove of room Features is allowed]** (draft Q8; no decision answers it). D14 keeps features inert, so this does not block phases 1-5.
 Recommendation: leave embedded until a feature needs behaviors.
 
-**G15. Module-state document API shape.**
+**G15. Module-state document API shape.** **[DECIDED, D73: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 Whole-document `SetState(key, doc)` as sketched, versus patch operations, versus versioned compare-and-set.
 Recommendation: whole-document replace per key, last write wins, with a size limit (unset); a module serialises itself (G6).
 
-**G16. Timers: persistence and routing.**
+**G16. Timers: persistence and routing.** **[DECIDED, D74: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 Do `timer.schedule` timers survive a core restart? Recommendation: no; core timers are in memory, scoped to the module connection, and the module
 recreates them on start from its state document and components (the D13 reconciliation). `timer.fired` goes directly to the issuing module (G18).
 
@@ -558,19 +558,19 @@ every start; ROOM_FILES section 6 re-import semantics are obsolete and D39 allow
 command; or remove startup import. The open item "import collision semantics and whether validate/plan/apply is kept" stays open.
 Recommendation: flip the default to false in phase 2, leave the importer code and semantics alone.
 
-**G18. Events that belong to no entity, and hooks for change events.**
+**G18. Events that belong to no entity, and hooks for change events.** **[DECIDED, D59: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 `timer.fired`, `module.ready`, `world.shutdown` have no party. `component.set` / `behavior.add` are hookable (D9) but are not among the five D3 hooks.
 Options: direct delivery for non-entity events; hook names for change events (e.g. `component.changed`); leave change events unhookable until a use appears.
 Recommendation: direct delivery for non-entity events; hook names for change events deferred, but build the machinery (cause chain, guards) in phase 3 so adding them is cheap.
 
-**G19. Authorisation of behavior attachment.**
+**G19. Authorisation of behavior attachment.** **[DECIDED, D55: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 Who may add a `BehaviorRef` naming module M to an entity: builders, the web editor, module events? The creator/web editing surface is an open item.
 Recommendation: a module-emitted `behavior.add` may name only the emitting module.
 
-**G20. Capability vocabulary and the event names marked "proposed".**
+**G20. Capability vocabulary and the event names marked "proposed".** **[DECIDED, D65: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 Recommendation: capability = `emit:<event name>[:scope]` for events, plus `timer.schedule`, state access, and per-behavior-type declarations; the grants file lists them verbatim.
 
-**G21. Front-end transport shape and token.**
+**G21. Front-end transport shape and token.** **[DECIDED, D66: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 D22 fixes two sockets and D27 says front ends use gRPC, but not whether the session transport is a bidirectional stream (reversed for modules by D16) or the module-style stream plus unary.
 Recommendation: the module style (7.2), one mental model; the token is a mode-600 file read, as modules get theirs.
 
@@ -578,7 +578,7 @@ Recommendation: the module style (7.2), one mental model; the token is a mode-60
 Core calls the telnet project on the game thread; the telnet project must only enqueue to the connection's `OutboundQueue` and return.
 Recommendation: document the output method "must not block" and test it with a deliberately slow fake front end.
 
-**G23. Start gate numbers.**
+**G23. Start gate numbers.** **[DECIDED, D70: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 `Ready` is a separate call per D21; the start-up timeout length is unset (open item); the systemd unit needs a restart limit (D21). Nothing else to decide but the numbers.
 
 **G24. Where prompted login and the brute-force throttle live after the split.** **[DECIDED, D43: owner accepted the recommendation; see OPEN_QUESTIONS_V2.md]**
@@ -587,21 +587,21 @@ Today the dialogue is `MUD.Telnet/LoginSession.cs` (prompted connect/create plus
 Options: (A) dialogue stays in the telnet project, throttle moves into core so web and telnet share it; (B) both into core with a prompt/echo protocol; (C) both stay in telnet (web gets its own).
 Recommendation: A. The phase 1 cards implement A.
 
-**G25. Canonical string names for the five initial hooks.**
+**G25. Canonical string names for the five initial hooks.** **[DECIDED, D54: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 D3 names the hooks in prose (heartbeat, command entered, living enters/exits room, item dropped, item taken) and D4 names two events; no hook identifier strings are
 given. The examples use `heartbeat`, `command.entered`, `living.move`, `item.drop`, `item.take` as hook ids (the same string is the `Hook` field of a `BehaviorRef`). Whether
 one hook (`living.move`) covers both exit and enter (with the entry's role in the event telling which), or two hooks exist, is also open.
 Recommendation: these five strings, one `living.move` hook covering both directions (matching D4's single `entity.move`), the entry reads its own role from the delivery.
 
-**G26. Launch-entry file: path, format, reload.**
+**G26. Launch-entry file: path, format, reload.** **[DECIDED, D67: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 D18 says launch entries are "a separate core config, re-readable live" but not where or in what format. Options: a section in `appsettings.json` (the file `MUD.Main` already reads, `MUD.Main/appsettings.json`); or `~/.config/mud/modules.yaml` next to the grants file.
 Recommendation: `~/.config/mud/modules.yaml`, because it holds executable paths and must be live-reloadable and kept out of the repo (secrets rule); `appsettings.json` is not live-reloaded by `MUD.Main` today (unverified).
 
-**G27. Stale-module-process check at core start.**
+**G27. Stale-module-process check at core start.** **[DECIDED, D68: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 D20 requires it; the mechanism is not given. Options: a pid file per module under the run directory, verified against `/proc/<pid>/cmdline`; or scan the cgroup; or rely on `KillMode=control-group` and only handle non-systemd runs.
 Recommendation: pid files under the run directory, checked and terminated at start; document that a dev module started by hand is not covered.
 
-**G28. Dev token form and what `modules reload <name>` does.**
+**G28. Dev token form and what `modules reload <name>` does.** **[DECIDED, D69: the owner's choice may differ from the recommendation below; the decision text in OPEN_QUESTIONS_V2.md governs]**
 D17 requires a dev tool to issue a token; D18 defines `modules reload <name>` as the update step. Open: is the dev tool an in-game admin command, and does `reload` restart a running module process or only re-read the manifest/config on the next connect?
 Recommendation: an in-game admin command `modules token <name>` printing a one-time token valid while no supervised instance runs (not a separate CLI, D32); `reload` re-reads launch entries and grants and restarts the named module only if the owner passes it explicitly.
 

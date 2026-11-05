@@ -1,5 +1,8 @@
 # Modules: manifest, launch entries, lifecycle, deployment, worked examples, failure modes, testing
 
+> **Superseded in part (decisions D50-D74, see [OPEN_QUESTIONS_V2.md](OPEN_QUESTIONS_V2.md)).** Where this document disagrees with those rows, the rows govern. Known disagreements in this file: launch entries and `modules reload` are replaced by directory discovery with a `--describe` option and `modules rescan/list/start/stop/restart` (D67); stale processes are killed by executable path at start (D68); there is no development token and no hand-run module (D69); snapshots carry core components only and modules read the rest with `GetEntity` and `QueryEntities` (D57, D58), so examples A and B (sections 7 and 8) that read module components from snapshots must call those reads instead; `look` is unchanged and a storm is shown by messages plus an added and removed room Feature (D71, D72); `SchemaVersion` is not checked (D51); change events are not hookable (D59); one `command.entered` line goes to one behavior (D63, D64). The worked examples have not been rewritten.
+
+
 Part of [ARCHITECTURE_V2.md](ARCHITECTURE_V2.md). Message and event names refer to [CORE_API.md](CORE_API.md). D-numbers are the owner's
 decisions ([OPEN_QUESTIONS_V2.md](OPEN_QUESTIONS_V2.md)); G-numbers are the "Gaps found while revising" in CORE_API.md section 9.
 Status: REVISED to D1..D39. Docs only.
