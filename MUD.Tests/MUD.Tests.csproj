@@ -19,5 +19,6 @@
     <ProjectReference Include="..\MUD.Contracts\MUD.Contracts.csproj" />
     <ProjectReference Include="..\MUD.Modules.Sdk\MUD.Modules.Sdk.csproj" />
     <ProjectReference Include="..\MUD.Modules.Hello\MUD.Modules.Hello.csproj" />
+    <ProjectReference Include="..\MUD.Modules.Desert\MUD.Modules.Desert.csproj" />
   </ItemGroup>
 </Project>
