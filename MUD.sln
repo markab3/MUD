@@ -27,6 +27,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MUD.Modules.Hello", "MUD.Mo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MUD.Modules.Desert", "MUD.Modules.Desert\MUD.Modules.Desert.csproj", "{1675C34F-2872-42D1-886A-917001E09A29}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MUD.Modules.Temple", "MUD.Modules.Temple\MUD.Modules.Temple.csproj", "{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -184,5 +186,17 @@ Global
 		{1675C34F-2872-42D1-886A-917001E09A29}.Release|x64.Build.0 = Release|Any CPU
 		{1675C34F-2872-42D1-886A-917001E09A29}.Release|x86.ActiveCfg = Release|Any CPU
 		{1675C34F-2872-42D1-886A-917001E09A29}.Release|x86.Build.0 = Release|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Debug|x64.Build.0 = Debug|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Debug|x86.Build.0 = Debug|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Release|x64.ActiveCfg = Release|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Release|x64.Build.0 = Release|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Release|x86.ActiveCfg = Release|Any CPU
+		{7A3C5E21-4B8D-4F6A-9D12-5E8B0C7F3A64}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
