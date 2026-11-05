@@ -31,11 +31,13 @@ namespace MUD.Main
         private readonly RunDirectory _runDirectory;
         private readonly ModuleRegistry _registry;
         private readonly Func<Action, bool> _postToGameThread;
+        private readonly Core.Modules.ModuleDispatcher _dispatcher;
         private readonly Action<string> _log;
         private WebApplication _application;
 
-        public ModuleHostRunner(RunDirectory runDirectory, ModuleRegistry registry, Func<Action, bool> postToGameThread, Action<string> log = null)
+        public ModuleHostRunner(RunDirectory runDirectory, ModuleRegistry registry, Func<Action, bool> postToGameThread, Action<string> log = null, Core.Modules.ModuleDispatcher dispatcher = null)
         {
+            _dispatcher = dispatcher;
             _runDirectory = runDirectory ?? throw new ArgumentNullException(nameof(runDirectory));
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _postToGameThread = postToGameThread ?? throw new ArgumentNullException(nameof(postToGameThread));
@@ -68,7 +70,7 @@ namespace MUD.Main
             });
             builder.Services.AddGrpc();
             builder.Services.AddSingleton(_registry);
-            builder.Services.AddSingleton<ModuleHostService>(_ => new ModuleHostService(_registry, _postToGameThread));
+            builder.Services.AddSingleton<ModuleHostService>(_ => new ModuleHostService(_registry, _postToGameThread, _dispatcher));
             builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = _registry.Options.StopTimeout);
 
             WebApplication application = builder.Build();

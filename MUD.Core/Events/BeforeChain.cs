@@ -189,7 +189,8 @@ namespace MUD.Core.Events
 
             // Events a handler emits apply whether or not the action is denied (D8); a refused one is skipped (D61).
             List<string> refused;
-            int applied = _dispatcher.ApplyEmitted(Event, candidate.Party, candidate.Entry, verdict.Emitted, out refused);
+            List<int> refusedPositions;
+            int applied = _dispatcher.ApplyEmitted(Event, candidate.Party, candidate.Entry, verdict.Emitted, out refused, out refusedPositions);
 
             if (verdict.Decision == VerdictDecision.Deny) { RecordDeny(verdict.Message); }
             else if (_sequential && verdict.IsHandled)
@@ -207,7 +208,7 @@ namespace MUD.Core.Events
                 _pending--;
                 if (_pending == 0 && !IsComplete) { Complete(BeforeResult.Allowed); }
             }
-            return new VerdictAcknowledgement(true, null, refused, applied);
+            return new VerdictAcknowledgement(true, null, refused, applied, refusedPositions);
         }
 
         // The first Deny to arrive gives the message (D7).

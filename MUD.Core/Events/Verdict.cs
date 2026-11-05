@@ -84,12 +84,16 @@ namespace MUD.Core.Events
 
         public int AppliedEventCount { get; }
 
-        public VerdictAcknowledgement(bool counted, string notCountedReason, IReadOnlyList<string> refusedEvents, int appliedEventCount)
+        // For each refused event, its position in the list the handler submitted (same order as RefusedEvents).
+        public IReadOnlyList<int> RefusedPositions { get; }
+
+        public VerdictAcknowledgement(bool counted, string notCountedReason, IReadOnlyList<string> refusedEvents, int appliedEventCount, IReadOnlyList<int> refusedPositions = null)
         {
             Counted = counted;
             NotCountedReason = notCountedReason;
             RefusedEvents = refusedEvents ?? new string[0];
             AppliedEventCount = appliedEventCount;
+            RefusedPositions = refusedPositions ?? new int[0];
         }
     }
 

@@ -7,9 +7,10 @@ using MUD.Contracts;
 namespace MUD.Core.Modules
 {
     /// <summary>
-    /// The module service served on modules.sock (owner decision D22). This card implements Hello, Subscribe, Ready and Ping.
-    /// The other calls of the contract (verdicts, emit, state, timers, reads, log) are card P4-4: until then they answer
-    /// Unimplemented, which is the generated base class's behavior.
+    /// The module service served on modules.sock (owner decision D22). Hello, Subscribe, Ready and Ping are card P4-2. SubmitVerdict, Emit,
+    /// SetState, GetState, ScheduleTimer and CancelTimer are card P4-4 and are answered by the ModuleDispatcher; without one (the host
+    /// started with no dispatcher) they answer Unimplemented, which is the generated base class's behavior. GetEntity, QueryEntities and
+    /// Log (D58 reads, the structured log line) are not part of P4-4 and still answer Unimplemented.
     ///
     /// Every call after Hello names its connection by the connection_id that Hello returned.
     /// </summary>
@@ -17,15 +18,18 @@ namespace MUD.Core.Modules
     {
         private readonly ModuleRegistry _registry;
         private readonly Func<Action, bool> _postToGameThread;
+        private readonly ModuleDispatcher _dispatcher;
 
         /// <param name="postToGameThread">
         /// Queues an action on the game thread's separate, bounded module-call queue (World.PostModuleCall). Returns false when
         /// the queue is full or the game has stopped.
         /// </param>
-        public ModuleHostService(ModuleRegistry registry, Func<Action, bool> postToGameThread)
+        /// <param name="dispatcher">The remote behavior dispatch (card P4-4). Null leaves the P4-4 calls unimplemented.</param>
+        public ModuleHostService(ModuleRegistry registry, Func<Action, bool> postToGameThread, ModuleDispatcher dispatcher = null)
         {
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _postToGameThread = postToGameThread ?? throw new ArgumentNullException(nameof(postToGameThread));
+            _dispatcher = dispatcher;
         }
 
         public override Task<HelloReply> Hello(HelloRequest request, ServerCallContext context)
@@ -101,6 +105,94 @@ namespace MUD.Core.Modules
             ModuleConnection connection = Require(request.ConnectionId);
             connection.NotePing();
             return Task.FromResult(new PingReply { N = request.N });
+        }
+
+        public override async Task<VerdictReply> SubmitVerdict(VerdictRequest request, ServerCallContext context)
+        {
+            if (_dispatcher == null) { return await base.SubmitVerdict(request, context); }
+            ModuleConnection connection = Require(request.ConnectionId);
+            // The verdict is applied on the game thread, in the module-call queue (D16: one batch applies atomically there).
+            return await RunOnGameThread(() => _dispatcher.SubmitVerdict(connection, request), context);
+        }
+
+        public override async Task<EmitReply> Emit(EmitRequest request, ServerCallContext context)
+        {
+            if (_dispatcher == null) { return await base.Emit(request, context); }
+            ModuleConnection connection = Require(request.ConnectionId);
+            return await RunOnGameThread(() => _dispatcher.Emit(connection, request), context);
+        }
+
+        public override Task<Ack> SetState(SetStateRequest request, ServerCallContext context)
+        {
+            if (_dispatcher == null) { return base.SetState(request, context); }
+            ModuleConnection connection = Require(request.ConnectionId);
+            string missing = Missing(connection, "state");
+            if (missing != null) { return Task.FromResult(new Ack { Ok = false, Error = missing }); }
+            // Module state is not world state: it is written through the repository path from the handler thread, under its own limits.
+            string problem = _dispatcher.SetState(connection, request.Key, request.Doc);
+            return Task.FromResult(problem == null ? new Ack { Ok = true } : new Ack { Ok = false, Error = problem });
+        }
+
+        public override Task<GetStateReply> GetState(GetStateRequest request, ServerCallContext context)
+        {
+            if (_dispatcher == null) { return base.GetState(request, context); }
+            ModuleConnection connection = Require(request.ConnectionId);
+            string missing = Missing(connection, "state");
+            if (missing != null) { throw new RpcException(new Status(StatusCode.PermissionDenied, missing)); }
+            Google.Protobuf.WellKnownTypes.Struct document;
+            bool found;
+            try { found = _dispatcher.TryGetState(connection, request.Key, out document); }
+            catch (Exception ex) { throw new RpcException(new Status(StatusCode.Unavailable, "The state document could not be read: " + ex.Message)); }
+            return Task.FromResult(found ? new GetStateReply { Found = true, Doc = document } : new GetStateReply { Found = false });
+        }
+
+        public override Task<Ack> ScheduleTimer(TimerRequest request, ServerCallContext context)
+        {
+            if (_dispatcher == null) { return base.ScheduleTimer(request, context); }
+            ModuleConnection connection = Require(request.ConnectionId);
+            string missing = Missing(connection, "timer.schedule");
+            if (missing != null) { return Task.FromResult(new Ack { Ok = false, Error = missing }); }
+            string problem = _dispatcher.ScheduleTimer(connection, request.TimerId, request.AtUnixMs, request.Payload);
+            return Task.FromResult(problem == null ? new Ack { Ok = true } : new Ack { Ok = false, Error = problem });
+        }
+
+        public override Task<Ack> CancelTimer(CancelTimerRequest request, ServerCallContext context)
+        {
+            if (_dispatcher == null) { return base.CancelTimer(request, context); }
+            ModuleConnection connection = Require(request.ConnectionId);
+            string missing = Missing(connection, "timer.schedule");
+            if (missing != null) { return Task.FromResult(new Ack { Ok = false, Error = missing }); }
+            _dispatcher.CancelTimer(connection, request.TimerId);
+            return Task.FromResult(new Ack { Ok = true });
+        }
+
+        // D65: a missing entry means the call is refused with a clear error naming the missing capability.
+        private static string Missing(ModuleConnection connection, string capability)
+        {
+            return connection.HasCapability(capability)
+                ? null
+                : "Missing capability '" + capability + "': the grants file does not allow it for module '" + connection.ModuleName + "'.";
+        }
+
+        // Posts the work to the game thread's module-call queue and waits, at most GameThreadCallTimeout (the same rule as Ready).
+        private async Task<T> RunOnGameThread<T>(Func<T> work, ServerCallContext context)
+        {
+            var done = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+            bool queued = _postToGameThread(() =>
+            {
+                try { done.TrySetResult(work()); }
+                catch (Exception ex) { done.TrySetException(ex); }
+            });
+            if (!queued)
+            {
+                throw new RpcException(new Status(StatusCode.ResourceExhausted, "The core's queue for module calls is full or the game is stopping. Try again."));
+            }
+            Task finished = await Task.WhenAny(done.Task, Task.Delay(_registry.Options.GameThreadCallTimeout, context.CancellationToken));
+            if (finished != done.Task)
+            {
+                throw new RpcException(new Status(StatusCode.DeadlineExceeded, "The game thread did not run the call in time."));
+            }
+            return await done.Task;
         }
 
         private ModuleConnection Require(string connectionId)

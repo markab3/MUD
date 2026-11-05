@@ -50,6 +50,16 @@ namespace MUD.Core.Modules
 
         public bool IsSubscribed { get; internal set; }
 
+        /// <summary>True when the grants file allowed this capability for the connection's manifest (D65: exact string, for example "state" or "emit:entity.move").</summary>
+        public bool HasCapability(string capability)
+        {
+            for (int index = 0; index < Granted.Count; index++)
+            {
+                if (string.Equals(Granted[index], capability, System.StringComparison.Ordinal)) { return true; }
+            }
+            return false;
+        }
+
         /// <summary>True once the module has called Ready. Changed on the game thread, read from any thread.</summary>
         public bool IsReady { get { return _isReady; } internal set { _isReady = value; } }
         private volatile bool _isReady;
