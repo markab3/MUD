@@ -12,6 +12,10 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MUD.Contracts\MUD.Contracts.csproj" />
     <ProjectReference Include="..\MUD.Core\MUD.Core.csproj" />
     <ProjectReference Include="..\MUD.Data\MUD.Data.csproj" />
     <ProjectReference Include="..\MUD.CoreApi\MUD.CoreApi.csproj" />
@@ -23,7 +27,8 @@
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+    <PackageReference Include="Grpc.AspNetCore" Version="2.84.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
     <PackageReference Include="Scrutor" Version="3.2.2" />
     <PackageReference Include="System.CommandLine.DragonFruit" Version="0.3.0-alpha.20371.2" />
   </ItemGroup>

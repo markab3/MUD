@@ -15,6 +15,8 @@ using MongoDB.Bson.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson.Serialization.IdGenerators;
 using MUD.Core.Commands;
+using MUD.Core.Modules;
+using MUD.Contracts;
 
 namespace MUD.Main
 {
@@ -74,6 +76,10 @@ namespace MUD.Main
 
         private static ShutdownCoordinator _shutdown;
 
+        private static RunDirectory _runDirectory;
+
+        private static ModuleHostRunner _moduleHost;
+
         private static readonly ManualResetEventSlim _shutdownRequested = new ManualResetEventSlim(false);
 
         // Runs the shutdown sequence off the signal thread, then exits the process. Used by the signal handlers.
@@ -120,6 +126,18 @@ namespace MUD.Main
             if (string.IsNullOrWhiteSpace(startRoomKey))
             {
                 Console.WriteLine("WorldSettings:StartRoomKey is not configured in appsettings.json!");
+                return;
+            }
+
+            // The run directory lock comes first (CORE_API 3 and 7.3): a second core fails fast, before it touches the database.
+            try
+            {
+                _runDirectory = RunDirectory.Acquire(RunDirectory.ResolvePath());
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("Could not take the run directory: " + ex.Message);
+                Environment.Exit(1);
                 return;
             }
 
@@ -285,6 +303,33 @@ namespace MUD.Main
             gameWorldThread.Start();
             Console.WriteLine("done.");
 
+            // Module host: Kestrel on modules.sock and frontends.sock. With no module started it is an idle listener
+            // and the game behaves as before. Module calls reach the game thread through its separate bounded queue.
+            Console.Write("Starting module host...");
+            var moduleHostOptions = new ModuleHostOptions();
+            int configuredValue;
+            if (int.TryParse(config["ModuleHost:InboundQueueCapacity"], out configuredValue) && configuredValue > 0) { moduleHostOptions.InboundQueueCapacity = configuredValue; }
+            if (int.TryParse(config["ModuleHost:InboundPerPassShare"], out configuredValue) && configuredValue > 0) { moduleHostOptions.InboundPerPassShare = configuredValue; }
+            if (int.TryParse(config["ModuleHost:OutboundQueueCapacity"], out configuredValue) && configuredValue > 0) { moduleHostOptions.OutboundQueueCapacity = configuredValue; }
+            _gameWorld.ConfigureModuleCalls(moduleHostOptions.InboundQueueCapacity, moduleHostOptions.InboundPerPassShare);
+            string grantsFile = config["ModuleHost:GrantsFile"];
+            var moduleGrants = new ModuleGrants(string.IsNullOrWhiteSpace(grantsFile) ? ModuleGrants.DefaultPath : grantsFile);
+            moduleGrants.Reload();
+            var moduleRegistry = new ModuleRegistry(new ModuleTokenRegistry(), moduleGrants, ContractVersion.Current, moduleHostOptions);
+            _moduleHost = new ModuleHostRunner(_runDirectory, moduleRegistry, action => _gameWorld.PostModuleCall(action));
+            try
+            {
+                _moduleHost.Start();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("The module host could not start: " + ex);
+                _gameWorld.Stop();
+                Environment.Exit(1);
+                return;
+            }
+            Console.WriteLine("done.");
+
             Console.Write("Starting telnet server...");
             IPAddress ipAddress = null;
             if (!IPAddress.TryParse(ip, out ipAddress)) { ipAddress = IPAddress.Any; }
@@ -306,7 +351,12 @@ namespace MUD.Main
                 () => _serverInstance.StopAccepting(),
                 () => _serverInstance.SendMessageToAll("The server is shutting down."),
                 () => _gameWorld.Stop(),
-                () => _serverInstance.Stop(),
+                () =>
+                {
+                    _serverInstance.Stop();
+                    if (_moduleHost != null) { _moduleHost.Stop(); }
+                    if (_runDirectory != null) { _runDirectory.Dispose(); }
+                },
                 () => _gameWorld.DescribeUnsaved(),
                 Console.WriteLine);
             _gameWorld.ShutdownTimeout = _shutdown.Timeout - TimeSpan.FromSeconds(2);
