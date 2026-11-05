@@ -6,8 +6,10 @@
 Description=Planar Realms MUD Server
 After=network-online.target mongod.service
 Wants=network-online.target
-StartLimitIntervalSec=120
-StartLimitBurst=5
+# D70: restart core at most 3 times within 5 minutes, then stay failed. This is what stops a required module that
+# never becomes Ready (core exits with an error, D21) from looping forever.
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -23,6 +25,11 @@ EnvironmentFile=%h/.config/mud/mongo.env
 # Optional overrides (MUD_BIND_ADDRESS, MUD_PORT); the leading '-' tolerates a missing file.
 EnvironmentFile=-%h/.config/mud/server.env
 
+# Stopping core signals every module child too, so none is left behind. Time for the graceful module stop plus the persistence drain.
+KillMode=control-group
+TimeoutStopSec=60
+# Modules are children of core and need to find dotnet; the supervisor passes DOTNET_ROOT on to them (it is never inherited blindly).
+Environment=DOTNET_ROOT=/usr/share/dotnet
 Restart=on-failure
 RestartSec=5
 

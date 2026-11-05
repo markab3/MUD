@@ -31,6 +31,9 @@ namespace MUD.Core
 
         public CommandSource AdminCommands;
 
+        /// <summary>The module supervisor, set by the host after start-up (null in tests and when modules are not used). Used by the `modules` command.</summary>
+        public MUD.Core.Modules.ModuleSupervisor ModuleSupervisor { get; set; }
+
         // The one brute-force limit for every front end (decision D43); wrong passwords typed into in-game commands count too. May be null.
         public LoginThrottle LoginThrottle { get; set; }
 
