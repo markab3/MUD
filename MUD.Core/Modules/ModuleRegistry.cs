@@ -45,6 +45,9 @@ namespace MUD.Core.Modules
         /// <summary>A module called Ready. Raised on the game thread.</summary>
         public event Action<ModuleConnection> Ready;
 
+        /// <summary>A Hello was refused after the token was accepted: contract mismatch or a required capability not granted (module name, reason). Used by the supervisor to stop restarting such a module.</summary>
+        public event Action<string, string> Refused;
+
         /// <summary>A connection ended, for any reason. Raised on the thread that noticed.</summary>
         public event Action<ModuleConnection> Disconnected;
 
@@ -95,6 +98,7 @@ namespace MUD.Core.Modules
                     + ", core speaks version " + _coreContractVersion + ". Strict equality is required; rebuild the module against the current contracts.";
                 _log("Module handshake refused: " + message);
                 reply.Refusal = message;
+                RaiseRefused(moduleName, message);
                 return reply;
             }
 
@@ -133,6 +137,7 @@ namespace MUD.Core.Modules
                 _log("Module handshake refused: " + message);
                 reply.Refusal = message;
                 reply.Rejected.AddRange(rejected);
+                RaiseRefused(moduleName, message);
                 return reply;
             }
 
@@ -221,6 +226,14 @@ namespace MUD.Core.Modules
         }
 
         private void RaiseDisconnected(ModuleConnection connection) { Raise(Disconnected, connection); }
+
+        private void RaiseRefused(string moduleName, string reason)
+        {
+            Action<string, string> handlers = Refused;
+            if (handlers == null) { return; }
+            try { handlers(moduleName, reason); }
+            catch (Exception ex) { _log("Exception in a module event handler: " + ex); }
+        }
 
         private void Raise(Action<ModuleConnection> handlers, ModuleConnection connection)
         {

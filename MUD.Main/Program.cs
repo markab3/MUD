@@ -80,6 +80,8 @@ namespace MUD.Main
 
         private static ModuleHostRunner _moduleHost;
 
+        private static ModuleSupervisor _moduleSupervisor;
+
         private static readonly ManualResetEventSlim _shutdownRequested = new ManualResetEventSlim(false);
 
         // Runs the shutdown sequence off the signal thread, then exits the process. Used by the signal handlers.
@@ -330,6 +332,29 @@ namespace MUD.Main
             }
             Console.WriteLine("done.");
 
+            // Module supervisor (D20, D67): scans the modules directory and starts every module. The telnet front end below is held
+            // until every module that is marked required is Ready (D21). A required module that is not Ready within the start-up
+            // timeout (D70, default 30 s) makes core stop what it started and exit with a clear error. With an empty or missing
+            // modules directory nothing is required and the game starts as before.
+            Console.Write("Starting modules...");
+            var supervisorOptions = ModuleSupervisorSettings.Read(config, AppContext.BaseDirectory, Console.WriteLine);
+            _moduleSupervisor = new ModuleSupervisor(moduleRegistry, supervisorOptions, _runDirectory.ModulesSocketPath);
+            _gameWorld.ModuleSupervisor = _moduleSupervisor;
+            _moduleSupervisor.Start();
+            string gateError = _moduleSupervisor.WaitForRequiredModules();
+            if (gateError != null)
+            {
+                Console.WriteLine();
+                Console.Error.WriteLine("STARTUP FAILED: " + gateError);
+                _moduleSupervisor.Stop();
+                _moduleHost.Stop();
+                _gameWorld.Stop();
+                _runDirectory.Dispose();
+                Environment.Exit(1);
+                return;
+            }
+            Console.WriteLine("done.");
+
             Console.Write("Starting telnet server...");
             IPAddress ipAddress = null;
             if (!IPAddress.TryParse(ip, out ipAddress)) { ipAddress = IPAddress.Any; }
@@ -354,6 +379,8 @@ namespace MUD.Main
                 () =>
                 {
                     _serverInstance.Stop();
+                    // Modules are ended first (terminate signal, grace period, kill), then the module host closes.
+                    if (_moduleSupervisor != null) { _moduleSupervisor.Stop(); }
                     if (_moduleHost != null) { _moduleHost.Stop(); }
                     if (_runDirectory != null) { _runDirectory.Dispose(); }
                 },
