@@ -1,0 +1,274 @@
+syntax = "proto3";
+
+// Admin service, served on frontends.sock only (D22, D66, never on modules.sock). Used by the web front end (phase 6).
+// Every call except WebAuthenticate carries the opaque session token core issued at web authentication (D31). Core
+// re-checks the player's CURRENT role on every call and can revoke a session (retire or demote takes effect at once).
+// Unary calls only (D66). A bad, revoked or unknown token answers gRPC status Unauthenticated; a role too low for the
+// call answers PermissionDenied. Rule-based refusals (a creator editing an admin and so on) come back in the reply's
+// result field instead. Rev is dropped (D30): edits are last-write-wins and the per-field audit keeps the history.
+// Specified in specs/ADMIN_API.md.
+
+package mud;
+
+import "mud/common.proto";
+import "mud/frontend.proto";
+
+option csharp_namespace = "MUD.Contracts";
+
+service Admin {
+  rpc WebAuthenticate(WebAuthRequest) returns (WebAuthReply);
+  rpc Logout(TokenRequest) returns (Ack);
+  // The player name and CURRENT role behind a token (the role is re-read from the player on every call).
+  rpc GetSession(TokenRequest) returns (SessionInfoReply);
+  rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordReply);
+
+  // Creator or admin.
+  rpc ListRooms(TokenRequest) returns (ListRoomsReply);
+  rpc GetRoom(GetRoomRequest) returns (GetRoomReply);
+  rpc CreateRoom(RoomEditRequest) returns (RoomEditReply);
+  rpc UpdateRoom(RoomEditRequest) returns (RoomEditReply);
+  rpc DeleteRoom(DeleteRoomRequest) returns (RoomEditReply);
+  rpc ListPlayers(ListPlayersRequest) returns (ListPlayersReply);
+  rpc GetPlayer(GetPlayerRequest) returns (GetPlayerReply);
+  rpc UpdatePlayer(UpdatePlayerRequest) returns (UpdatePlayerReply);
+
+  // Admin only.
+  rpc ListAudit(ListAuditRequest) returns (ListAuditReply);
+}
+
+enum AdminRole {
+  ADMIN_ROLE_UNSPECIFIED = 0;
+  ADMIN_ROLE_PLAYER = 1;
+  ADMIN_ROLE_CREATOR = 2;
+  ADMIN_ROLE_ADMIN = 3;
+}
+
+// The outcome of an edit. Mirrors the website's save statuses (specs/WEB_EDITING.md) without the conflict status (D30).
+enum AdminResult {
+  ADMIN_RESULT_UNSPECIFIED = 0;
+  ADMIN_RESULT_OK = 1;
+  ADMIN_RESULT_NO_CHANGE = 2;
+  ADMIN_RESULT_INVALID = 3;
+  ADMIN_RESULT_NOT_FOUND = 4;
+  ADMIN_RESULT_ALREADY_EXISTS = 5;
+  ADMIN_RESULT_FORBIDDEN = 6;
+  ADMIN_RESULT_REFUSED = 7;
+  ADMIN_RESULT_LAST_ADMIN = 8;
+  ADMIN_RESULT_AUDIT_FAILED = 9;
+  ADMIN_RESULT_FAILED = 10;
+}
+
+message TokenRequest { string token = 1; }
+
+message FieldError {
+  string field = 1;
+  string message = 2;
+}
+
+message WebAuthRequest {
+  string name = 1;
+  // Plaintext by earlier owner decision; never logged, never audited.
+  string password = 2;
+  // The opaque throttle key, normally the browser's address as the web passes it in; shared with telnet (D43).
+  string remote_key = 3;
+}
+
+// result is AUTH_OK, AUTH_BAD_CREDENTIALS, AUTH_RETIRED, AUTH_THROTTLED or AUTH_TRY_AGAIN_LATER. The token is empty unless AUTH_OK.
+message WebAuthReply {
+  AuthResult result = 1;
+  string token = 2;
+  string player_name = 3;
+  AdminRole role = 4;
+}
+
+message SessionInfoReply {
+  string player_name = 1;
+  AdminRole role = 2;
+}
+
+message ChangePasswordRequest {
+  string token = 1;
+  string current_password = 2;
+  string new_password = 3;
+  string confirm_password = 4;
+}
+
+enum PasswordChangeOutcome {
+  PASSWORD_CHANGE_OUTCOME_UNSPECIFIED = 0;
+  PASSWORD_CHANGE_OUTCOME_CHANGED = 1;
+  PASSWORD_CHANGE_OUTCOME_WRONG_CURRENT = 2;
+  PASSWORD_CHANGE_OUTCOME_MISMATCH = 3;
+  PASSWORD_CHANGE_OUTCOME_SAME = 4;
+  PASSWORD_CHANGE_OUTCOME_INVALID = 5;
+  PASSWORD_CHANGE_OUTCOME_SAVE_FAILED = 6;
+}
+
+message ChangePasswordReply {
+  PasswordChangeOutcome outcome = 1;
+  // Set when the outcome is PASSWORD_CHANGE_OUTCOME_INVALID: the rule that was broken. Never contains the password.
+  string message = 2;
+}
+
+message RoomExit {
+  string name = 1;
+  // The full key of the target room.
+  string to = 2;
+}
+
+// Definition fields of a room. x, y, z are absent when the room is unplaced (blank is never 0).
+message RoomDetail {
+  string key = 1;
+  string short_description = 2;
+  string long_description = 3;
+  string area = 4;
+  optional int32 x = 5;
+  optional int32 y = 6;
+  optional int32 z = 7;
+  repeated RoomExit exits = 8;
+}
+
+message ListRoomsReply { repeated RoomDetail rooms = 1; }
+
+message GetRoomRequest {
+  string token = 1;
+  string key = 2;
+}
+
+message GetRoomReply {
+  bool found = 1;
+  RoomDetail room = 2;
+}
+
+// Used for CreateRoom (key is the FULL key, area.local) and UpdateRoom. The whole form is sent; core diffs it
+// against the room and audits only the fields that changed.
+message RoomEditRequest {
+  string token = 1;
+  string key = 2;
+  string short_description = 3;
+  string long_description = 4;
+  string area = 5;
+  optional int32 x = 6;
+  optional int32 y = 7;
+  optional int32 z = 8;
+  repeated RoomExit exits = 9;
+  // Save exits whose target room does not exist.
+  bool confirm_dangling = 10;
+}
+
+message DeleteRoomRequest {
+  string token = 1;
+  string key = 2;
+}
+
+// Reply of CreateRoom, UpdateRoom and DeleteRoom. room is the room as it is now (absent after a delete or when none exists).
+message RoomEditReply {
+  AdminResult result = 1;
+  repeated FieldError errors = 2;
+  RoomDetail room = 3;
+  // A fixed sentence for REFUSED, or a note after a delete. Never contains stored values.
+  string message = 4;
+}
+
+message PlayerSummary {
+  string name_key = 1;
+  string name = 2;
+  string race = 3;
+  string class = 4;
+  string gender = 5;
+  string location = 6;
+  AdminRole role = 7;
+  bool retired = 8;
+}
+
+// The editable view of one player. There is no password, inventory, equipment or location field on purpose.
+message PlayerDetail {
+  string name_key = 1;
+  string name = 2;
+  string short_description = 3;
+  string long_description = 4;
+  string race = 5;
+  string gender = 6;
+  string class = 7;
+  bool retired = 8;
+  AdminRole role = 9;
+}
+
+message ListPlayersRequest {
+  string token = 1;
+  // Case-insensitive substring of the player name; empty lists everyone.
+  string name_filter = 2;
+  bool descending = 3;
+  // 1-based. page_size is clamped to 1..200.
+  int32 page = 4;
+  int32 page_size = 5;
+}
+
+message ListPlayersReply {
+  repeated PlayerSummary items = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message GetPlayerRequest {
+  string token = 1;
+  string name_key = 2;
+}
+
+message GetPlayerReply {
+  bool found = 1;
+  PlayerDetail player = 2;
+}
+
+message UpdatePlayerRequest {
+  string token = 1;
+  string name_key = 2;
+  string short_description = 3;
+  string long_description = 4;
+  string race = 5;
+  string gender = 6;
+  string class = 7;
+  // Absent means leave as it is.
+  optional bool retired = 8;
+  optional AdminRole role = 9;
+}
+
+message UpdatePlayerReply {
+  AdminResult result = 1;
+  repeated FieldError errors = 2;
+  PlayerDetail player = 3;
+}
+
+message ListAuditRequest {
+  string token = 1;
+  // Both optional filters; empty matches everything.
+  string entity = 2;
+  string entity_id = 3;
+  int32 page = 4;
+  int32 page_size = 5;
+}
+
+// One row per changed field. old_value and new_value are the stored values rendered as JSON text; an absent value is "null".
+message AuditRow {
+  string id = 1;
+  int64 at_unix_ms = 2;
+  string actor_id = 3;
+  string actor_name = 4;
+  string actor_role = 5;
+  string entity = 6;
+  string entity_id = 7;
+  string entity_name = 8;
+  string field = 9;
+  string old_value = 10;
+  string new_value = 11;
+  string source = 12;
+  bool applied = 13;
+  bool rejected = 14;
+}
+
+message ListAuditReply {
+  repeated AuditRow items = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
