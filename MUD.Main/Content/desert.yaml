@@ -1,0 +1,46 @@
+# Desert area for the desert module acceptance walkthrough (card P5-3). Format: specs/ROOM_FILES.md.
+# Four dunes in a row. The module-needed behavior entries are NOT in this file: they are attached with the creator
+# command 'behavior' (see specs/ACCEPTANCE_PHASE5.md), because how module content gets created is still an open item.
+area:
+  schema_version: 1
+  prefix: desert
+  name: "The Shifting Desert"
+  description: "Four dunes east of the starting hall, then the temple. A sandstorm drifts through them."
+  defaults:
+    coords:
+      z: 0
+
+rooms:
+  - key: dune_1
+    short: "the first dune"
+    long: "Hot sand rolls away to the east. A worn path leads back north towards the hall."
+    coords: {x: 10, y: 0}
+    exits:
+      - dir: east
+        to: dune_2
+        reverse: west
+
+  - key: dune_2
+    short: "the second dune"
+    long: "A ridge of pale sand, rippled by the wind."
+    coords: {x: 11, y: 0}
+    exits:
+      - dir: east
+        to: dune_3
+        reverse: west
+
+  - key: dune_3
+    short: "the third dune"
+    long: "The sand here is deep and slow underfoot. Heat shimmers on the horizon."
+    coords: {x: 12, y: 0}
+    exits:
+      - dir: east
+        to: dune_4
+        reverse: west
+
+  - key: dune_4
+    short: "the fourth dune"
+    long: "The last dune before a sandstone doorway, half buried in the sand, leading east."
+    coords: {x: 13, y: 0}
+    # The exit east to temple.antechamber is added with 'terraform link' after both areas are imported: an import
+    # refuses an exit whose destination does not exist yet, and the two areas lead into each other.
