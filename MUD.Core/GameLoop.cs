@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Threading;
 using MUD.Data;
 using MUD.CoreApi;
 
@@ -67,6 +68,18 @@ namespace MUD.Core
         /// <summary>Most inbound items handled in one pass, so input floods cannot starve ticks.</summary>
         public const int MaxItemsPerPass = 100;
 
+        /// <summary>
+        /// Default for the most module calls waiting for the game thread. Not set by the owner (CORE_API 1); chosen by card P4-2
+        /// and flagged in its pull request. Configurable through ModuleHostOptions.
+        /// </summary>
+        public const int DefaultModuleCallCapacity = 1000;
+
+        /// <summary>
+        /// Default for the most module calls run in one pass, on top of MaxItemsPerPass. Smaller than MaxItemsPerPass so a chatty
+        /// module cannot starve player input (CORE_API 1). Not set by the owner; chosen by card P4-2 and flagged in its pull request.
+        /// </summary>
+        public const int DefaultModuleCallsPerPass = 20;
+
         private readonly IClock _clock;
         private readonly Action<InboundItem> _handle;
         private readonly Action _onTick;
@@ -74,6 +87,10 @@ namespace MUD.Core
         private readonly Action<string> _log;
         private readonly Action _processEvents;
         private readonly BlockingCollection<InboundItem> _inbound = new BlockingCollection<InboundItem>(new ConcurrentQueue<InboundItem>());
+        // Module calls (gRPC handler threads) wait here, apart from the player and persistence items above. Bounded by count.
+        private readonly ConcurrentQueue<Action> _moduleCalls = new ConcurrentQueue<Action>();
+        private int _moduleCallCount;
+        private int _wakePending;
         private DateTime _nextTick;
         private int _tickCount;
         private volatile bool _stopRequested;
@@ -88,6 +105,66 @@ namespace MUD.Core
             _onHeartbeat = onHeartbeat;
             _log = log ?? Console.WriteLine;
             _nextTick = _clock.Now + TickInterval;
+        }
+
+        /// <summary>Most module calls that may wait for the game thread. A call over the limit is refused by PostModuleCall.</summary>
+        public int ModuleCallCapacity { get; set; } = DefaultModuleCallCapacity;
+
+        /// <summary>Most module calls run in one pass.</summary>
+        public int ModuleCallsPerPass { get; set; } = DefaultModuleCallsPerPass;
+
+        /// <summary>Module calls waiting now.</summary>
+        public int PendingModuleCalls { get { return Volatile.Read(ref _moduleCallCount); } }
+
+        /// <summary>
+        /// Thread-safe and non-blocking. Queues a module call to run on the game thread, in the separate bounded queue with its own
+        /// per-pass share. Returns false when that queue is full or the loop has stopped accepting input.
+        /// </summary>
+        public bool PostModuleCall(Action action)
+        {
+            if (action == null) { throw new ArgumentNullException(nameof(action)); }
+            if (Interlocked.Increment(ref _moduleCallCount) > ModuleCallCapacity)
+            {
+                Interlocked.Decrement(ref _moduleCallCount);
+                return false;
+            }
+            _moduleCalls.Enqueue(action);
+            if (!Wake())
+            {
+                // The loop has stopped: take the call back out if it is still there so it does not hang a caller.
+                return false;
+            }
+            return true;
+        }
+
+        // Makes a blocked RunOnce return so it sees the module calls. One wake-up item at a time, not one per call.
+        private bool Wake()
+        {
+            if (Interlocked.Exchange(ref _wakePending, 1) == 0)
+            {
+                if (!Post(InboundItem.ForEvent(() => { })))
+                {
+                    Volatile.Write(ref _wakePending, 0);
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // Runs queued module calls, at most ModuleCallsPerPass of them. The rest wait for the next pass.
+        private void RunModuleCalls()
+        {
+            Volatile.Write(ref _wakePending, 0);
+            int run = 0;
+            Action action;
+            while (run < ModuleCallsPerPass && !_stopRequested && _moduleCalls.TryDequeue(out action))
+            {
+                Interlocked.Decrement(ref _moduleCallCount);
+                run++;
+                try { action(); }
+                catch (Exception ex) { _log("Exception in module call: " + ex); }
+            }
+            if (!_moduleCalls.IsEmpty) { Wake(); }
         }
 
         /// <summary>Called on the loop's thread if the loop machinery itself fails (not a command): save and shut down.</summary>
@@ -151,6 +228,7 @@ namespace MUD.Core
                 }
                 while (handled < MaxItemsPerPass && !_stopRequested && _inbound.TryTake(out item, TimeSpan.Zero));
             }
+            RunModuleCalls();
             ProcessEvents();
 
             DateTime now = _clock.Now;

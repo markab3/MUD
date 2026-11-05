@@ -290,6 +290,23 @@ namespace MUD.Core
         }
 
         /// <summary>
+        /// Queues a module call to run on the game thread, in the separate bounded queue with its own per-pass share (CORE_API 1).
+        /// Safe from any thread; never blocks. Returns false when that queue is full or the game is stopping.
+        /// </summary>
+        public bool PostModuleCall(Action action)
+        {
+            return _loop != null && _loop.PostModuleCall(action);
+        }
+
+        /// <summary>Sets the module-call queue size and per-pass share from the module host options. Call before Start.</summary>
+        public void ConfigureModuleCalls(int capacity, int perPassShare)
+        {
+            if (_loop == null) { return; }
+            _loop.ModuleCallCapacity = capacity;
+            _loop.ModuleCallsPerPass = perPassShare;
+        }
+
+        /// <summary>
         /// Called on socket threads with each decoded line. Only counts and enqueues; the line is handled on the
         /// game thread. A client that is more than MaxQueuedLinesPerClient behind has lines dropped, and is
         /// disconnected if it keeps doing it.
