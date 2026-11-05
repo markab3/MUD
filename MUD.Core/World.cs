@@ -301,6 +301,38 @@ namespace MUD.Core
             return _loop != null && _loop.PostModuleCall(action);
         }
 
+        private MUD.Core.Modules.ModuleDispatcher _moduleDispatcher;
+
+        /// <summary>
+        /// Connects the (Module, Type) dictionary to the connected modules (card P4-4): behavior entries whose module is connected and ready are
+        /// delivered to it, and the module's emitted events, state and timers are served. The in-process registry is asked first (D49). Call once,
+        /// before Start. Returns the dispatcher for the module service.
+        /// </summary>
+        public MUD.Core.Modules.ModuleDispatcher AttachModules(MUD.Core.Modules.ModuleRegistry registry, MUD.Core.Modules.ModuleHostOptions options)
+        {
+            if (_moduleDispatcher != null) { throw new InvalidOperationException("Modules are already attached."); }
+            var store = new MUD.Core.Modules.ModuleStateStore(_serviceProvider.GetService<IModuleStateRepository>(), options, Clock);
+            _moduleDispatcher = new MUD.Core.Modules.ModuleDispatcher(registry, Events, store, options, Clock, FindEntity);
+            // The resolver and the action table belong to the game thread; the host calls this while the loop may already run.
+            Action apply = () =>
+            {
+                Events.Resolver = new MUD.Core.Modules.CompositeEventHandlerResolver(Events.Resolver, _moduleDispatcher);
+                MUD.Core.Modules.ModuleEmitActions.Register(Events);
+            };
+            if (!Post(apply)) { apply(); }
+            return _moduleDispatcher;
+        }
+
+        // The entity a module names by id in an emitted event: an online player, a living standing in a loaded room, or a room.
+        // Items are not addressable by id yet; a module reaches them through the room or holder that carries them.
+        private GameObject FindEntity(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id)) { return null; }
+            Player player = Players.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.Ordinal));
+            if (player != null) { return player; }
+            return GetRoom(id);
+        }
+
         /// <summary>Sets the module-call queue size and per-pass share from the module host options. Call before Start.</summary>
         public void ConfigureModuleCalls(int capacity, int perPassShare)
         {
@@ -448,6 +480,8 @@ namespace MUD.Core
             var byCollection = new Dictionary<string, ISnapshotRepository>();
             if (players != null) { byCollection[players.CollectionName] = players; }
             if (rooms != null) { byCollection[rooms.CollectionName] = rooms; }
+            var moduleStates = _serviceProvider.GetService<IModuleStateRepository>() as ISnapshotRepository;
+            if (moduleStates != null) { byCollection[moduleStates.CollectionName] = moduleStates; }
 
             var writer = new RepositoryPersistWriter(name => byCollection.TryGetValue(name, out ISnapshotRepository r) ? r : null);
             _persistence = new PersistenceWorker(writer, Clock, action => Post(action), new SpoolStore(SpoolDirectory));
@@ -500,6 +534,7 @@ namespace MUD.Core
         private void onTick()
         {
             if (_commandQueue != null) { _commandQueue.Dispatch(); }
+            if (_moduleDispatcher != null) { _moduleDispatcher.Tick(); }
 
             // Website room edits (specs/WEB_EDITING.md section 6): poll every 5 s off-thread, apply here.
             if (_roomWebSync != null && !_shuttingDown && _roomWebSync.IsDue(Clock.Now)) { _roomWebSync.StartPoll(Post); }

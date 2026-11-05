@@ -313,12 +313,22 @@ namespace MUD.Main
             if (int.TryParse(config["ModuleHost:InboundQueueCapacity"], out configuredValue) && configuredValue > 0) { moduleHostOptions.InboundQueueCapacity = configuredValue; }
             if (int.TryParse(config["ModuleHost:InboundPerPassShare"], out configuredValue) && configuredValue > 0) { moduleHostOptions.InboundPerPassShare = configuredValue; }
             if (int.TryParse(config["ModuleHost:OutboundQueueCapacity"], out configuredValue) && configuredValue > 0) { moduleHostOptions.OutboundQueueCapacity = configuredValue; }
+            if (int.TryParse(config["ModuleHost:StateMaxDocumentBytes"], out configuredValue) && configuredValue > 0) { moduleHostOptions.StateMaxDocumentBytes = configuredValue; }
+            if (int.TryParse(config["ModuleHost:TimersPerModule"], out configuredValue) && configuredValue > 0) { moduleHostOptions.TimersPerModule = configuredValue; }
+            double configuredNumber;
+            var invariant = System.Globalization.CultureInfo.InvariantCulture;
+            if (double.TryParse(config["ModuleHost:StateWritesPerSecond"], System.Globalization.NumberStyles.Float, invariant, out configuredNumber) && configuredNumber > 0) { moduleHostOptions.StateWritesPerSecond = configuredNumber; }
+            if (double.TryParse(config["ModuleHost:StateWriteBurst"], System.Globalization.NumberStyles.Float, invariant, out configuredNumber) && configuredNumber >= 1) { moduleHostOptions.StateWriteBurst = configuredNumber; }
+            if (double.TryParse(config["ModuleHost:EmitPerSecond"], System.Globalization.NumberStyles.Float, invariant, out configuredNumber) && configuredNumber > 0) { moduleHostOptions.EmitPerSecond = configuredNumber; }
+            if (double.TryParse(config["ModuleHost:EmitBurst"], System.Globalization.NumberStyles.Float, invariant, out configuredNumber) && configuredNumber >= 1) { moduleHostOptions.EmitBurst = configuredNumber; }
+            if (int.TryParse(config["ModuleHost:TimerMinimumDelayMilliseconds"], out configuredValue) && configuredValue >= 0) { moduleHostOptions.TimerMinimumDelay = TimeSpan.FromMilliseconds(configuredValue); }
             _gameWorld.ConfigureModuleCalls(moduleHostOptions.InboundQueueCapacity, moduleHostOptions.InboundPerPassShare);
             string grantsFile = config["ModuleHost:GrantsFile"];
             var moduleGrants = new ModuleGrants(string.IsNullOrWhiteSpace(grantsFile) ? ModuleGrants.DefaultPath : grantsFile);
             moduleGrants.Reload();
             var moduleRegistry = new ModuleRegistry(new ModuleTokenRegistry(), moduleGrants, ContractVersion.Current, moduleHostOptions);
-            _moduleHost = new ModuleHostRunner(_runDirectory, moduleRegistry, action => _gameWorld.PostModuleCall(action));
+            ModuleDispatcher moduleDispatcher = _gameWorld.AttachModules(moduleRegistry, moduleHostOptions);
+            _moduleHost = new ModuleHostRunner(_runDirectory, moduleRegistry, action => _gameWorld.PostModuleCall(action), null, moduleDispatcher);
             try
             {
                 _moduleHost.Start();

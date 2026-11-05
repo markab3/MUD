@@ -452,27 +452,38 @@ namespace MUD.Core.Events
 
         // Applies the events a handler emitted in its reply (D8: whether or not the action is denied). An event that core
         // refuses (cascade depth, re-entrancy guard) is skipped, listed and logged; the rest apply and the verdict counts (D61).
-        internal int ApplyEmitted(GameEvent cause, EventParty party, BehaviorRef entry, IReadOnlyList<EmittedEvent> emitted, out List<string> refused)
+        internal int ApplyEmitted(GameEvent cause, EventParty party, BehaviorRef entry, IReadOnlyList<EmittedEvent> emitted, out List<string> refused, out List<int> refusedPositions)
+        {
+            var origin = new EventOrigin(entry.Module, entry.Type, party.Entity.Id);
+            return ApplyEmittedFrom(cause, origin, emitted, out refused, out refusedPositions);
+        }
+
+        // The same rules for events that a module emits through the Emit call (card P4-4): the cause may be null (a root event,
+        // for example one that follows a timer) and the origin names the module. Refused events are listed with their reason and
+        // with their position in the submitted list; the rest are applied (D61). Game thread only.
+        public int ApplyEmittedFrom(GameEvent cause, EventOrigin origin, IReadOnlyList<EmittedEvent> emitted, out List<string> refused, out List<int> refusedPositions)
         {
             refused = null;
+            refusedPositions = null;
             if (emitted == null || emitted.Count == 0) { return 0; }
-            var origin = new EventOrigin(entry.Module, entry.Type, party.Entity.Id);
             int applied = 0;
             for (int index = 0; index < emitted.Count; index++)
             {
                 EmittedEvent request = emitted[index];
                 if (request == null || string.IsNullOrEmpty(request.Name) || request.Parties == null)
                 {
-                    if (refused == null) { refused = new List<string>(); }
+                    if (refused == null) { refused = new List<string>(); refusedPositions = new List<int>(); }
                     refused.Add((request == null ? "(null)" : request.Name ?? "(no name)") + ": missing name or targets");
+                    refusedPositions.Add(index);
                     continue;
                 }
-                string reason = CheckCascade(request.Name, cause, origin);
+                string reason = cause == null ? null : CheckCascade(request.Name, cause, origin);
                 if (reason != null)
                 {
                     LogRejection(reason, request.Name, origin, cause, request.Parties);
-                    if (refused == null) { refused = new List<string>(); }
+                    if (refused == null) { refused = new List<string>(); refusedPositions = new List<int>(); }
                     refused.Add(request.Name + ": " + reason);
+                    refusedPositions.Add(index);
                     continue;
                 }
 
