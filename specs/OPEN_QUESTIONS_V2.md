@@ -1,7 +1,7 @@
 # V2 decisions record
 
 Status: the owner's decisions for the V2 redesign, recorded. This file replaces the draft list of 41 open questions (PR #42); the file name is kept so
-existing links keep working. The source is the owner's walkthrough, `owner-decisions.md` (Kanban store), whose numbering D1..D49 is used here (it is NOT the draft's Q-numbering; the
+existing links keep working. The source is the owner's walkthrough, `owner-decisions.md` (Kanban store), whose numbering D1..D74 is used here (it is NOT the draft's Q-numbering; the
 draft Q number is shown in brackets where the decision file gives one). The decisions are authoritative; the specs were revised to match them (task t_17b7802d).
 Pointers name the section that implements each: A = [ARCHITECTURE_V2.md](ARCHITECTURE_V2.md), C = [CORE_API.md](CORE_API.md), M = [MODULES.md](MODULES.md), P = [V2_PHASES.md](V2_PHASES.md).
 The owner's standing requirements (split core and front end; core sole DB writer; composition over inheritance; one process per module started by core; gRPC over UDS; explicit,
@@ -60,6 +60,30 @@ inspectable designs) still stand (A 1).
 | D47 | Keep the project name `MUD.Telnet`; no rename to `MUD.FrontEnd.Telnet` | P phase 1 |
 | D48 | Removing the `Living`/`Player`/`NPC` subclasses (kind-collapse) is not on V2's critical path; phase 2 adds components and behavior lists beside the existing classes; the collapse is an optional separate card, taken later or never | P P2-5 |
 | D49 | In-process handler registration stays permanently after phase 4 as a second adapter for core-shipped behaviors; one contract, same `(Module, Type)` lookup, same contract tests against both | A 4.3 |
+| D50 (G13) | A module writes only components named after itself (`<module>.*`); no module writes a core component in v1. Schema validation deferred; storage shape `components.<module>.<name>` (working defaults) | C 9 (G13) |
+| D51 (G10) | No schema-version checking in v1: `SchemaVersion` is stored but never compared; modules must read every entry that exists for them. Partly supersedes D10's refusal sentence | C 9 (G10) |
+| D52 (G12) | Event payloads are one generic map (protobuf `Struct`) for every event | C 9 (G12) |
+| D53 (G2) | Behavior list is an embedded array on the entity document; `Config` stored as a database document with a size cap chosen by the card | C 9 (G2) |
+| D54 (G25) | Hook strings: `heartbeat`, `command.entered`, `living.exit`, `living.enter`, `item.drop`, `item.take`. Two move hooks delivered from the one `entity.move` event; a Deny from either vetoes the move | C 9 (G25) |
+| D55 (G19) | No authorisation check on behavior attachment: any module may attach any behavior to any entity | C 9 (G19) |
+| D56 (G8) | Heartbeat goes only to entities carrying a `heartbeat` entry, via a core index | C 9 (G8) |
+| D57 (G4) | Snapshots carry core components only (not module components, not even the receiver's own); one event id per handler call | C 9 (G4) |
+| D58 (G11) | Modules may read through `GetEntity` and `QueryEntities`; reads inside a Before-chain count against the chain deadline | C 9 (G11) |
+| D59 (G18) | Change events (`component.set`, `behavior.add`, `state.set`) are NOT hookable in v1 (narrows D9); events with no entity go straight to the owning module | C 9 (G18) |
+| D60 (G3) | All six hooks fail open by default; the core policy file may mark a specific (Module, Type) closed | C 9 (G3) |
+| D61 (G5) | A refused emitted event is skipped on its own; valid ones apply; the verdict always counts; refusals are reported and logged | C 9 (G5) |
+| D62 (G6) | A parked entity queues commands, still receives output, and may be targeted; `stop` cancels the wait unless commit began; the trapped-room race is handled by the module serialising itself | C 9 (G6) |
+| D63 (G7) | `command.entered`: snapshot is the player, the room and everything in the room and inventory; the verdict gets a `handled` flag for this hook only; a line goes to ONE behavior in proximity order (player, player's inventory, room, room's inventory); first `handled` wins. Sequential exception to D7 and D15 | C 9 (G7) |
+| D64 (G7) | Only `quit` is protected and runs before behaviors; all other lines go to behaviors first, built-ins after; ordering uses the existing `Priority`, ties by stored order, no new tie-break rules | C 9 (G7) |
+| D65 (G20) | Grants vocabulary: `emit:<event>[:scope]`, `timer.schedule`, `state`, `read`; a missing entry is refused with a clear error | C 9 (G20) |
+| D66 (G21) | Front ends use module-style transport on `frontends.sock` (server stream plus unary calls); token is a mode-600 file read at start | C 9 (G21) |
+| D67 (G26) | Modules are discovered by directory scan; every module supports a `--describe` option (JSON: name, version, contract version, args, behavior types, required); an in-memory modified-time cache means a scan runs `--describe` only on new or changed executables; admin commands `modules rescan`, `list`, `start`, `stop`, `restart`. No stored module list. Supersedes the launch-entry file of D18/D20 | C 9 (G26); M |
+| D68 (G27) | At module start core kills same-user processes whose `/proc/<pid>/exe` path equals the module's full executable path (ignoring ` (deleted)`), then starts fresh; no pid files. Kill step and `dotnet`-launcher appearance unverified | C 9 (G27); M |
+| D69 (G28) | No hand-run modules and no development token; modules are always started by core; the owner reads logs. Supersedes the dev-token lines of D17/D18; `modules restart` replaces `reload` | C 9 (G28); M |
+| D70 (G23) | Required-module start-up timeout 30 s; systemd allows 3 restarts in 5 minutes (settings, not constants) | C 9 (G23); M |
+| D71, D72 (G9) | `look` is unchanged. A module shows conditions by messages and by adding and removing a room Feature (exception to D14 and D50). Any module may remove any Feature; identified by short text; a Feature stays if its module dies | C 9 (G9) |
+| D73 (G15) | Module state: whole-document replace per key, last write wins, size limit chosen by the card | C 9 (G15) |
+| D74 (G16) | Timers are in memory, scoped to the module connection, not durable; a restarted module recreates them; `timer.fired` goes to the scheduling module | C 9 (G16) |
 
 Confirmed assumptions (from the same file): modules live in this repo as solution projects; every module in the launch entries always runs (no area-header start trigger); non-required modules
 start in the background; the `required` flag lives in the launch entry (core config), not the manifest. Implemented in A 1 and M 2, 3.
@@ -83,4 +107,4 @@ Taken from the end of the owner's decisions file. These are recorded, not decide
 - Contract tests.
 
 Separate from the list above, [CORE_API.md section 9](CORE_API.md) ("Gaps found while revising", G1..G31) lists points where the decisions leave an implementation choice that this revision did not make. Those are
-proposals with options for the owner; answering them does not change any decision here. Decided so far: G1, G17, G22, G24, G29, G30, G31 (D40-D46). Still undecided: G2-G16, G18-G21, G23, G25-G28; each is decided when the phase that needs it is cut into cards.
+proposals with options for the owner; answering them does not change any decision here. Every gap is now decided (D40-D74) except G14 (features as separate entities), which D14 and D72 leave deferred.
