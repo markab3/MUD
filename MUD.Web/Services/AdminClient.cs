@@ -33,6 +33,15 @@ public interface IAdminClient
     Task<RoomEditReply> UpdateRoomAsync(string token, RoomEditRequest request, CancellationToken cancellation = default);
 
     Task<RoomEditReply> DeleteRoomAsync(string token, string key, CancellationToken cancellation = default);
+
+    // Players (creator or admin). Core applies the rules, audits every changed field and updates the live player; edits are last
+    // write wins (D30). Same exceptions as the room calls. The reply never carries a password.
+    Task<ListPlayersReply> ListPlayersAsync(string token, string nameFilter, bool descending, int page, int pageSize, CancellationToken cancellation = default);
+
+    // Null when no player has this name key.
+    Task<PlayerDetail?> GetPlayerAsync(string token, string nameKey, CancellationToken cancellation = default);
+
+    Task<UpdatePlayerReply> UpdatePlayerAsync(string token, UpdatePlayerRequest request, CancellationToken cancellation = default);
 }
 
 // Core refused the session token (SessionEnded: unknown, revoked, or its player is retired) or the caller's current role is too low.
@@ -182,6 +191,23 @@ public sealed class GrpcAdminClient : IAdminClient
 
     public Task<RoomEditReply> DeleteRoomAsync(string token, string key, CancellationToken cancellation = default) =>
         Call(() => _client.DeleteRoomAsync(new DeleteRoomRequest { Token = token ?? string.Empty, Key = key ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+
+    public Task<ListPlayersReply> ListPlayersAsync(string token, string nameFilter, bool descending, int page, int pageSize, CancellationToken cancellation = default) =>
+        Call(() => _client.ListPlayersAsync(
+            new ListPlayersRequest { Token = token ?? string.Empty, NameFilter = nameFilter ?? string.Empty, Descending = descending, Page = page, PageSize = pageSize },
+            deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+
+    public async Task<PlayerDetail?> GetPlayerAsync(string token, string nameKey, CancellationToken cancellation = default)
+    {
+        var reply = await Call(() => _client.GetPlayerAsync(new GetPlayerRequest { Token = token ?? string.Empty, NameKey = nameKey ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+        return reply.Found ? reply.Player : null;
+    }
+
+    public Task<UpdatePlayerReply> UpdatePlayerAsync(string token, UpdatePlayerRequest request, CancellationToken cancellation = default)
+    {
+        request.Token = token ?? string.Empty;
+        return Call(() => _client.UpdatePlayerAsync(request, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+    }
 
     // Unauthenticated and PermissionDenied are core's answers about the caller; any other failure means core could not answer.
     private static async Task<T> Call<T>(Func<Grpc.Core.AsyncUnaryCall<T>> call)

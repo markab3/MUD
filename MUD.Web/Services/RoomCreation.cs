@@ -75,6 +75,8 @@ public class RoomForm : IValidatableObject
     }
 }
 
+public record RoomFieldError(string Field, string Message);
+
 public enum RoomCreationStatus
 {
     Created,

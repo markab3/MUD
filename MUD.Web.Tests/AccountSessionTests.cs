@@ -156,6 +156,80 @@ public class FakeAdminClient : IAdminClient
         if (RoomEditResult == AdminResult.Ok) { Rooms.Remove(key); }
         return Task.FromResult(EditReply(null));
     }
+
+    // Players. The fake keeps the players it is given and answers an edit with the reply a test sets; it records what the web sent.
+    public Dictionary<string, PlayerDetail> Players { get; } = new();
+    public AdminResult PlayerEditResult { get; set; } = AdminResult.Ok;
+    public List<FieldError> PlayerEditErrors { get; } = new();
+    public List<UpdatePlayerRequest> PlayerUpdates { get; } = new();
+    public List<string> PlayerTokens { get; } = new();
+    public List<(string Filter, bool Descending, int Page, int PageSize)> PlayerListCalls { get; } = new();
+    public bool RefusePlayerCalls { get; set; }
+
+    public FakeAdminClient AddPlayer(string name, AdminRole role = AdminRole.Player, bool retired = false)
+    {
+        var key = name.ToLowerInvariant();
+        Players[key] = new PlayerDetail
+        {
+            NameKey = key, Name = name, ShortDescription = name, LongDescription = "tall", Race = "human", Gender = "female", Class = "fighter",
+            Retired = retired, Role = role,
+        };
+        return this;
+    }
+
+    private void CheckPlayerCall(string token)
+    {
+        if (Unavailable) { throw new CoreUnavailableException(); }
+        PlayerTokens.Add(token);
+        if (RefusePlayerCalls) { throw new CoreRefusedException(RefuseBecauseSessionEnded); }
+    }
+
+    public Task<ListPlayersReply> ListPlayersAsync(string token, string nameFilter, bool descending, int page, int pageSize, CancellationToken cancellation = default)
+    {
+        CheckPlayerCall(token);
+        PlayerListCalls.Add((nameFilter, descending, page, pageSize));
+        var all = Players.Values
+            .Where(p => string.IsNullOrWhiteSpace(nameFilter) || p.Name.Contains(nameFilter.Trim(), StringComparison.OrdinalIgnoreCase))
+            .OrderBy(p => p.NameKey, StringComparer.Ordinal).ToList();
+        if (descending) { all.Reverse(); }
+        var reply = new ListPlayersReply { Total = all.Count, Page = page, PageSize = pageSize };
+        reply.Items.AddRange(all.Skip((page - 1) * pageSize).Take(pageSize).Select(p => new PlayerSummary
+        {
+            NameKey = p.NameKey, Name = p.Name, Race = p.Race, Class = p.Class, Gender = p.Gender, Location = "t.hall", Role = p.Role, Retired = p.Retired,
+        }));
+        return Task.FromResult(reply);
+    }
+
+    public Task<PlayerDetail?> GetPlayerAsync(string token, string nameKey, CancellationToken cancellation = default)
+    {
+        CheckPlayerCall(token);
+        return Task.FromResult(Players.TryGetValue(nameKey, out var player) ? player : null);
+    }
+
+    public Task<UpdatePlayerReply> UpdatePlayerAsync(string token, UpdatePlayerRequest request, CancellationToken cancellation = default)
+    {
+        CheckPlayerCall(token);
+        PlayerUpdates.Add(request);
+        var reply = new UpdatePlayerReply { Result = PlayerEditResult };
+        reply.Errors.AddRange(PlayerEditErrors);
+        if (Players.TryGetValue(request.NameKey, out var existing))
+        {
+            var current = existing.Clone();
+            if (PlayerEditResult == AdminResult.Ok)
+            {
+                current.ShortDescription = request.ShortDescription;
+                current.LongDescription = request.LongDescription;
+                current.Race = request.Race;
+                current.Gender = request.Gender;
+                current.Class = request.Class;
+                if (request.HasRetired) { current.Retired = request.Retired; }
+                if (request.HasRole) { current.Role = request.Role; }
+                Players[request.NameKey] = current;
+            }
+            reply.Player = current;
+        }
+        return Task.FromResult(reply);
+    }
 }
 
 public class LoginPageTests
@@ -579,44 +653,6 @@ public class NoMongoForAccountsTests
         Assert.Null(web.GetType("MUD.Web.Services.MongoAccountStore"));
         Assert.Null(web.GetType("MUD.Web.Services.IAccountStore"));
         Assert.Null(web.GetType("MUD.Web.Services.AccountService"));
-    }
-}
-
-// The role rule the player editor still uses until card P6-4 moves it behind the Admin service (D45, G30). Moved with the rule from MongoAccountStore.
-public class RoleMappingTests
-{
-    private static MongoDB.Bson.BsonDocument Doc(MongoDB.Bson.BsonValue roles) => new() { { "roles", roles } };
-
-    private static MongoDB.Bson.BsonDocument Roles(bool creator, bool admin) => new() { { "creator", creator }, { "admin", admin }, { "currentDirectory", MongoDB.Bson.BsonNull.Value } };
-
-    [Fact]
-    public void NoRolesComponent_IsPlayer() => Assert.Equal(AccountRole.Player, MongoPlayerEditStore.RoleFrom(new MongoDB.Bson.BsonDocument()));
-
-    [Fact]
-    public void EmptyOrMalformedRoles_IsPlayer()
-    {
-        Assert.Equal(AccountRole.Player, MongoPlayerEditStore.RoleFrom(Doc(new MongoDB.Bson.BsonDocument())));
-        Assert.Equal(AccountRole.Player, MongoPlayerEditStore.RoleFrom(Doc("admin")));
-        Assert.Equal(AccountRole.Player, MongoPlayerEditStore.RoleFrom(Doc(new MongoDB.Bson.BsonDocument { { "creator", "true" }, { "admin", 1 } })));
-    }
-
-    [Fact]
-    public void BothFlagsFalse_IsPlayer() => Assert.Equal(AccountRole.Player, MongoPlayerEditStore.RoleFrom(Doc(Roles(false, false))));
-
-    [Fact]
-    public void Creator() => Assert.Equal(AccountRole.Creator, MongoPlayerEditStore.RoleFrom(Doc(Roles(true, false))));
-
-    [Fact]
-    public void Admin() => Assert.Equal(AccountRole.Admin, MongoPlayerEditStore.RoleFrom(Doc(Roles(false, true))));
-
-    [Fact]
-    public void AdminWinsOverCreator() => Assert.Equal(AccountRole.Admin, MongoPlayerEditStore.RoleFrom(Doc(Roles(true, true))));
-
-    [Fact]
-    public void TheOldExtendedPropertiesShapeIsNotRead()
-    {
-        var old = new MongoDB.Bson.BsonDocument { { "ExtendedProperties", new MongoDB.Bson.BsonArray { new MongoDB.Bson.BsonDocument("_t", new MongoDB.Bson.BsonArray { "Entity", "ExtendedProperty", "AdminProperty" }) } } };
-        Assert.Equal(AccountRole.Player, MongoPlayerEditStore.RoleFrom(old));
     }
 }
 

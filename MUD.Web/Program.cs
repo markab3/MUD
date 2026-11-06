@@ -40,9 +40,7 @@ builder.Services.AddAuthentication(SessionAuthentication.Scheme)
 builder.Services.AddAuthorization(WebPolicies.Configure);
 // Rooms and the room map go through core's Admin service too; core validates, audits and applies room edits.
 builder.Services.AddSingleton<IRoomCreationService, RoomCreationService>();
-builder.Services.AddSingleton<IAuditLog>(sp => new MongoAuditLog(sp.GetRequiredService<IMongoClient>(), databaseName));
-builder.Services.AddSingleton<IPlayerEditStore>(sp => new MongoPlayerEditStore(sp.GetRequiredService<IMongoClient>(), databaseName));
-builder.Services.AddSingleton<IPlayerWriter>(sp => new PlayerWriter(sp.GetRequiredService<IPlayerEditStore>(), sp.GetRequiredService<IAuditLog>(), TimeProvider.System, sp.GetRequiredService<ILoggerFactory>().CreateLogger("PlayerWriter")));
+// The player pages go through the Admin service as well; core applies the rules and writes the audit rows (D34).
 
 builder.Services.AddRazorPages();
 
