@@ -34,11 +34,14 @@ namespace MUD.Main
         private readonly Core.Modules.ModuleDispatcher _dispatcher;
         private readonly Action<string> _log;
         private readonly MUD.Core.Administration.AdminApi _adminApi;
+        private readonly MUD.Core.Sessions.FrontEndRegistry _frontEnds;
         private WebApplication _application;
 
         /// <param name="adminApi">The Admin service logic (card P6-1), served on frontends.sock. Null serves no Admin service, as before.</param>
-        public ModuleHostRunner(RunDirectory runDirectory, ModuleRegistry registry, Func<Action, bool> postToGameThread, Action<string> log = null, Core.Modules.ModuleDispatcher dispatcher = null, MUD.Core.Administration.AdminApi adminApi = null)
+        /// <param name="frontEnds">The front-end connections of the Session service (card P7-1), served on frontends.sock. Null serves no Session service.</param>
+        public ModuleHostRunner(RunDirectory runDirectory, ModuleRegistry registry, Func<Action, bool> postToGameThread, Action<string> log = null, Core.Modules.ModuleDispatcher dispatcher = null, MUD.Core.Administration.AdminApi adminApi = null, MUD.Core.Sessions.FrontEndRegistry frontEnds = null)
         {
+            _frontEnds = frontEnds;
             _adminApi = adminApi;
             _dispatcher = dispatcher;
             _runDirectory = runDirectory ?? throw new ArgumentNullException(nameof(runDirectory));
@@ -78,6 +81,10 @@ namespace MUD.Main
             {
                 builder.Services.AddSingleton<MUD.Core.Administration.AdminService>(_ => new MUD.Core.Administration.AdminService(_adminApi));
             }
+            if (_frontEnds != null)
+            {
+                builder.Services.AddSingleton<MUD.Core.Sessions.SessionService>(_ => new MUD.Core.Sessions.SessionService(_frontEnds));
+            }
             builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = _registry.Options.StopTimeout);
 
             WebApplication application = builder.Build();
@@ -99,10 +106,17 @@ namespace MUD.Main
                     context.Response.StatusCode = StatusCodes.Status404NotFound;
                     return;
                 }
+                bool isSessionCall = context.Request.Path.StartsWithSegments("/mud.Session");
+                if (isSessionCall && !FrontEndsEndpoint.Equals(endpoint))
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
                 await next();
             });
             application.MapGrpcService<ModuleHostService>();
             if (_adminApi != null) { application.MapGrpcService<MUD.Core.Administration.AdminService>(); }
+            if (_frontEnds != null) { application.MapGrpcService<MUD.Core.Sessions.SessionService>(); }
 
             application.StartAsync().GetAwaiter().GetResult();
             try
@@ -117,7 +131,7 @@ namespace MUD.Main
                 throw;
             }
             _application = application;
-            _log("Module host listening on " + _runDirectory.ModulesSocketPath + " (modules) and " + _runDirectory.FrontEndsSocketPath + (_adminApi != null ? " (front ends: Admin service)." : " (front ends, no service)."));
+            _log("Module host listening on " + _runDirectory.ModulesSocketPath + " (modules) and " + _runDirectory.FrontEndsSocketPath + (_adminApi != null || _frontEnds != null ? " (front ends: " + (_adminApi != null ? "Admin service" : "") + (_adminApi != null && _frontEnds != null ? ", " : "") + (_frontEnds != null ? "Session service" : "") + ")." : " (front ends, no service)."));
         }
 
         /// <summary>Ends every module stream, then stops Kestrel (the host would otherwise wait for open streams, spike Q6).</summary>
@@ -126,6 +140,8 @@ namespace MUD.Main
             WebApplication application = Interlocked.Exchange(ref _application, null);
             if (application == null) { return; }
             _registry.DisconnectAll("core is stopping");
+            // Event streams of front ends end after what is queued is written; otherwise the host would wait on them (spike Q6).
+            if (_frontEnds != null) { _frontEnds.CompleteAll(); }
             try
             {
                 application.StopAsync().GetAwaiter().GetResult();

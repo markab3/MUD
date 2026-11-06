@@ -20,6 +20,15 @@ namespace MUD.Tests
         }
 
         [Fact]
+        public void TheGrpcClientAssemblyHasNoReferenceToCoreOrDataOrTelnet()
+        {
+            string[] references = ReferencedAssemblyNames(typeof(MUD.CoreApi.Client.GrpcCoreApi).Assembly);
+            Assert.DoesNotContain("MUD.Core", references);
+            Assert.DoesNotContain("MUD.Data", references);
+            Assert.DoesNotContain("MUD.Telnet", references);
+        }
+
+        [Fact]
         public void TelnetAssemblyHasNoReferenceToCoreOrData()
         {
             string[] references = ReferencedAssemblyNames(typeof(Server).Assembly);

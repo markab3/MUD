@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" Version="2.84.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The gRPC implementation of ICoreApi for a front end in its own process (card P7-1). Never references MUD.Core or MUD.Data. -->
+    <ProjectReference Include="..\MUD.CoreApi\MUD.CoreApi.csproj" />
+    <ProjectReference Include="..\MUD.Contracts\MUD.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
