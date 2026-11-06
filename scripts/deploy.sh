@@ -44,7 +44,7 @@ restart_web_service() {
 }
 
 # Restart the telnet host unit if (and only if) it is enabled. Returns non-zero on restart failure.
-# Both modes coexist until P7-3: the in-process telnet of the game unit keeps working when this unit is not enabled.
+# Core no longer serves telnet (card P7-3); the telnet unit is the only way in, so it is restarted whenever it is enabled.
 restart_telnet_service() {
     if systemctl --user is-enabled --quiet "$TELNET_SERVICE" 2>/dev/null; then
         systemctl --user restart "$TELNET_SERVICE"

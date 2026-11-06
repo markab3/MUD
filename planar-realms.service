@@ -17,13 +17,8 @@ Type=simple
 WorkingDirectory=%h/.local/share/mud/current
 ExecStart=%h/.local/share/mud/current/MUD.Main
 
-# Defaults for bind address and port; override in ~/.config/mud/server.env.
-Environment=MUD_BIND_ADDRESS=0.0.0.0
-Environment=MUD_PORT=7680
 # Required: provides MUD_MONGO_URI (created by the maintainer's install script, mode 600).
 EnvironmentFile=%h/.config/mud/mongo.env
-# Optional overrides (MUD_BIND_ADDRESS, MUD_PORT); the leading '-' tolerates a missing file.
-EnvironmentFile=-%h/.config/mud/server.env
 
 # Stopping core signals every module child too, so none is left behind. Time for the graceful module stop plus the persistence drain.
 KillMode=control-group

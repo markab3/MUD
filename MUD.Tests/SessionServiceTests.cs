@@ -158,6 +158,22 @@ namespace MUD.Tests
         }
 
         [Fact]
+        public void ConnectIsRefusedWhileCoreIsNotOpenToFrontEndsAndAcceptedOnceItIs()
+        {
+            using (Host host = StartHost())
+            using (GrpcCoreApi client = NewClient(host))
+            {
+                host.FrontEnds.AcceptingConnections = false;
+                Assert.NotNull(client.Connect());
+                Assert.Equal(0, host.FrontEnds.ConnectionCount);
+
+                host.FrontEnds.AcceptingConnections = true;
+                Assert.Null(client.Connect());
+                Assert.Equal(1, host.FrontEnds.ConnectionCount);
+            }
+        }
+
+        [Fact]
         public void ConnectWithAWrongTokenIsRefusedAndTheTokenIsNeverLogged()
         {
             using (Host host = StartHost())

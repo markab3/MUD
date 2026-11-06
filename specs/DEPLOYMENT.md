@@ -8,10 +8,11 @@ Runs `MUD.Main` as a systemd **user** service against the local MongoDB
 
 ```
 ~/.config/mud/mongo.env            MUD_MONGO_URI=...   (required, mode 600, not in git)
-~/.config/mud/server.env           MUD_BIND_ADDRESS / MUD_PORT overrides (optional)
+~/.config/mud/telnet.env           MUD_TELNET_BIND_ADDRESS / MUD_TELNET_PORT overrides for the telnet unit (optional)
 ~/.config/mud/web.env              MUD_WEB_URL override for the website (optional)
 ~/.config/systemd/user/planar-realms.service
 ~/.config/systemd/user/planar-realms-web.service
+~/.config/systemd/user/planar-realms-telnet.service
 ~/.local/share/mud/releases/<UTC timestamp>-<sha>/   one directory per deploy
 ~/.local/share/mud/releases/<id>/web/                the MUD.Web publish output
 ~/.local/share/mud/current  ->  releases/<id>        what the service runs
@@ -32,9 +33,8 @@ Runs `MUD.Main` as a systemd **user** service against the local MongoDB
    ```
 3. Run the first deploy (below), then `systemctl --user enable planar-realms`.
 
-The unit sets `MUD_BIND_ADDRESS=0.0.0.0` and `MUD_PORT=7680` as defaults;
-put different values in `server.env` to change them (then
-`systemctl --user restart planar-realms`). It restarts on failure after
+Core has no telnet port since card P7-3: players connect through the telnet unit below, which is therefore required for
+playing over telnet. The unit restarts on failure after
 5 s and gives up after 5 failed starts in 2 minutes (for example when
 `MUD_MONGO_URI` is missing), so a bad config does not loop forever.
 
@@ -58,7 +58,7 @@ Modules are separate programs that core starts and supervises. They need no unit
 - **`--describe`.** Every module executable prints one JSON document for `--describe` and exits without connecting:
   `{"name","version","contract_version","arguments","behavior_types","required"}`. Core refuses a contract version that differs
   from its own at scan time. The `required` flag comes from this output.
-- **Start-up.** Core starts the modules after the world is loaded and holds the telnet front end until every required module
+- **Start-up.** Core starts the modules after the world is loaded and holds `frontends.sock` shut to front ends (a Connect is refused; the telnet host retries by itself) until every required module
   reports Ready. If one is not Ready within `ModuleHost:StartupTimeoutSeconds` (30), core stops the modules it started, prints
   `STARTUP FAILED: Required module ...` to standard error (the journal) and exits with status 1.
 - **Restarts.** A module that ends unexpectedly is restarted after `RestartBackoffSeconds` (1, 2, 5, 10, 30 seconds, the last repeats).
@@ -96,12 +96,12 @@ systemctl --user enable --now planar-realms-web
 
 Check with `systemctl --user status planar-realms-web` and `curl -sI http://127.0.0.1:5080/login`.
 
-## Telnet host unit (maintainer, optional; card P7-2)
+## Telnet host unit (maintainer; cards P7-2 and P7-3)
 
 `planar-realms-telnet.service` runs `MUD.Telnet.Host`, the telnet front end as its own process, from `current/telnet/MUD.Telnet.Host`.
 It has no database access: it talks to core on `frontends.sock` through the Session service (see [SESSION_API.md](SESSION_API.md)).
-Both telnet modes coexist until card P7-3: the in-process telnet of `planar-realms.service` keeps working, and this unit is optional.
-They must not listen on the same port: give one of them another port (`MUD_PORT` in `server.env`, or `MUD_TELNET_PORT` in `telnet.env`).
+Since card P7-3 this is the only telnet listener: the in-process telnet server was removed from `MUD.Main`, and `MUD_BIND_ADDRESS`,
+`MUD_PORT`, the `--ip`/`--port` options and `TelnetSettings` in `appsettings.json` no longer exist. Enable this unit to play over telnet.
 
 Settings (environment variables; the unit sets the first two, `~/.config/mud/telnet.env` may override any of them):
 
