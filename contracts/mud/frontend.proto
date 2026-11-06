@@ -20,6 +20,11 @@ service Session {
   rpc CreatePlayer(CreatePlayerRequest) returns (AuthReply);
   rpc Line(LineRequest) returns (Ack);
   rpc CloseSession(CloseSessionRequest) returns (Ack);
+  // The remaining calls of ICoreApi that the telnet login dialogue makes (card P7-1): the brute-force throttle (D43,
+  // one limit shared with the web, key = the address the front end passes in) and the pre-login who list.
+  rpc IsThrottled(ThrottleRequest) returns (ThrottleReply);
+  rpc RecordLoginOutcome(LoginOutcomeRequest) returns (Ack);
+  rpc GetOnlineNames(OnlineNamesRequest) returns (OnlineNamesReply);
 }
 
 message FrontEndHello {
@@ -47,6 +52,7 @@ message SessionEvent {
     Prompt prompt = 12;
     CloseFromCore close = 13;
     SessionEnded ended = 14;
+    SetTerminal set_terminal = 15;
   }
 }
 
@@ -66,6 +72,10 @@ message CloseFromCore {
   string farewell = 1;
   bool flush = 2;
 }
+
+// The terminal the player chose (the persisted setting, pushed at login and when it changes). The front end converts
+// the markup of later output for it; a name it does not know leaves the markup as it is.
+message SetTerminal { string name = 1; }
 
 // reason: quit, taken_over, shutdown ("world is restarting", D29), ...
 message SessionEnded { string reason = 1; }
@@ -128,3 +138,20 @@ message CloseSessionRequest {
   // client_closed, idle, flood, ...
   string reason = 3;
 }
+
+message ThrottleRequest {
+  string connection_id = 1;
+  string remote_key = 2;
+}
+
+message ThrottleReply { bool throttled = 1; }
+
+message LoginOutcomeRequest {
+  string connection_id = 1;
+  string remote_key = 2;
+  bool success = 3;
+}
+
+message OnlineNamesRequest { string connection_id = 1; }
+
+message OnlineNamesReply { repeated string names = 1; }

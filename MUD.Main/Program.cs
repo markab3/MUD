@@ -329,7 +329,13 @@ namespace MUD.Main
             ModuleDispatcher moduleDispatcher = _gameWorld.AttachModules(moduleRegistry, moduleHostOptions);
             // The Admin service (card P6-1) is served on frontends.sock for the web front end. Core is the only process that reads and writes the database for it.
             var adminApi = _gameWorld.CreateAdminApi(dbClient.GetDatabase(databaseName));
-            _moduleHost = new ModuleHostRunner(_runDirectory, moduleRegistry, action => _gameWorld.PostModuleCall(action), null, moduleDispatcher, adminApi);
+            // The Session service (card P7-1) is served on frontends.sock for a telnet front end in its own process (D66). The token file is
+            // created with mode 600 on first start; the front end reads it at its own start. The in-process telnet server below keeps working.
+            var frontEndTokenFile = FrontEndTokenFile.LoadOrCreate(FrontEndTokenFile.ResolvePath(config["FrontEnds:TokenFile"]));
+            int frontEndQueueCapacity;
+            if (!int.TryParse(config["FrontEnds:OutboundQueueCapacity"], out frontEndQueueCapacity) || frontEndQueueCapacity <= 0) { frontEndQueueCapacity = FrontEndRegistry.DefaultOutboundQueueCapacity; }
+            var frontEnds = new FrontEndRegistry(_gameWorld, frontEndTokenFile, ContractVersion.Current, frontEndQueueCapacity);
+            _moduleHost = new ModuleHostRunner(_runDirectory, moduleRegistry, action => _gameWorld.PostModuleCall(action), null, moduleDispatcher, adminApi, frontEnds);
             try
             {
                 _moduleHost.Start();
