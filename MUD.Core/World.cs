@@ -575,22 +575,6 @@ namespace MUD.Core
         {
             if (_commandQueue != null) { _commandQueue.Dispatch(); }
             if (_moduleDispatcher != null) { _moduleDispatcher.Tick(); }
-
-            // Website room edits (specs/WEB_EDITING.md section 6): poll every 5 s off-thread, apply here.
-            if (_roomWebSync != null && !_shuttingDown && _roomWebSync.IsDue(Clock.Now)) { _roomWebSync.StartPoll(Post); }
-            if (_playerWebSync != null && !_shuttingDown && _playerWebSync.IsDue(Clock.Now)) { _playerWebSync.StartPoll(Post); }
-        }
-
-        private RoomWebSync _roomWebSync;
-
-        private PlayerWebSync _playerWebSync;
-
-        /// <summary>Creates the poller for website room edits. Called once by the host after startup import.</summary>
-        public void EnableWebSync()
-        {
-            var rooms = _serviceProvider.GetService<IRoomRepository>();
-            _roomWebSync = new RoomWebSync(rooms, () => _settings.StartRoomKey);
-            _playerWebSync = new PlayerWebSync(_serviceProvider.GetService<IPlayerRepository>(), () => Players.ToList());
         }
 
         // Routes one inbound item. Game thread only.

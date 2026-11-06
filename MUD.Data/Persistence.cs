@@ -65,11 +65,6 @@ namespace MUD.Data
         void Evict(string id);
         /// <summary>_ids of the live (cached) instances. Safe from any thread.</summary>
         List<string> CachedIds();
-        /// <summary>
-        /// Stored Rev (absent = 0) of each existing document among ids; ids with no stored document are absent from the
-        /// result. Reads only _id and Rev, never touches the cache. Safe from any thread (specs/WEB_EDITING.md 6.1).
-        /// </summary>
-        Dictionary<string, int> GetRevisions(IEnumerable<string> ids);
     }
 
     /// <summary>Writes requests through the repositories' snapshot methods.</summary>

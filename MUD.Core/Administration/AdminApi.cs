@@ -137,7 +137,6 @@ namespace MUD.Core.Administration
             {
                 return new WebAuthReply { Result = AuthResult.AuthBadCredentials };
             }
-            player.SyncWebFieldsFromStore();
             if (player.Retired)
             {
                 // Only reached with the right password, so this does not reveal anything to someone without it.
@@ -511,8 +510,6 @@ namespace MUD.Core.Administration
         {
             Player target = FindByNameKey(Normalize(request.NameKey));
             if (target == null) { return new UpdatePlayerReply { Result = AdminResult.NotFound }; }
-            // A cached player can predate a change written elsewhere (the website editor, until its pages move to this service).
-            target.SyncWebFieldsFromStore();
             AdminRole targetRole = RoleOf(target);
             PlayerDetail current = DetailFrom(target);
 

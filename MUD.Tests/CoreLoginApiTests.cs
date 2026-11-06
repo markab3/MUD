@@ -137,7 +137,7 @@ namespace MUD.Tests
         [Fact]
         public void AuthenticateForARetiredCharacterReturnsRetiredAndTheSinkIsTold()
         {
-            _players.Stored[_ann.Id]["Retired"] = true;
+            _ann.Retired = true; // core is the only writer (D30), so the live flag is the truth
             StartGameThread();
             Assert.Equal(LoginResult.Retired, _world.Authenticate(_session, "Ann", "secret"));
             Assert.Contains(PlayerAccounts.RetiredMessage, _sink.Sent);
