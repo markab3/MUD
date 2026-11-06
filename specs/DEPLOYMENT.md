@@ -96,6 +96,42 @@ systemctl --user enable --now planar-realms-web
 
 Check with `systemctl --user status planar-realms-web` and `curl -sI http://127.0.0.1:5080/login`.
 
+## Telnet host unit (maintainer, optional; card P7-2)
+
+`planar-realms-telnet.service` runs `MUD.Telnet.Host`, the telnet front end as its own process, from `current/telnet/MUD.Telnet.Host`.
+It has no database access: it talks to core on `frontends.sock` through the Session service (see [SESSION_API.md](SESSION_API.md)).
+Both telnet modes coexist until card P7-3: the in-process telnet of `planar-realms.service` keeps working, and this unit is optional.
+They must not listen on the same port: give one of them another port (`MUD_PORT` in `server.env`, or `MUD_TELNET_PORT` in `telnet.env`).
+
+Settings (environment variables; the unit sets the first two, `~/.config/mud/telnet.env` may override any of them):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MUD_TELNET_BIND_ADDRESS` | `0.0.0.0` | Address to listen on. |
+| `MUD_TELNET_PORT` | `7680` | Telnet port. |
+| `MUD_RUN_DIRECTORY` | `$XDG_RUNTIME_DIR/mud`, else `~/.local/share/mud/run` | Where core's `frontends.sock` is (same rule as core). |
+| `MUD_FRONTEND_TOKEN_FILE` | `~/.config/mud/frontend-token` | The mode-600 token file core creates (D66). Read at every connect attempt. |
+| the telnet limits | see `TelnetLimits` | `MUD_MAX_LINE_LENGTH`, `MUD_MAX_CONNECTIONS`, `MUD_IDLE_TIMEOUT_*` and the others of the in-process server. |
+
+**Core restarts (D29).** When core stops or restarts, every open telnet session is told "The world is restarting. Please reconnect in a
+moment." and closed. A player who connects while core is away gets the same message. The host reconnects to core by itself, waiting 1, 2,
+5, 10, 30 seconds between attempts (the last repeats; starts over after a success). The host does not need a restart when core does.
+These wait times are an implementer choice, not an owner decision. The unit starts after `planar-realms.service` but does not require it.
+
+Install after the first deploy has produced `current/telnet` (`deploy.sh` does not install units):
+
+```bash
+cp planar-realms-telnet.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now planar-realms-telnet
+```
+
+`deploy.sh` publishes the host into `telnet/` of every release and restarts the unit only if it is enabled. Check with
+`systemctl --user status planar-realms-telnet` and `journalctl --user -u planar-realms-telnet -f`.
+
+Not verified: the unit has not been started under systemd, and no live telnet session was played through the host against a running core
+(no MongoDB in the sandbox). The reconnect logic and the Session service round trip are covered by `MUD.Tests/TelnetHostTests.cs`.
+
 ## Deploying
 
 ```bash

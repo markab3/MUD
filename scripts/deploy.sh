@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploy Planar Realms (MUD.Main) and the website (MUD.Web) as one versioned release and
-# restart the user services (the web unit only if it is enabled).
+# Deploy Planar Realms (MUD.Main), the telnet host (MUD.Telnet.Host) and the website (MUD.Web) as one versioned
+# release and restart the user services (the web and telnet units only if they are enabled).
 #
 # Usage: scripts/deploy.sh [ref]          (default ref: hermes)
 #        scripts/deploy.sh --rollback     (switch back to the previous release)
@@ -9,6 +9,7 @@
 #   MUD_DEPLOY_ROOT   install root            (default: $HOME/.local/share/mud)
 #   MUD_SERVICE       systemd user unit name   (default: planar-realms)
 #   MUD_WEB_SERVICE   web user unit name       (default: planar-realms-web)
+#   MUD_TELNET_SERVICE telnet host unit name   (default: planar-realms-telnet)
 #   MUD_KEEP_RELEASES releases to retain       (default: 5, minimum 2)
 #   MUD_REPO_URL      remote to fetch from     (default: origin of the repo holding this script)
 set -euo pipefail
@@ -16,6 +17,7 @@ set -euo pipefail
 DEPLOY_ROOT="${MUD_DEPLOY_ROOT:-$HOME/.local/share/mud}"
 SERVICE="${MUD_SERVICE:-planar-realms}"
 WEB_SERVICE="${MUD_WEB_SERVICE:-planar-realms-web}"
+TELNET_SERVICE="${MUD_TELNET_SERVICE:-planar-realms-telnet}"
 KEEP="${MUD_KEEP_RELEASES:-5}"
 RELEASES="$DEPLOY_ROOT/releases"
 CURRENT="$DEPLOY_ROOT/current"
@@ -41,9 +43,19 @@ restart_web_service() {
     fi
 }
 
+# Restart the telnet host unit if (and only if) it is enabled. Returns non-zero on restart failure.
+# Both modes coexist until P7-3: the in-process telnet of the game unit keeps working when this unit is not enabled.
+restart_telnet_service() {
+    if systemctl --user is-enabled --quiet "$TELNET_SERVICE" 2>/dev/null; then
+        systemctl --user restart "$TELNET_SERVICE"
+    else
+        echo "deploy: $TELNET_SERVICE is not enabled; not restarting it"
+    fi
+}
+
 print_rollback() {
     echo "To roll back:  $0 --rollback"
-    echo "  (or manually: ln -sfn <previous release dir> $CURRENT && systemctl --user restart $SERVICE $WEB_SERVICE)"
+    echo "  (or manually: ln -sfn <previous release dir> $CURRENT && systemctl --user restart $SERVICE $TELNET_SERVICE $WEB_SERVICE)"
 }
 
 rollback() {
@@ -59,6 +71,8 @@ rollback() {
     echo "Rolling back: $cur -> $prev"
     switch_to "$prev"
     restart_service
+    # Releases made before the telnet host existed have no telnet/ directory; do not fail the rollback.
+    restart_telnet_service || echo "deploy: restart of $TELNET_SERVICE failed (does $prev contain telnet/?); check journalctl --user -u $TELNET_SERVICE" >&2
     # Releases made before the web site existed have no web/ directory; do not fail the rollback.
     restart_web_service || echo "deploy: restart of $WEB_SERVICE failed (does $prev contain web/?); check journalctl --user -u $WEB_SERVICE" >&2
     echo "Rolled back to $(basename "$prev"). Previous (bad) release kept at $cur."
@@ -69,7 +83,7 @@ if [ "${1:-}" = "--rollback" ]; then
     exit 0
 fi
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-    sed -n '2,14p' "$0"
+    sed -n '2,15p' "$0"
     exit 0
 fi
 
@@ -102,10 +116,13 @@ dotnet publish "$BUILD_DIR/MUD.PlanarRealms/MUD.PlanarRealms.csproj" -c Release 
 # The website goes in the web/ subdirectory: it has its own dependency set, which must not
 # mix with the game's files at the release root (the game unit runs current/MUD.Main).
 dotnet publish "$BUILD_DIR/MUD.Web/MUD.Web.csproj" -c Release -o "$RELEASE_DIR.partial/web"
+# The telnet host (phase 7) goes in the telnet/ subdirectory for the same reason: the planar-realms-telnet unit runs current/telnet/MUD.Telnet.Host.
+dotnet publish "$BUILD_DIR/MUD.Telnet.Host/MUD.Telnet.Host.csproj" -c Release -o "$RELEASE_DIR.partial/telnet"
 [ -x "$RELEASE_DIR.partial/MUD.Main" ] || [ -f "$RELEASE_DIR.partial/MUD.Main.dll" ] \
     || die "publish produced no MUD.Main"
 [ -f "$RELEASE_DIR.partial/MUD.PlanarRealms.dll" ] || die "publish produced no MUD.PlanarRealms.dll"
 [ -f "$RELEASE_DIR.partial/web/MUD.Web.dll" ] || die "publish produced no web/MUD.Web.dll"
+[ -f "$RELEASE_DIR.partial/telnet/MUD.Telnet.Host.dll" ] || die "publish produced no telnet/MUD.Telnet.Host.dll"
 echo "$REF $SHA" > "$RELEASE_DIR.partial/RELEASE"
 mv "$RELEASE_DIR.partial" "$RELEASE_DIR"
 
@@ -123,12 +140,23 @@ if ! restart_service; then
     fi
     exit 1
 fi
+if ! restart_telnet_service; then
+    echo "deploy: telnet service restart failed" >&2
+    if [ -n "$PREVIOUS" ]; then
+        echo "deploy: restoring previous release $PREVIOUS" >&2
+        switch_to "$PREVIOUS"
+        restart_service || echo "deploy: restart of previous release also failed; check journalctl --user -u $SERVICE" >&2
+        restart_telnet_service || echo "deploy: restart of $TELNET_SERVICE on previous release failed; check journalctl --user -u $TELNET_SERVICE" >&2
+    fi
+    exit 1
+fi
 if ! restart_web_service; then
     echo "deploy: web service restart failed" >&2
     if [ -n "$PREVIOUS" ]; then
         echo "deploy: restoring previous release $PREVIOUS" >&2
         switch_to "$PREVIOUS"
         restart_service || echo "deploy: restart of previous release also failed; check journalctl --user -u $SERVICE" >&2
+        restart_telnet_service || echo "deploy: restart of $TELNET_SERVICE on previous release failed; check journalctl --user -u $TELNET_SERVICE" >&2
         restart_web_service || echo "deploy: restart of $WEB_SERVICE on previous release failed; check journalctl --user -u $WEB_SERVICE" >&2
     fi
     exit 1

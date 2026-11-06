@@ -1,0 +1,32 @@
+# Planar Realms telnet front end (MUD.Telnet.Host) - systemd USER unit. No secrets belong in this file.
+# Install:  mkdir -p ~/.config/systemd/user && cp planar-realms-telnet.service ~/.config/systemd/user/
+#           systemctl --user daemon-reload && systemctl --user enable --now planar-realms-telnet
+# See specs/DEPLOYMENT.md. Phase 7: this process serves telnet and talks to core on frontends.sock; it has no database access.
+[Unit]
+Description=Planar Realms Telnet Front End
+# Core creates the socket and the front-end token file. This unit does not require core: the host retries with backoff until core is there.
+After=network-online.target planar-realms.service
+Wants=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Release layout is managed by scripts/deploy.sh: current -> releases/<id>; the telnet host is in telnet/.
+WorkingDirectory=%h/.local/share/mud/current/telnet
+ExecStart=%h/.local/share/mud/current/telnet/MUD.Telnet.Host
+
+# Defaults for bind address and port; override in ~/.config/mud/telnet.env.
+# Do not let this unit and the in-process telnet of planar-realms.service listen on the same port: change MUD_PORT in server.env or MUD_TELNET_PORT in telnet.env.
+Environment=MUD_TELNET_BIND_ADDRESS=0.0.0.0
+Environment=MUD_TELNET_PORT=7680
+# Optional overrides (MUD_TELNET_BIND_ADDRESS, MUD_TELNET_PORT, MUD_RUN_DIRECTORY, MUD_FRONTEND_TOKEN_FILE, telnet limits); the leading '-' tolerates a missing file.
+EnvironmentFile=-%h/.config/mud/telnet.env
+
+Restart=on-failure
+RestartSec=5
+# The host closes its connections on SIGTERM; a short stop timeout is enough.
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target
