@@ -12,6 +12,7 @@ directly through the Mongo driver.
 | Mongo connection string | env `MUD_MONGO_URI` (required; the process exits with a message if unset; never logged) | none |
 | Database name | config `WorldSettings:DatabaseName` | `testmud` |
 | Listen URL | env `MUD_WEB_URL` | `http://127.0.0.1:5080` |
+| Core socket | env `MUD_FRONTENDS_SOCKET` (full path), else `MUD_RUN_DIRECTORY`, else `$XDG_RUNTIME_DIR/mud`, else `~/.local/share/mud/run`, plus `frontends.sock` | see left |
 | Default room key | config `WorldSettings:StartRoomKey` (env `WorldSettings__StartRoomKey`) | none; when unset every room delete is refused |
 
 Run: `MUD_MONGO_URI=... dotnet run --project MUD.Web`.
@@ -180,28 +181,42 @@ the first area and level 0), driven by the Area and Level selectors.
 - Anonymous users are redirected to `/login`. The nav shows a "Change password" link when signed in.
 - POST (antiforgery) fields: `Current`, `New`, `Confirm`. Rules match the game's `chpwd`: 6 to 64
   characters, no control characters, new must equal confirm and differ from current
-  (`PasswordRules` here, `PlayerAccounts.ValidatePassword` in MUD.Core; `PasswordRuleParityTests` keeps them equal).
-- The current password is checked first, with the same constant-time compare as login. Wrong current shows one
-  generic error and counts toward the login throttle (shared `LoginThrottle`, per IP, plus the 500 ms delay);
-  a locked-out IP sees the same error.
-- The new password is stored through `IAccountStore.UpdatePassword(nameKey, newPassword)`, a `$set` of
-  `Password` only. Still plaintext (see the caveat below). The session stays signed in; a confirmation is shown.
+  (`PlayerAccounts.ValidatePassword` in core; the web's duplicate `PasswordRules` and its parity test were removed).
+- The change is made by core (`ChangePassword` on the Admin service, sent with the session token). Core checks the
+  current password first. Wrong current shows one generic error and counts toward the page's own limit (`LoginThrottle`,
+  per IP, plus the 500 ms delay); a locked-out IP sees the same error and core is not asked.
+- Core stores the new password through the player. Still plaintext (see the caveat below). The session stays signed in; a
+  confirmation is shown.
 - Game side: a player online in the game holds a cached `Player`. `Player.Save` and `chpwd` re-read the stored
   `Password` first and adopt it if it differs, so a later game save never writes back an older password.
 
 ## Auth model
 
-- `IAccountService` (`Authenticate`, `GetByName`) lives in `MUD.Web/Services`, backed by
-  `IAccountStore` (`MongoAccountStore` in production, fakes in tests), so it can be split out later.
-- Lookup is an exact match on `NameKey = name.Trim().ToLowerInvariant()`, then the password is
-  compared in constant time (both sides SHA-256 hashed, then `FixedTimeEquals`). Same rules as
-  `PlayerAccounts.FindByName/Authenticate`.
-- Role comes from the `_t` discriminators in `ExtendedProperties`: `AdminProperty` > `CreatorProperty` > Player.
-- Cookie auth: `mud.auth`, HttpOnly, SameSite=Lax, Secure policy SameAsRequest (plain HTTP locally), 8h expiry.
-  Claims: `Name` = PlayerName, `Role` = Player/Creator/Admin. The role is fixed at login time.
+Accounts and sign-in go through core's Admin service on `frontends.sock` (card P6-2; contract
+`contracts/mud/admin.proto`, behaviour in [ADMIN_API.md](ADMIN_API.md)). The web no longer reads the `player`
+collection for sign-in and holds no password or role of its own.
+
+- `IAdminClient` (`MUD.Web/Services/AdminClient.cs`; `GrpcAdminClient` in production, a fake in tests) wraps the
+  calls the account pages need: `WebAuthenticate`, `Logout`, `GetSession`, `ChangePassword`. The socket is
+  `$MUD_RUN_DIRECTORY/frontends.sock`, else `$XDG_RUNTIME_DIR/mud/frontends.sock`, else
+  `~/.local/share/mud/run/frontends.sock` (the same rule as core); env `MUD_FRONTENDS_SOCKET` overrides the full path.
+- Login posts name, password and the browser address to core. Core checks the password and the retirement flag
+  and applies the login throttle shared with telnet (D43), then returns an opaque session token. The page
+  shows one generic message for bad credentials and for a throttled address, the retired message for a retired
+  character (only after the password was right), and a "not reachable" message when core cannot be asked.
+- The cookie `mud.session` holds only that token: HttpOnly, SameSite=Lax, Secure when the request is HTTPS, no
+  expiry (a browser-session cookie). Core ends the session on logout, retire, demote and restart (D31), so a
+  stale cookie is simply anonymous and is removed.
+- On every request `SessionAuthenticationHandler` asks core `GetSession` for the player name and CURRENT role and
+  builds the claims from the answer (`Name`, `Role` = Player/Creator/Admin). A demotion or retirement therefore
+  applies on the next request. If core cannot be reached the request is anonymous and the cookie is kept.
+- `IAccountService.GetByName` now answers from those claims for the signed-in player only (the room and player
+  editors still use it to resolve the actor until cards P6-3 and P6-4 move them).
 - Policy `CreatorOrAdmin` requires role Creator or Admin.
-- Failed logins show one generic message. Throttling: 500 ms delay per failure and, per client IP,
-  a lockout after 5 failures in 5 minutes (in memory; behind a proxy all clients share the proxy IP).
+- Throttling of sign-in is core's (D43). The password page keeps its own small per-IP limit
+  (5 failures in 5 minutes, 500 ms delay; in memory) in the web until core throttles password changes too.
+- No token or handshake guards `frontends.sock` yet (see ADMIN_API.md, open points; the front-end token is P7-1).
+- No page shows game output yet, so the markup-to-HTML converter of D28 is not built in this card.
 
 ## Caveat: plaintext passwords
 
@@ -212,7 +227,8 @@ also changes the telnet game; it is out of scope here.
 
 ## Tests
 
-`MUD.Web.Tests` (xunit) uses a fake `IAccountStore`; no Mongo needed. CI builds and tests
+`MUD.Web.Tests` (xunit) uses a fake `IAdminClient` for the account pages (plus one test of the real client over a
+Unix socket); no Mongo needed. Not run here: a browser sign-in against a live core (needs MongoDB). CI builds and tests
 `MUD.sln`, which includes both projects.
 
 ## Seeding

@@ -60,7 +60,7 @@ public class FakePlayerEditStore : IPlayerEditStore
         if (p.Rev != expectedRev) { return StoreUpdateOutcome.Conflict; }
         string? S(string f, string? cur) => set.Contains(f) ? (set[f].IsBsonNull ? null : set[f].AsString) : cur;
         var roles = set.Contains("roles") ? set["roles"].AsBsonDocument : p.RolesDocument;
-        var role = MongoAccountStore.RoleFrom(new BsonDocument("roles", roles));
+        var role = MongoPlayerEditStore.RoleFrom(new BsonDocument("roles", roles));
         Players[p.NameKey] = p with
         {
             Short = S("ShortDescription", p.Short), Long = S("LongDescription", p.Long), Race = S("Race", p.Race),
@@ -741,9 +741,7 @@ public class PlayerPagesTests
 
     private class RetiredAccounts : IAccountService
     {
-        public Account? Authenticate(string name, string password) => null;
         public Account? GetByName(string name) => new Account("Cat", AccountRole.Creator, "id-cat", Retired: true);
-        public PasswordChangeResult ChangePassword(string name, string c, string n, string f) => PasswordChangeResult.SaveFailed;
     }
 
     [Fact]

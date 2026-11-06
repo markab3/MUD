@@ -100,9 +100,7 @@ public class FakeAccounts : IAccountService
 {
     private readonly Dictionary<string, Account> _byName = new(StringComparer.OrdinalIgnoreCase);
     public FakeAccounts Add(string name, AccountRole role) { _byName[name] = new Account(name, role, "id-" + name.ToLowerInvariant()); return this; }
-    public Account? Authenticate(string name, string password) => null;
     public Account? GetByName(string name) => _byName.TryGetValue(name, out var a) ? a : null;
-    public PasswordChangeResult ChangePassword(string name, string currentPassword, string newPassword, string confirmPassword) => PasswordChangeResult.SaveFailed;
 }
 
 public class RoomWriterTests

@@ -6,9 +6,12 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="MongoDB.Driver" Version="2.30.0" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.84.0" />
   </ItemGroup>
   <ItemGroup>
     <!-- Shared room validation rules (RoomRules) only; never MUD.Core. -->
     <ProjectReference Include="..\MUD.Data\MUD.Data.csproj" />
+    <!-- The Admin service contract (generated gRPC client); the web talks to core through it (D27). -->
+    <ProjectReference Include="..\MUD.Contracts\MUD.Contracts.csproj" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,7 @@
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication;
 using MongoDB.Driver;
+using MUD.Contracts;
 using MUD.Web.Services;
 
 // The connection string is a secret: only ever read from the environment, never printed.
@@ -20,22 +21,22 @@ var url = Environment.GetEnvironmentVariable("MUD_WEB_URL");
 builder.WebHost.UseUrls(string.IsNullOrWhiteSpace(url) ? "http://127.0.0.1:5080" : url);
 
 builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoUri));
-builder.Services.AddSingleton<IAccountStore>(sp => new MongoAccountStore(sp.GetRequiredService<IMongoClient>(), databaseName));
 builder.Services.AddSingleton<IRoomReader>(sp => new MongoRoomReader(sp.GetRequiredService<IMongoClient>(), databaseName));
-builder.Services.AddSingleton<IAccountService, AccountService>();
+
+// Accounts and sign-in go through core's Admin service on frontends.sock (D22, D31). The cookie holds only the session token.
+builder.Services.AddSingleton<IAdminClient>(_ =>
+{
+    var socketPath = Environment.GetEnvironmentVariable("MUD_FRONTENDS_SOCKET");
+    if (string.IsNullOrWhiteSpace(socketPath)) { socketPath = CoreSocket.ResolvePath(); }
+    return new GrpcAdminClient(new Admin.AdminClient(CoreSocket.OpenChannel(socketPath)));
+});
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IAccountService, SessionAccountService>();
+// Still used by the password page until core throttles password changes as well.
 builder.Services.AddSingleton<LoginThrottle>();
 
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(o =>
-    {
-        o.LoginPath = "/Login";
-        o.AccessDeniedPath = "/access-denied";
-        o.Cookie.Name = "mud.auth";
-        o.Cookie.HttpOnly = true;
-        o.Cookie.SameSite = SameSiteMode.Lax;
-        o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-        o.ExpireTimeSpan = TimeSpan.FromHours(8);
-    });
+builder.Services.AddAuthentication(SessionAuthentication.Scheme)
+    .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthentication.Scheme, _ => { });
 
 builder.Services.AddAuthorization(WebPolicies.Configure);
 var startRoomKey = builder.Configuration["WorldSettings:StartRoomKey"];

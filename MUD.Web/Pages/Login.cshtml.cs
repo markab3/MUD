@@ -1,9 +1,7 @@
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using MUD.Contracts;
 using MUD.Web.Services;
 
 namespace MUD.Web.Pages;
@@ -13,15 +11,11 @@ public class LoginModel : PageModel
 {
     private const string GenericError = "Invalid name or password.";
     public const string RetiredError = "This character has been retired and can no longer be played.";
+    public const string UnavailableError = "The game is not reachable right now. Please try again later.";
 
-    private readonly IAccountService _accounts;
-    private readonly LoginThrottle _throttle;
+    private readonly IAdminClient _core;
 
-    public LoginModel(IAccountService accounts, LoginThrottle throttle)
-    {
-        _accounts = accounts;
-        _throttle = throttle;
-    }
+    public LoginModel(IAdminClient core) { _core = core; }
 
     [BindProperty] public string? Name { get; set; }
     [BindProperty] public string? Password { get; set; }
@@ -32,36 +26,37 @@ public class LoginModel : PageModel
 
     public async Task<IActionResult> OnPostAsync()
     {
-        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        if (_throttle.IsBlocked(ip))
+        // Core owns the brute-force throttle (D43); the web only passes in the address as the throttle key.
+        var remoteKey = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        WebAuthReply reply;
+        try
         {
-            // Same message as a failed login so the lockout is not distinguishable by content.
-            Error = GenericError;
+            reply = await _core.WebAuthenticateAsync(Name ?? string.Empty, Password ?? string.Empty, remoteKey, HttpContext.RequestAborted);
+        }
+        catch (CoreUnavailableException)
+        {
+            Error = UnavailableError;
             return Page();
         }
 
-        var account = _accounts.Authenticate(Name ?? string.Empty, Password ?? string.Empty);
-        if (account == null)
+        switch (reply.Result)
         {
-            _throttle.RecordFailure(ip);
-            await Task.Delay(500);
-            Error = GenericError;
-            return Page();
+            case AuthResult.AuthOk when !string.IsNullOrEmpty(reply.Token):
+                Response.Cookies.Append(SessionAuthentication.CookieName, reply.Token, SessionAuthentication.CookieOptionsFor(Request));
+                return Redirect("/character");
+            case AuthResult.AuthRetired:
+                // Only reached with the right password, so this does not reveal anything to someone without it.
+                Error = RetiredError;
+                return Page();
+            case AuthResult.AuthTryAgainLater:
+                Error = UnavailableError;
+                return Page();
+            default:
+                // Bad credentials and a throttled address get the same message, so the lockout is not distinguishable by content.
+                await Task.Delay(500);
+                Error = GenericError;
+                return Page();
         }
-
-        _throttle.Reset(ip);
-        if (account.Retired)
-        {
-            // Only reached with the right password, so this does not reveal anything to someone without it.
-            Error = RetiredError;
-            return Page();
-        }
-        var identity = new ClaimsIdentity(new[]
-        {
-            new Claim(ClaimTypes.Name, account.PlayerName),
-            new Claim(ClaimTypes.Role, account.Role.ToString()),
-        }, CookieAuthenticationDefaults.AuthenticationScheme);
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, new ClaimsPrincipal(identity));
-        return Redirect("/character");
     }
 }
