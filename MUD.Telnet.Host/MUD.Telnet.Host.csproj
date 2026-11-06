@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The telnet front end in its own process (card P7-2). It reaches core only through MUD.CoreApi.Client over frontends.sock;
+         it never references MUD.Core or MUD.Data, so it cannot touch MongoDB. -->
+    <ProjectReference Include="..\MUD.Telnet\MUD.Telnet.csproj" />
+    <ProjectReference Include="..\MUD.CoreApi\MUD.CoreApi.csproj" />
+    <ProjectReference Include="..\MUD.CoreApi.Client\MUD.CoreApi.Client.csproj" />
+    <ProjectReference Include="..\MUD.Contracts\MUD.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MUD.Tests" />
+  </ItemGroup>
+
+</Project>
