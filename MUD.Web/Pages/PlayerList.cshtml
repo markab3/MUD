@@ -16,7 +16,7 @@
         </tr>
     </thead>
     <tbody>
-    @foreach (var p in Model.Result.Items)
+    @foreach (var p in Model.Items)
     {
         <tr>
             <td><a href="@PlayerListModel.EditUrl(p.NameKey)">@p.Name</a></td>
@@ -26,14 +26,14 @@
             <td>@(p.Retired ? "Retired" : "Active")</td>
         </tr>
     }
-    @if (Model.Result.Items.Count == 0)
+    @if (Model.Items.Count == 0)
     {
         <tr><td colspan="8">No players found.</td></tr>
     }
     </tbody>
 </table>
 <p>
-    Page @Model.Result.Page of @Model.Result.PageCount (@Model.Result.Total players).
-    @if (Model.Result.Page > 1) { <a href="@Model.PageUrl(Model.Result.Page - 1)">Previous</a> }
-    @if (Model.Result.Page < Model.Result.PageCount) { <a href="@Model.PageUrl(Model.Result.Page + 1)">Next</a> }
+    Page @Model.Page of @Model.PageCount (@Model.Total players).
+    @if (Model.Page > 1) { <a href="@Model.PageUrl(Model.Page - 1)">Previous</a> }
+    @if (Model.Page < Model.PageCount) { <a href="@Model.PageUrl(Model.Page + 1)">Next</a> }
 </p>

@@ -10,35 +10,6 @@ using Xunit;
 
 namespace MUD.Web.Tests;
 
-// Still used by the player page tests until card P6-4 moves the player pages onto the Admin service.
-public class FakeAuditLog : IAuditLog
-{
-    public List<AuditEntry> Entries { get; } = new();
-    public Dictionary<string, bool> Outcomes { get; } = new();
-    public bool FailInsert { get; set; }
-    public List<string> Order { get; } = new();
-
-    public void Insert(IReadOnlyList<AuditEntry> entries)
-    {
-        if (FailInsert) { throw new InvalidOperationException("audit store down"); }
-        Order.Add("audit");
-        Entries.AddRange(entries);
-        foreach (var e in entries) { Outcomes[e.Id] = false; }
-    }
-
-    public void SetOutcome(IReadOnlyList<string> ids, bool applied)
-    {
-        foreach (var id in ids) { Outcomes[id] = applied; }
-    }
-}
-
-public class FakeAccounts : IAccountService
-{
-    private readonly Dictionary<string, Account> _byName = new(StringComparer.OrdinalIgnoreCase);
-    public FakeAccounts Add(string name, AccountRole role) { _byName[name] = new Account(name, role, "id-" + name.ToLowerInvariant()); return this; }
-    public Account? GetByName(string name) => _byName.TryGetValue(name, out var a) ? a : null;
-}
-
 public class RoomCreationServiceTests
 {
     private static RoomForm Form(string key = "new", string area = "t") => new()
