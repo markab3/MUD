@@ -22,6 +22,10 @@ public static class SessionAuthentication
         Path = "/",
     };
 
+    // The token the browser sent, for pages that call core on the user's behalf. Empty when there is no cookie.
+    public static string TokenFrom(HttpRequest request) =>
+        request.Cookies.TryGetValue(CookieName, out var token) ? token ?? string.Empty : string.Empty;
+
     public static AccountRole RoleFrom(AdminRole role) => role switch
     {
         AdminRole.Admin => AccountRole.Admin,

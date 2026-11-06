@@ -1,3 +1,4 @@
+using MUD.Contracts;
 using MUD.Data;
 using System.ComponentModel.DataAnnotations;
 
@@ -91,26 +92,23 @@ public record RoomCreationResult(RoomCreationStatus Status, IReadOnlyList<RoomFi
 /// <summary>Creates rooms from the website. The form's Key is the local key; the stored key is Area + "." + Key.</summary>
 public interface IRoomCreationService
 {
-    RoomCreationResult Create(RoomForm form, string creatorName);
+    /// <summary>Throws CoreUnavailableException when core could not answer.</summary>
+    Task<RoomCreationResult> CreateAsync(RoomForm form, string token, CancellationToken cancellation = default);
 }
 
-/// <summary>Real implementation: same validation as the importer (MUD.Data.RoomRules), insert-only, audited.</summary>
+/// <summary>Real implementation: the local key and area prefix are checked here with MUD.Data.RoomRules, then core validates the
+/// whole room with the same rules, audits it and inserts it (insert-only, it never overwrites an existing room).</summary>
 public class RoomCreationService : IRoomCreationService
 {
-    private readonly IRoomWriter _writer;
-    private readonly IAccountService _accounts;
+    private readonly IAdminClient _core;
 
-    public RoomCreationService(IRoomWriter writer, IAccountService accounts)
+    public RoomCreationService(IAdminClient core)
     {
-        _writer = writer;
-        _accounts = accounts;
+        _core = core;
     }
 
-    public RoomCreationResult Create(RoomForm form, string creatorName)
+    public async Task<RoomCreationResult> CreateAsync(RoomForm form, string token, CancellationToken cancellation = default)
     {
-        var actor = RoomActors.Resolve(_accounts, creatorName);
-        if (actor == null) { return new(RoomCreationStatus.Forbidden); }
-
         var localError = RoomRules.CheckLocalKey(form.Key ?? string.Empty);
         if (localError != null)
         {
@@ -124,14 +122,35 @@ public class RoomCreationService : IRoomCreationService
         }
         var fullKey = area + "." + form.Key!.Trim();
 
-        var exits = form.Exits.Where(e => e != null && !e.IsEmpty).Select(e => new RoomExitData((e.Dir ?? string.Empty).Trim(), (e.To ?? string.Empty).Trim())).ToList();
-        var result = _writer.Create(actor, new RoomEdit(fullKey, form.Short, form.Long, area, form.X, form.Y, form.Z, exits, 0, form.ConfirmDangling));
-        return result.Status switch
+        var request = new RoomEditRequest
         {
-            RoomSaveStatus.Created => new(RoomCreationStatus.Created, null, fullKey),
-            RoomSaveStatus.Invalid => new(RoomCreationStatus.Invalid, result.FieldErrors),
-            RoomSaveStatus.KeyExists => new(RoomCreationStatus.KeyExists),
-            RoomSaveStatus.Forbidden => new(RoomCreationStatus.Forbidden),
+            Key = fullKey,
+            ShortDescription = form.Short ?? string.Empty,
+            LongDescription = form.Long ?? string.Empty,
+            Area = area,
+            ConfirmDangling = form.ConfirmDangling,
+        };
+        if (form.X.HasValue) { request.X = form.X.Value; }
+        if (form.Y.HasValue) { request.Y = form.Y.Value; }
+        if (form.Z.HasValue) { request.Z = form.Z.Value; }
+        request.Exits.AddRange(form.Exits.Where(e => e != null && !e.IsEmpty)
+            .Select(e => new RoomExit { Name = (e.Dir ?? string.Empty).Trim(), To = (e.To ?? string.Empty).Trim() }));
+
+        RoomEditReply reply;
+        try
+        {
+            reply = await _core.CreateRoomAsync(token, request, cancellation);
+        }
+        catch (CoreRefusedException)
+        {
+            return new(RoomCreationStatus.Forbidden);
+        }
+        return reply.Result switch
+        {
+            AdminResult.Ok => new(RoomCreationStatus.Created, null, fullKey),
+            AdminResult.Invalid => new(RoomCreationStatus.Invalid, reply.Errors.Select(e => new RoomFieldError(e.Field, e.Message)).ToList()),
+            AdminResult.AlreadyExists => new(RoomCreationStatus.KeyExists),
+            AdminResult.Forbidden => new(RoomCreationStatus.Forbidden),
             _ => new(RoomCreationStatus.Failed),
         };
     }

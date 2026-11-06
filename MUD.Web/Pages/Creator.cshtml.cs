@@ -12,6 +12,7 @@ public class CreatorModel : PageModel
     public const string KeyExistsError = "A room with that key already exists.";
     public const string FailedError = "The room could not be created. Please try again later.";
     public const string ForbiddenError = "You are not allowed to create rooms.";
+    public const string UnavailableError = "The game is not reachable right now. Please try again later.";
 
     private readonly IRoomCreationService _rooms;
 
@@ -22,12 +23,21 @@ public class CreatorModel : PageModel
 
     public void OnGet() => Form = NewForm();
 
-    public IActionResult OnPost()
+    public async Task<IActionResult> OnPostAsync()
     {
         PadExits();
         if (!ModelState.IsValid) { return Page(); }
 
-        var result = _rooms.Create(Form, User.FindFirstValue(ClaimTypes.Name) ?? string.Empty);
+        RoomCreationResult result;
+        try
+        {
+            result = await _rooms.CreateAsync(Form, SessionAuthentication.TokenFrom(Request), HttpContext.RequestAborted);
+        }
+        catch (CoreUnavailableException)
+        {
+            Error = UnavailableError;
+            return Page();
+        }
         switch (result.Status)
         {
             case RoomCreationStatus.Created:

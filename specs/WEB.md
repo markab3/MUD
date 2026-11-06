@@ -13,7 +13,7 @@ directly through the Mongo driver.
 | Database name | config `WorldSettings:DatabaseName` | `testmud` |
 | Listen URL | env `MUD_WEB_URL` | `http://127.0.0.1:5080` |
 | Core socket | env `MUD_FRONTENDS_SOCKET` (full path), else `MUD_RUN_DIRECTORY`, else `$XDG_RUNTIME_DIR/mud`, else `~/.local/share/mud/run`, plus `frontends.sock` | see left |
-| Default room key | config `WorldSettings:StartRoomKey` (env `WorldSettings__StartRoomKey`) | none; when unset every room delete is refused |
+| Default room key | no longer read by the web; core reads `WorldSettings:StartRoomKey` for the room delete rule | none; when unset core refuses every room delete |
 
 Run: `MUD_MONGO_URI=... dotnet run --project MUD.Web`.
 
@@ -47,11 +47,12 @@ redirected to `/login`; signed-in players get a 403 page at `/access-denied` (no
   `Area` (area prefix), optional `X`/`Y`/`Z` (blank = unplaced, stored as null, never 0), up to 4
   exit rows `Dir` + `To` (target room key) and a "save exits to rooms that do not exist" checkbox.
 - The stored room key is `<Area>.<Key>`. POST validates server side with antiforgery, then calls
-  `IRoomCreationService.Create`. `RoomCreationService` resolves the signed-in user's CURRENT stored role (not
-  the cookie), validates with `MUD.Data.RoomRules` (the same rules the area importer uses) and inserts through
-  `IRoomWriter.Create`: a `$setOnInsert` upsert that fails if the key exists, with empty `Items`, `Rev` 0 and an
-  audit record. On success the browser goes to `/creator/rooms/{key}`. Failures show fixed messages only; no
-  submitted value or exception text is echoed.
+  `IRoomCreationService.CreateAsync`. `RoomCreationService` checks the local key and area prefix with
+  `MUD.Data.RoomRules`, then sends `CreateRoom` on the Admin service with the session token from the cookie. Core
+  re-checks the caller's current role, validates the whole room with the same rules the area importer uses, audits it
+  and inserts it; it never overwrites an existing room (`ALREADY_EXISTS`). On success the browser goes to
+  `/creator/rooms/{key}`. Failures show fixed messages only; no submitted value or exception text is echoed. When core
+  cannot be reached the page says so.
 
 ## Room edit page (`/creator/rooms/{key}`)
 
@@ -64,41 +65,36 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   short 100 / long 4000 characters, no control characters, direction letters and spaces (max 32), no duplicate
   direction. Exits must point at an existing room; otherwise the page asks for the confirmation checkbox
   (dangling exit). At most 32 exit rows.
-- `IRoomWriter.Save` builds a field-level update: `$set` of only the changed allow-listed fields
-  (`ShortDescription`, `LongDescription`, `Area`, `X`, `Y`, `Z`, `Exits`) plus `WebUpdatedAt`, and `$inc` of `Rev`,
-  conditional on the `Rev` the form loaded (hidden field). It never replaces the document and never contains
-  `Items`, `Features`, `ExtendedProperties`, handles or any state.
-- Conflict: if `Rev` changed, nothing is written; the page says the room was changed by someone else, keeps the
-  user's input in the form and lists the current stored values beside it.
-- Audit (collection `audit`, Admin-readable only; no reader page yet): audit-first. One row per changed field
-  (`Old`, `New`, `RevBefore`, `RevAfter`, actor id/name/role, `Source: "web"`) is written with `Applied:false`
-  BEFORE the change; if that write fails the edit is refused and nothing changes. After the change the rows
-  are marked `Applied:true` (or `Rejected` if the conditional write lost a race).
-- Delete: the page has a delete button. The default room (`WorldSettings:StartRoomKey`, read by the website
-  from the same configuration) can never be deleted, and the delete is refused when the room has no usable exit
-  and the default room does not exist. Exits in other rooms that point at the deleted room are removed, and
-  those removals are audited. The game then moves everything inside (see below).
+- Save (card P6-3, `specs/ADMIN_API.md`): the page loads the room with `GetRoom` and saves with `UpdateRoom`, sending the
+  whole form and the session token. Core re-checks the caller's current role, validates, diffs the form against the
+  live room, writes one audit row per changed field (audit first) and applies the change to the live room on the game
+  thread. The reply carries the room as it is now, which the page shows. The web holds no `Rev`, no allow-list and no
+  Mongo access for rooms.
+- Last write wins (D30): there is no revision, no hidden `Rev` field and no conflict page. Two edits in a row both
+  apply; the audit rows hold the previous value of every changed field.
+- Core's answers map to fixed page messages: `OK` (saved), `NO_CHANGE`, `INVALID` (core's field errors are shown and the
+  user's input stays in the form), `NOT_FOUND` (404 page), `AUDIT_FAILED`, `FORBIDDEN`, anything else a generic
+  failure. A token core no longer accepts, or a role that was lowered since the request was authorised, shows the
+  "not allowed" message (403 page for a read). When core cannot be reached the page says so (503 for a read).
+- Delete: the page has a delete button (`DeleteRoom`). Core refuses to delete the default room
+  (`WorldSettings:StartRoomKey`, which core reads from its own configuration; the web no longer reads it) and refuses when
+  the room has no usable exit and the default room does not exist; the page shows core's fixed sentence. Exits in other
+  rooms that point at the deleted room are removed by core and audited, and core moves everything inside the room.
 - Re-import caveat: `local_modified` is NOT built (owner decision). A later area re-import can overwrite web
   edits of an imported room. The audit rows hold the previous values of every field, so a lost edit can be
   recovered from the audit log.
 
-### Game side (MUD.Main)
+### Game side
 
-`RoomWebSync` polls every 5 seconds: one query for the stored `Rev` of the live (cached) rooms, on a pool thread,
-then applies the result on the game thread. A room whose `Rev` differs gets the web allow-list applied
-(`Room.ApplyWebEdit`: Short, Long, Area, X, Y, Z, Exits, then `RebuildExitCommands`; `Items`, occupants, features
-and handles are untouched) and everyone in it is told "Something feels different...". A live room whose
-document has disappeared is treated as deleted: its players, NPCs and floor items move to a random adjacent room
-(an exit to a room that exists and is not itself), else to the default room, and that room is told "A sudden
-draft of magical wind deposits <list> in the room!". If neither exists nothing moves. `Room.Save` is now a field-level `$set`
-that leaves `Rev` and `WebUpdatedAt` alone (it still inserts a room that was never stored), so an in-game save
-cannot roll a web edit back. Not done here (separate card): in-game Terraform/Build and the importer bumping `Rev`.
+Room edits made on this page change the live room in core at once (`AdminApi`), so the poll is not involved. The old
+`RoomWebSync` poll and `Room.ApplyWebEdit` still exist in core until card P6-5 removes them; the web no longer writes
+`Rev`, so the poll sees no change from a page edit and does nothing for it.
 
 ### Not run
 
-No MongoDB in the build sandbox: the Mongo store (`MongoRoomEditStore`, `MongoAuditLog`, `Repository.GetRevisions`),
-the conditional `Rev` filter on a missing field, `$setOnInsert` upsert behaviour and the real poll have not been
-exercised against a mongod. Everything else is covered by fakes.
+No MongoDB in the build sandbox: nothing here was run against a mongod, and no live browser session against a running
+core was done. The pages are tested over a fake `IAdminClient`, the real client over a Unix socket against a stand-in
+Admin service, and (in `MUD.Tests`, card P6-1) core's `AdminApi` over in-memory fakes.
 
 ## Player pages (`/creator/players`, `/creator/players/{nameKey}`)
 
@@ -152,11 +148,12 @@ log holds the previous values.
 
 ## Room map (`/creator/map`)
 
-Read-only map of the `room` collection, protected by `CreatorOrAdmin` (anonymous -> `/login`, plain
-player -> `/access-denied`). Rooms come from `IRoomReader` (`MongoRoomReader` in production, a fake in
-tests); only definition fields are read (`ShortDescription`, `Area`, `X`, `Y`, `Z`, `Exits`). Nothing is
-written, and the page does not reference MUD.Core. Query string: `?area=<prefix>&z=<level>` (defaults to
-the first area and level 0), driven by the Area and Level selectors.
+Read-only map of the rooms, protected by `CreatorOrAdmin` (anonymous -> `/login`, plain
+player -> `/access-denied`). Rooms come from `ListRooms` on the Admin service (via `IAdminClient`, with the session token),
+mapped to `RoomRecord`; only definition fields are used (short description, area, `X`, `Y`, `Z`, exits). A coordinate
+absent in the message is unplaced, never 0. Nothing is written, and the page does not reference MUD.Core. If core
+cannot be reached the page shows a fixed message instead of a map; a token core refuses goes to `/access-denied`.
+Query string: `?area=<prefix>&z=<level>` (defaults to the first area and level 0), driven by the Area and Level selectors.
 
 - Layout lives in `RoomMapLayout` (pure; returns rects, polylines with arrowhead flags, stubs, badges,
   mismatches and the unplaced list). The page renders it as inline SVG, no JavaScript or external requests.
@@ -197,7 +194,9 @@ Accounts and sign-in go through core's Admin service on `frontends.sock` (card P
 collection for sign-in and holds no password or role of its own.
 
 - `IAdminClient` (`MUD.Web/Services/AdminClient.cs`; `GrpcAdminClient` in production, a fake in tests) wraps the
-  calls the account pages need: `WebAuthenticate`, `Logout`, `GetSession`, `ChangePassword`. The socket is
+  calls the pages need: `WebAuthenticate`, `Logout`, `GetSession`, `ChangePassword`, and for rooms `ListRooms`,
+  `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`. Room calls throw `CoreRefusedException` when core answers
+  Unauthenticated or PermissionDenied and `CoreUnavailableException` when core cannot answer. The socket is
   `$MUD_RUN_DIRECTORY/frontends.sock`, else `$XDG_RUNTIME_DIR/mud/frontends.sock`, else
   `~/.local/share/mud/run/frontends.sock` (the same rule as core); env `MUD_FRONTENDS_SOCKET` overrides the full path.
 - Login posts name, password and the browser address to core. Core checks the password and the retirement flag
@@ -210,8 +209,8 @@ collection for sign-in and holds no password or role of its own.
 - On every request `SessionAuthenticationHandler` asks core `GetSession` for the player name and CURRENT role and
   builds the claims from the answer (`Name`, `Role` = Player/Creator/Admin). A demotion or retirement therefore
   applies on the next request. If core cannot be reached the request is anonymous and the cookie is kept.
-- `IAccountService.GetByName` now answers from those claims for the signed-in player only (the room and player
-  editors still use it to resolve the actor until cards P6-3 and P6-4 move them).
+- `IAccountService.GetByName` now answers from those claims for the signed-in player only (the player editor still
+  uses it to resolve the actor until card P6-4 moves it; the room pages and the map call core with the token instead).
 - Policy `CreatorOrAdmin` requires role Creator or Admin.
 - Throttling of sign-in is core's (D43). The password page keeps its own small per-IP limit
   (5 failures in 5 minutes, 500 ms delay; in memory) in the web until core throttles password changes too.
@@ -227,8 +226,8 @@ also changes the telnet game; it is out of scope here.
 
 ## Tests
 
-`MUD.Web.Tests` (xunit) uses a fake `IAdminClient` for the account pages (plus one test of the real client over a
-Unix socket); no Mongo needed. Not run here: a browser sign-in against a live core (needs MongoDB). CI builds and tests
+`MUD.Web.Tests` (xunit) uses a fake `IAdminClient` for the account, room and map pages (plus tests of the real client
+over a Unix socket); no Mongo needed. The player pages still use the fake Mongo stores until card P6-4. Not run here: a browser sign-in against a live core (needs MongoDB). CI builds and tests
 `MUD.sln`, which includes both projects.
 
 ## Seeding

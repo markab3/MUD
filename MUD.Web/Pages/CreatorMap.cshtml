@@ -8,7 +8,11 @@
 }
 @{ ViewData["Title"] = "Room map"; }
 <h1>Room map</h1>
-@if (Model.Areas.Count == 0)
+@if (Model.Error != null)
+{
+    <p role="alert">@Model.Error</p>
+}
+else if (Model.Areas.Count == 0)
 {
     <p>There are no rooms.</p>
 }
