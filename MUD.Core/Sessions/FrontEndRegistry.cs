@@ -39,6 +39,12 @@ namespace MUD.Core.Sessions
 
         public ICoreApi Core { get { return _core; } }
 
+        /// <summary>
+        /// False while core is still starting: a Connect is then refused, and the front end retries by itself. Core sets it false until every
+        /// required module is Ready (D21), because the telnet front end is no longer started by core (card P7-3). True by default.
+        /// </summary>
+        public volatile bool AcceptingConnections = true;
+
         public int ConnectionCount
         {
             get { lock (_lock) { return _byId.Count; } }
@@ -47,7 +53,11 @@ namespace MUD.Core.Sessions
         /// <summary>Checks the hello and accepts the connection. A refusal carries a fixed sentence; the token is never logged or echoed.</summary>
         public FrontEndWelcome Connect(FrontEndHello hello)
         {
-            string name = hello == null ? string.Empty : (hello.Name ?? string.Empty).Trim();
+            string name = hello == null ? string.Empty : (hello.Name ?? string.Empty).Trim();
+            if (!AcceptingConnections)
+            {
+                return Refuse("Core is starting and not yet open to front ends.");
+            }
             if (name.Length == 0)
             {
                 return Refuse("A front end name is required.");

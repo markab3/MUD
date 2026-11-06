@@ -10,17 +10,16 @@ executable). Nothing secret is committed.
 |---|---|---|---|
 | Mongo connection string | env `MUD_MONGO_URI` | none, **required** | `MUD.Main` prints a clear error and exits 1 if unset or blank |
 | Database name | `WorldSettings:DatabaseName` | `testmud` | used by `Program`, `World` and the repositories |
-| Bind address | `--ip`, else env `MUD_BIND_ADDRESS`, else `TelnetSettings:IPAddress` | all interfaces | an empty or unparsable value means all interfaces |
-| Port | `--port`, else env `MUD_PORT`, else `TelnetSettings:Port` | `7680` | |
+| Telnet bind address and port | not a core setting | | core has no telnet listener since card P7-3; see `MUD_TELNET_BIND_ADDRESS` and `MUD_TELNET_PORT` of the telnet host in DEPLOYMENT.md |
 | Start room | `WorldSettings:StartRoomKey` | required | see ROOM_FILES.md |
 | Content directory | `WorldSettings:ContentDirectory` | `Content` | relative to the executable |
 | Import on startup | `WorldSettings:ImportOnStartup` | `false` | The database is the source of truth. Set `true` only to import the content directory at every start; see "Importing area files" below |
 
 Which project reads what: `MUD.Main` reads every setting above and is the only place
 that does. The telnet limits (`MUD_*` variables read by `TelnetLimits.FromEnvironment`
-in `MUD.Telnet`) configure the telnet server; `MUD.Main` passes the login-throttle
+in `MUD.Telnet`) configure the telnet host (`MUD.Telnet.Host`); `MUD.Main` passes the login-throttle
 numbers from them to the throttle in `MUD.Core`, so telnet and any later front end
-share one throttle. Bind address and port belong to the telnet front end only.
+share one throttle. Bind address and port belong to the telnet host only.
 
 The old `--db` command-line option is gone: the connection string is never
 accepted on the command line (it would show up in `ps` output).
@@ -28,7 +27,7 @@ accepted on the command line (it would show up in `ps` output).
 Local run:
 
 ```bash
-MUD_MONGO_URI="mongodb://localhost:27017" dotnet run --project MUD.Main -- --ip 127.0.0.1 --port 7680
+MUD_MONGO_URI="mongodb://localhost:27017" dotnet run --project MUD.Main
 ```
 
 ### Importing area files (manual, one-off)
@@ -61,7 +60,7 @@ The systemd unit reads two optional/required files in the service user's
 
 - `mongo.env` (required, mode 600, created by the maintainer's install
   script): `MUD_MONGO_URI=mongodb://user:password@localhost:27017/?authSource=admin`
-- `server.env` (optional): `MUD_BIND_ADDRESS=...` and/or `MUD_PORT=...`
+- `telnet.env` (optional, read by the telnet unit): `MUD_TELNET_BIND_ADDRESS=...` and/or `MUD_TELNET_PORT=...`
 
 Neither file is in the repository. Never commit a connection string.
 
@@ -88,7 +87,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md): `planar-realms.service` (systemd user
 unit) and `scripts/deploy.sh` (versioned releases, `current` symlink,
 rollback).
 
-- Listens on TCP 7680 by default (`MUD_PORT`). No Dockerfile. No TLS.
+- Core listens on no TCP port; the telnet host listens on TCP 7680 by default (`MUD_TELNET_PORT`). No Dockerfile. No TLS.
   Console stdout is the only log output; journald captures it.
 
 ## 4. Operational notes
@@ -111,7 +110,7 @@ The boot check against the `players` collection is a no-op read
 (`FirstOrDefault`, no failure path).
 
 ```bash
-MUD_MONGO_URI="mongodb://localhost:27017" dotnet run --project MUD.Main -- --ip 127.0.0.1 --port 7680
+MUD_MONGO_URI="mongodb://localhost:27017" dotnet run --project MUD.Main
 ```
 
 Note a collection-name discrepancy: the boot check reads collection

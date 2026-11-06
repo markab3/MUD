@@ -23,7 +23,6 @@ namespace MUD.Main
     class Program
     {
         private static World _gameWorld;
-        private static Server _serverInstance;
         private static TelnetLimits _telnetLimits = TelnetLimits.FromEnvironment();
         private static LoginThrottle _loginThrottle = new LoginThrottle(_telnetLimits.LoginMaxFailures, _telnetLimits.LoginThrottleDuration);
         private static string alternateMessage =
@@ -48,32 +47,6 @@ namespace MUD.Main
     Use 'who' to see who is currently online.
     Use 'quit' to disconnect.
 --------------------------------------------------------------------------------";
-        private static string welcomeMessage =
-@"
-                          Welcome to Planar Realms 0.2
-                        _____  _                         
-                        |  __ \| |                        
-                        | |__) | | __ _ _ __   __ _ _ __  
-                        |  ___/| |/ _` | '_ \ / _` | '__| 
-                        | |    | | (_| | | | | (_| | |    
-                  />___|_|___ |_|\__,_|_|_|_|\__,_|_|__________    
-         [#########[]____________________________________________\
-                   \>   |  __ \          | |              
-                        | |__) |___  __ _| |_ __ ___  ___ 
-                        |  _  // _ \/ _` | | '_ ` _ \/ __|
-                        | | \ \  __/ (_| | | | | | | \__ \
-                        |_|  \_\___|\__,_|_|_| |_| |_|___/
-                                                                                |
---------------------------------------------------------------------------------
-    Use 'connect' to log in to an existing player. You will be prompted for a
-    name and password; the password is not echoed.
-    Use 'create' to create a new player (name, password and confirmation).
-    Scripted clients may use 'connect <username> <password>' and
-    'create <username> <password>', but then the password is visible.
-    Use 'who' to see who is currently online.
-    Use 'quit' to disconnect.
---------------------------------------------------------------------------------";
-
         private static ShutdownCoordinator _shutdown;
 
         private static RunDirectory _runDirectory;
@@ -96,7 +69,7 @@ namespace MUD.Main
             });
         }
 
-        static void Main(string ip = null, int? port = null)
+        static void Main()
         {
             var config = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
@@ -114,16 +87,6 @@ namespace MUD.Main
             var databaseName = config["WorldSettings:DatabaseName"];
             if (string.IsNullOrWhiteSpace(databaseName)) { databaseName = "testmud"; }
 
-            // Bind address and port: command line, then environment, then appsettings.json.
-            if (string.IsNullOrWhiteSpace(ip)) { ip = Environment.GetEnvironmentVariable("MUD_BIND_ADDRESS"); }
-            if (string.IsNullOrWhiteSpace(ip)) { ip = config["TelnetSettings:IPAddress"]; }
-            if (port == null)
-            {
-                int parsedPort;
-                if (int.TryParse(Environment.GetEnvironmentVariable("MUD_PORT"), out parsedPort)) { port = parsedPort; }
-                else if (int.TryParse(config["TelnetSettings:Port"], out parsedPort)) { port = parsedPort; }
-                else { port = 7680; }
-            }
             var startRoomKey = config["WorldSettings:StartRoomKey"];
             if (string.IsNullOrWhiteSpace(startRoomKey))
             {
@@ -334,7 +297,9 @@ namespace MUD.Main
             var frontEndTokenFile = FrontEndTokenFile.LoadOrCreate(FrontEndTokenFile.ResolvePath(config["FrontEnds:TokenFile"]));
             int frontEndQueueCapacity;
             if (!int.TryParse(config["FrontEnds:OutboundQueueCapacity"], out frontEndQueueCapacity) || frontEndQueueCapacity <= 0) { frontEndQueueCapacity = FrontEndRegistry.DefaultOutboundQueueCapacity; }
-            var frontEnds = new FrontEndRegistry(_gameWorld, frontEndTokenFile, ContractVersion.Current, frontEndQueueCapacity);
+            var frontEnds = new FrontEndRegistry(_gameWorld, frontEndTokenFile, ContractVersion.Current, frontEndQueueCapacity);
+            // Held shut until every required module is Ready (D21); opened below. A front end that is refused retries by itself.
+            frontEnds.AcceptingConnections = false;
             _moduleHost = new ModuleHostRunner(_runDirectory, moduleRegistry, action => _gameWorld.PostModuleCall(action), null, moduleDispatcher, adminApi, frontEnds);
             try
             {
@@ -372,30 +337,20 @@ namespace MUD.Main
             }
             Console.WriteLine("done.");
 
-            Console.Write("Starting telnet server...");
-            IPAddress ipAddress = null;
-            if (!IPAddress.TryParse(ip, out ipAddress)) { ipAddress = IPAddress.Any; }
-
-            _serverInstance = new Server(ipAddress, port.Value, _telnetLimits);
-            // The telnet front end talks to core only through ICoreApi (the World implements it).
-            new TelnetFrontEnd(_gameWorld, welcomeMessage).Attach(_serverInstance);
-
-            Thread serverThread = new Thread(_serverInstance.Start);
-            serverThread.Start();
-            Console.WriteLine("done.");
-
+            frontEnds.AcceptingConnections = true;
+            // Telnet is served by MUD.Telnet.Host in its own process (phase 7); core has no telnet listener. Players reach the game
+            // through the Session service on frontends.sock, which is already serving.
             Console.WriteLine("SERVER STARTED: " + DateTime.Now);
 
             // Graceful shutdown: stop accepting, tell clients, save every online player through the persistence
             // worker and drain it, then close connections. Bounded: after 10 s it exits anyway and logs what
             // was not saved. The World's own drain deadline is shorter so it can spool before this one fires.
             _shutdown = new ShutdownCoordinator(
-                () => _serverInstance.StopAccepting(),
-                () => _serverInstance.SendMessageToAll("The server is shutting down."),
+                null,
+                null,
                 () => _gameWorld.Stop(),
                 () =>
                 {
-                    _serverInstance.Stop();
                     // Modules are ended first (terminate signal, grace period, kill), then the module host closes.
                     if (_moduleSupervisor != null) { _moduleSupervisor.Stop(); }
                     if (_moduleHost != null) { _moduleHost.Stop(); }
@@ -423,39 +378,6 @@ namespace MUD.Main
 
             while (read2 != 'q')
             {
-                if (read2 == 'b')
-                {
-                    _serverInstance.SendMessageToAll(Console.ReadLine());
-                }
-
-                if (read2 == 'c')
-                {
-                    string colorTest = "";
-                    for (int i = 0; i < 256; i++)
-                    {
-                        colorTest += "\x1B[38;5;" + i + "m " + i.ToString("D3") + " \x1B[0m";
-                        if (i == 15 || i == 231 || ((i > 15) && (i < 232) && (((i - 15) % 6) == 0)))
-                        {
-                            colorTest += "\r\n";
-                        }
-                    }
-                    _serverInstance.SendMessageToAll(colorTest);
-
-                    _serverInstance.SendMessageToAll("\x1B[32mGREEN\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[92mBRIGHT GREEN\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[32mBOLD GREEN\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[92mBOLD BRIGHT GREEN\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[42mGREEN BACKGROUND\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[102mBRIGHT GREEN BACKGROUND\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[42mBOLD GREEN BACKGROUND\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[102mBOLD BRIGHT GREEN BACKGROUND\x1B[0m");
-                }
-
-                if (read2 == 't')
-                {
-                    _serverInstance.SendMessageToAll(new byte[] { (byte)CommandCode.IAC, (byte)CommandCode.DO, (byte)OptionCode.TerminalType });
-                }
-
                 if (isInteractive)
                 {
                     try
@@ -472,11 +394,6 @@ namespace MUD.Main
             }
 
             _shutdown.Run();
-        }
-
-        private static void connectionBlocked(IPEndPoint ep)
-        {
-            Console.WriteLine(string.Format("BLOCKED: {0}:{1} at {2}", ep.Address, ep.Port, DateTime.Now));
         }
     }
 }

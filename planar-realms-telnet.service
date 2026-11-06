@@ -17,7 +17,7 @@ WorkingDirectory=%h/.local/share/mud/current/telnet
 ExecStart=%h/.local/share/mud/current/telnet/MUD.Telnet.Host
 
 # Defaults for bind address and port; override in ~/.config/mud/telnet.env.
-# Do not let this unit and the in-process telnet of planar-realms.service listen on the same port: change MUD_PORT in server.env or MUD_TELNET_PORT in telnet.env.
+# This is the only telnet listener: core has no telnet port of its own (card P7-3).
 Environment=MUD_TELNET_BIND_ADDRESS=0.0.0.0
 Environment=MUD_TELNET_PORT=7680
 # Optional overrides (MUD_TELNET_BIND_ADDRESS, MUD_TELNET_PORT, MUD_RUN_DIRECTORY, MUD_FRONTEND_TOKEN_FILE, telnet limits); the leading '-' tolerates a missing file.
