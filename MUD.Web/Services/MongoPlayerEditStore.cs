@@ -65,21 +65,35 @@ public class MongoPlayerEditStore : IPlayerEditStore
         var count = 0;
         foreach (var doc in _players.Find(new BsonDocument(PlayerFields.RolesAdmin, true)).Project(Projection).ToList())
         {
-            if (MongoAccountStore.RoleFrom(doc) == AccountRole.Admin) { count++; }
+            if (RoleFrom(doc) == AccountRole.Admin) { count++; }
         }
         return count;
     }
 
     public static PlayerSummary Summary(BsonDocument doc) => new(
         Str(doc, "NameKey") ?? string.Empty, Str(doc, "PlayerName") ?? string.Empty, Str(doc, "Race"), Str(doc, "Class"),
-        Str(doc, "Gender"), Str(doc, "CurrentLocationId"), MongoAccountStore.RoleFrom(doc), Bool(doc, "Retired"));
+        Str(doc, "Gender"), Str(doc, "CurrentLocationId"), RoleFrom(doc), Bool(doc, "Retired"));
 
     public static PlayerDetail Detail(BsonDocument doc) => new(
         doc["_id"].ToString()!, Str(doc, "NameKey") ?? string.Empty, Str(doc, "PlayerName") ?? string.Empty,
         Str(doc, "ShortDescription"), Str(doc, "LongDescription"), Str(doc, "Race"), Str(doc, "Gender"), Str(doc, "Class"),
-        Bool(doc, "Retired"), MongoAccountStore.RoleFrom(doc),
+        Bool(doc, "Retired"), RoleFrom(doc),
         doc.TryGetValue("Rev", out var rev) && rev.IsNumeric ? rev.ToInt32() : 0,
         doc.TryGetValue(PlayerFields.Roles, out var roles) && roles.IsBsonDocument ? roles.AsBsonDocument : new BsonDocument());
+
+    // Role from the core "roles" component the game stores on the player: { creator: bool, admin: bool, currentDirectory }
+    // (owner decisions D45, G30). Admin > creator > player. The old ExtendedProperties shape is not read (D1).
+    // Moved here from the removed MongoAccountStore; this store is replaced by the Admin service in card P6-4.
+    public static AccountRole RoleFrom(BsonDocument doc)
+    {
+        if (!doc.TryGetValue(PlayerFields.Roles, out var roles) || !roles.IsBsonDocument) { return AccountRole.Player; }
+        if (RoleFlag(roles.AsBsonDocument, "admin")) { return AccountRole.Admin; }
+        if (RoleFlag(roles.AsBsonDocument, "creator")) { return AccountRole.Creator; }
+        return AccountRole.Player;
+    }
+
+    private static bool RoleFlag(BsonDocument roles, string name) =>
+        roles.TryGetValue(name, out var value) && value.IsBoolean && value.AsBoolean;
 
     private static string? Str(BsonDocument d, string field) =>
         d.TryGetValue(field, out var v) && v.IsString ? v.AsString : null;

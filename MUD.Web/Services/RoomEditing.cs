@@ -453,6 +453,6 @@ public static class RoomActors
         if (string.IsNullOrWhiteSpace(name)) { return null; }
         var account = accounts.GetByName(name);
         if (account == null || account.Retired || account.Role < AccountRole.Creator) { return null; }
-        return new RoomActor(account.Id ?? AccountService.Normalize(account.PlayerName), account.PlayerName, account.Role);
+        return new RoomActor(account.Id ?? AccountNames.Normalize(account.PlayerName), account.PlayerName, account.Role);
     }
 }

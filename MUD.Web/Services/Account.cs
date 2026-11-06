@@ -2,30 +2,19 @@ namespace MUD.Web.Services;
 
 public enum AccountRole { Player, Creator, Admin }
 
-// Retired is true for a character that was retired (specs/WEB_EDITING.md section 15). Authenticate still returns such an
-// account after the password is verified so the login page can say why; callers must not sign a retired account in.
+// The signed-in player as core reports it for the current request. The role is read from core on every request (D31), never kept in
+// the cookie. Id is only set by tests and callers that know it; Retired stays on the record for the pages that show it.
 public record Account(string PlayerName, AccountRole Role, string? Id = null, bool Retired = false);
 
-// What the store hands back for a player document. Password is plaintext today (see specs/WEB.md).
-public record StoredAccount(string PlayerName, string? Password, AccountRole Role, string? Id = null, bool Retired = false);
-
-public interface IAccountStore
+public static class AccountNames
 {
-    // Exact lookup by NameKey (already normalised by the caller). Never a substring match.
-    StoredAccount? FindByNameKey(string nameKey);
-
-    // Sets only the Password field of the player with this NameKey (plaintext today, see specs/WEB.md).
-    // Returns false if no such player exists or the write was not acknowledged.
-    bool UpdatePassword(string nameKey, string newPassword);
+    // Same normalisation core uses for the player name key (trim, lower case).
+    public static string Normalize(string? name) => (name ?? string.Empty).Trim().ToLowerInvariant();
 }
 
-public enum PasswordChangeResult { Changed, WrongCurrent, Mismatch, Same, Invalid, SaveFailed }
-
+// Who is signed in on the current request. Backed by the session the authentication handler resolved through core.
 public interface IAccountService
 {
-    Account? Authenticate(string name, string password);
+    // The signed-in account when the name is the signed-in player's name, otherwise null.
     Account? GetByName(string name);
-
-    // Verifies the current password first (wrong current is reported before any rule is revealed).
-    PasswordChangeResult ChangePassword(string name, string currentPassword, string newPassword, string confirmPassword);
 }
