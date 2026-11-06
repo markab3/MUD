@@ -21,7 +21,6 @@ var url = Environment.GetEnvironmentVariable("MUD_WEB_URL");
 builder.WebHost.UseUrls(string.IsNullOrWhiteSpace(url) ? "http://127.0.0.1:5080" : url);
 
 builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoUri));
-builder.Services.AddSingleton<IRoomReader>(sp => new MongoRoomReader(sp.GetRequiredService<IMongoClient>(), databaseName));
 
 // Accounts and sign-in go through core's Admin service on frontends.sock (D22, D31). The cookie holds only the session token.
 builder.Services.AddSingleton<IAdminClient>(_ =>
@@ -39,11 +38,9 @@ builder.Services.AddAuthentication(SessionAuthentication.Scheme)
     .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(SessionAuthentication.Scheme, _ => { });
 
 builder.Services.AddAuthorization(WebPolicies.Configure);
-var startRoomKey = builder.Configuration["WorldSettings:StartRoomKey"];
-builder.Services.AddSingleton<IRoomEditStore>(sp => new MongoRoomEditStore(sp.GetRequiredService<IMongoClient>(), databaseName));
-builder.Services.AddSingleton<IAuditLog>(sp => new MongoAuditLog(sp.GetRequiredService<IMongoClient>(), databaseName));
-builder.Services.AddSingleton<IRoomWriter>(sp => new RoomWriter(sp.GetRequiredService<IRoomEditStore>(), sp.GetRequiredService<IAuditLog>(), startRoomKey, TimeProvider.System, sp.GetRequiredService<ILoggerFactory>().CreateLogger("RoomWriter")));
+// Rooms and the room map go through core's Admin service too; core validates, audits and applies room edits.
 builder.Services.AddSingleton<IRoomCreationService, RoomCreationService>();
+builder.Services.AddSingleton<IAuditLog>(sp => new MongoAuditLog(sp.GetRequiredService<IMongoClient>(), databaseName));
 builder.Services.AddSingleton<IPlayerEditStore>(sp => new MongoPlayerEditStore(sp.GetRequiredService<IMongoClient>(), databaseName));
 builder.Services.AddSingleton<IPlayerWriter>(sp => new PlayerWriter(sp.GetRequiredService<IPlayerEditStore>(), sp.GetRequiredService<IAuditLog>(), TimeProvider.System, sp.GetRequiredService<ILoggerFactory>().CreateLogger("PlayerWriter")));
 

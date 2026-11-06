@@ -18,7 +18,6 @@ else
     }
     <form method="post" novalidate>
         @Html.AntiForgeryToken()
-        <input type="hidden" asp-for="Rev" />
         <div><label>Short description <input asp-for="Short" maxlength="100" required /></label></div>
         <div><label>Long description <textarea asp-for="Long" maxlength="4000" rows="8" required></textarea></label></div>
         <div><label>Area prefix <input asp-for="Area" maxlength="128" /></label></div>
@@ -44,27 +43,8 @@ else
         <button type="submit" formaction="@(RoomEditModel.RoomUrl(Model.Key))?handler=Save">Save room</button>
     </form>
 
-    @if (Model.Conflict && Model.Current != null)
-    {
-        <section aria-label="Current stored values">
-            <h2>Current values</h2>
-            <dl>
-                <dt>Short</dt><dd>@Model.Current.Short</dd>
-                <dt>Long</dt><dd>@Model.Current.Long</dd>
-                <dt>Area</dt><dd>@Model.Current.Area</dd>
-                <dt>X, Y, Z</dt><dd>@(Model.Current.X?.ToString() ?? "unplaced"), @(Model.Current.Y?.ToString() ?? "unplaced"), @(Model.Current.Z?.ToString() ?? "unplaced")</dd>
-                <dt>Exits</dt>
-                <dd>
-                    @if (Model.Current.Exits.Count == 0) { <text>none</text> }
-                    else { <ul>@foreach (var e in Model.Current.Exits) { <li>@e.Name &rarr; @e.To</li> } </ul> }
-                </dd>
-            </dl>
-        </section>
-    }
-
     <form method="post" action="@(RoomEditModel.RoomUrl(Model.Key))?handler=Delete">
         @Html.AntiForgeryToken()
-        <input type="hidden" name="Rev" value="@Model.Rev" />
         <button type="submit">Delete this room</button>
         <small>Everything inside is moved to a neighbouring room, or to the default room. The default room cannot be deleted.</small>
     </form>

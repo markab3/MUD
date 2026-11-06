@@ -19,6 +19,28 @@ public interface IAdminClient
     Task<SessionInfoReply?> GetSessionAsync(string token, CancellationToken cancellation = default);
 
     Task<ChangePasswordReply> ChangePasswordAsync(string token, string currentPassword, string newPassword, string confirmPassword, CancellationToken cancellation = default);
+
+    // Rooms (creator or admin). Core validates, audits and applies every edit; edits are last write wins (D30), so there is no revision.
+    // Every room call throws CoreUnavailableException when core could not answer and CoreRefusedException when core refused the
+    // token or the caller's current role.
+    Task<IReadOnlyList<RoomDetail>> ListRoomsAsync(string token, CancellationToken cancellation = default);
+
+    // Null when no room has this key.
+    Task<RoomDetail?> GetRoomAsync(string token, string key, CancellationToken cancellation = default);
+
+    Task<RoomEditReply> CreateRoomAsync(string token, RoomEditRequest request, CancellationToken cancellation = default);
+
+    Task<RoomEditReply> UpdateRoomAsync(string token, RoomEditRequest request, CancellationToken cancellation = default);
+
+    Task<RoomEditReply> DeleteRoomAsync(string token, string key, CancellationToken cancellation = default);
+}
+
+// Core refused the session token (SessionEnded: unknown, revoked, or its player is retired) or the caller's current role is too low.
+public class CoreRefusedException : Exception
+{
+    public CoreRefusedException(bool sessionEnded) : base("Core refused the request.") { SessionEnded = sessionEnded; }
+
+    public bool SessionEnded { get; }
 }
 
 // Core did not answer (not running, restarting, game thread busy). The message is fixed and carries no request values.
@@ -127,6 +149,54 @@ public sealed class GrpcAdminClient : IAdminClient
                     ConfirmPassword = confirmPassword ?? string.Empty,
                 },
                 deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation);
+        }
+        catch (RpcException)
+        {
+            throw new CoreUnavailableException();
+        }
+    }
+
+    public async Task<IReadOnlyList<RoomDetail>> ListRoomsAsync(string token, CancellationToken cancellation = default)
+    {
+        var reply = await Call(() => _client.ListRoomsAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+        return reply.Rooms.ToList();
+    }
+
+    public async Task<RoomDetail?> GetRoomAsync(string token, string key, CancellationToken cancellation = default)
+    {
+        var reply = await Call(() => _client.GetRoomAsync(new GetRoomRequest { Token = token ?? string.Empty, Key = key ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+        return reply.Found ? reply.Room : null;
+    }
+
+    public Task<RoomEditReply> CreateRoomAsync(string token, RoomEditRequest request, CancellationToken cancellation = default)
+    {
+        request.Token = token ?? string.Empty;
+        return Call(() => _client.CreateRoomAsync(request, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+    }
+
+    public Task<RoomEditReply> UpdateRoomAsync(string token, RoomEditRequest request, CancellationToken cancellation = default)
+    {
+        request.Token = token ?? string.Empty;
+        return Call(() => _client.UpdateRoomAsync(request, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+    }
+
+    public Task<RoomEditReply> DeleteRoomAsync(string token, string key, CancellationToken cancellation = default) =>
+        Call(() => _client.DeleteRoomAsync(new DeleteRoomRequest { Token = token ?? string.Empty, Key = key ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+
+    // Unauthenticated and PermissionDenied are core's answers about the caller; any other failure means core could not answer.
+    private static async Task<T> Call<T>(Func<Grpc.Core.AsyncUnaryCall<T>> call)
+    {
+        try
+        {
+            return await call();
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.Unauthenticated)
+        {
+            throw new CoreRefusedException(sessionEnded: true);
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.PermissionDenied)
+        {
+            throw new CoreRefusedException(sessionEnded: false);
         }
         catch (RpcException)
         {

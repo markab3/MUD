@@ -64,6 +64,98 @@ public class FakeAdminClient : IAdminClient
         PasswordChanges.Add((token, currentPassword, newPassword, confirmPassword));
         return Task.FromResult(new ChangePasswordReply { Outcome = PasswordOutcome, Message = PasswordMessage });
     }
+
+    // Rooms. The fake keeps the rooms it is given and answers edits with the reply a test sets; it records what the web sent.
+    public Dictionary<string, RoomDetail> Rooms { get; } = new();
+    public bool RefuseRoomCalls { get; set; }
+    public bool RefuseBecauseSessionEnded { get; set; }
+    public AdminResult RoomEditResult { get; set; } = AdminResult.Ok;
+    public string RoomEditMessage { get; set; } = string.Empty;
+    public List<FieldError> RoomEditErrors { get; } = new();
+    public List<RoomEditRequest> RoomCreates { get; } = new();
+    public List<RoomEditRequest> RoomUpdates { get; } = new();
+    public List<string> RoomDeletes { get; } = new();
+    public List<string> RoomTokens { get; } = new();
+
+    public FakeAdminClient AddRoom(string key, string area = "t", int? x = 0, int? y = 0, int? z = 0, params (string Dir, string To)[] exits)
+    {
+        var room = new RoomDetail { Key = key, ShortDescription = "short " + key, LongDescription = "long " + key, Area = area };
+        if (x.HasValue) { room.X = x.Value; }
+        if (y.HasValue) { room.Y = y.Value; }
+        if (z.HasValue) { room.Z = z.Value; }
+        room.Exits.AddRange(exits.Select(e => new RoomExit { Name = e.Dir, To = e.To }));
+        Rooms[key] = room;
+        return this;
+    }
+
+    private void CheckRoomCall(string token)
+    {
+        if (Unavailable) { throw new CoreUnavailableException(); }
+        RoomTokens.Add(token);
+        if (RefuseRoomCalls) { throw new CoreRefusedException(RefuseBecauseSessionEnded); }
+    }
+
+    private RoomEditReply EditReply(RoomDetail? room)
+    {
+        var reply = new RoomEditReply { Result = RoomEditResult, Message = RoomEditMessage };
+        reply.Errors.AddRange(RoomEditErrors);
+        if (room != null) { reply.Room = room; }
+        return reply;
+    }
+
+    public Task<IReadOnlyList<RoomDetail>> ListRoomsAsync(string token, CancellationToken cancellation = default)
+    {
+        CheckRoomCall(token);
+        return Task.FromResult<IReadOnlyList<RoomDetail>>(Rooms.Values.ToList());
+    }
+
+    public Task<RoomDetail?> GetRoomAsync(string token, string key, CancellationToken cancellation = default)
+    {
+        CheckRoomCall(token);
+        return Task.FromResult(Rooms.TryGetValue(key, out var room) ? room : null);
+    }
+
+    public Task<RoomEditReply> CreateRoomAsync(string token, RoomEditRequest request, CancellationToken cancellation = default)
+    {
+        CheckRoomCall(token);
+        RoomCreates.Add(request);
+        return Task.FromResult(EditReply(null));
+    }
+
+    public Task<RoomEditReply> UpdateRoomAsync(string token, RoomEditRequest request, CancellationToken cancellation = default)
+    {
+        CheckRoomCall(token);
+        RoomUpdates.Add(request);
+        RoomDetail? current = null;
+        if (RoomEditResult == AdminResult.Ok && Rooms.TryGetValue(request.Key, out var existing))
+        {
+            // What core would answer: the room as it is after the edit.
+            current = existing.Clone();
+            current.ShortDescription = request.ShortDescription;
+            current.LongDescription = request.LongDescription;
+            current.Area = request.Area;
+            current.ClearX(); current.ClearY(); current.ClearZ();
+            if (request.HasX) { current.X = request.X; }
+            if (request.HasY) { current.Y = request.Y; }
+            if (request.HasZ) { current.Z = request.Z; }
+            current.Exits.Clear();
+            current.Exits.AddRange(request.Exits);
+            Rooms[request.Key] = current;
+        }
+        else if (Rooms.TryGetValue(request.Key, out var unchanged))
+        {
+            current = unchanged;
+        }
+        return Task.FromResult(EditReply(current));
+    }
+
+    public Task<RoomEditReply> DeleteRoomAsync(string token, string key, CancellationToken cancellation = default)
+    {
+        CheckRoomCall(token);
+        RoomDeletes.Add(key);
+        if (RoomEditResult == AdminResult.Ok) { Rooms.Remove(key); }
+        return Task.FromResult(EditReply(null));
+    }
 }
 
 public class LoginPageTests
@@ -547,6 +639,47 @@ public class GrpcAdminClientSocketTests : IDisposable
 
         public override Task<ChangePasswordReply> ChangePassword(ChangePasswordRequest request, Grpc.Core.ServerCallContext context) =>
             Task.FromResult(new ChangePasswordReply { Outcome = PasswordChangeOutcome.Changed });
+
+        private static void RequireToken(string token)
+        {
+            if (token == "stale") { throw new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.Unauthenticated, "no")); }
+            if (token == "low") { throw new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.PermissionDenied, "no")); }
+            if (token == "busy") { throw new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.Unavailable, "no")); }
+        }
+
+        public override Task<ListRoomsReply> ListRooms(TokenRequest request, Grpc.Core.ServerCallContext context)
+        {
+            RequireToken(request.Token);
+            var reply = new ListRoomsReply();
+            reply.Rooms.Add(new RoomDetail { Key = "t.hall", Area = "t", X = 0 });
+            return Task.FromResult(reply);
+        }
+
+        public override Task<GetRoomReply> GetRoom(GetRoomRequest request, Grpc.Core.ServerCallContext context)
+        {
+            RequireToken(request.Token);
+            return Task.FromResult(request.Key == "t.hall"
+                ? new GetRoomReply { Found = true, Room = new RoomDetail { Key = "t.hall", Area = "t" } }
+                : new GetRoomReply { Found = false });
+        }
+
+        public override Task<RoomEditReply> CreateRoom(RoomEditRequest request, Grpc.Core.ServerCallContext context)
+        {
+            RequireToken(request.Token);
+            return Task.FromResult(new RoomEditReply { Result = AdminResult.Ok, Room = new RoomDetail { Key = request.Key } });
+        }
+
+        public override Task<RoomEditReply> UpdateRoom(RoomEditRequest request, Grpc.Core.ServerCallContext context)
+        {
+            RequireToken(request.Token);
+            return Task.FromResult(new RoomEditReply { Result = AdminResult.NoChange });
+        }
+
+        public override Task<RoomEditReply> DeleteRoom(DeleteRoomRequest request, Grpc.Core.ServerCallContext context)
+        {
+            RequireToken(request.Token);
+            return Task.FromResult(new RoomEditReply { Result = AdminResult.Refused, Message = "fixed" });
+        }
     }
 
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "wc" + Guid.NewGuid().ToString("N").Substring(0, 8));
@@ -583,6 +716,41 @@ public class GrpcAdminClientSocketTests : IDisposable
         Assert.Equal(AuthResult.AuthBadCredentials, (await client.WebAuthenticateAsync("Ann", "wrong", "1.2.3.4")).Result);
         await client.LogoutAsync("tok");
         Assert.Equal(PasswordChangeOutcome.Changed, (await client.ChangePasswordAsync("tok", "a", "b", "b")).Outcome);
+    }
+
+    [Fact]
+    public async Task RoomCalls_WorkOverTheSocket_AndCarryTheTokenAndKey()
+    {
+        var client = await Start();
+        var rooms = await client.ListRoomsAsync("tok");
+        Assert.Equal("t.hall", Assert.Single(rooms).Key);
+        Assert.Equal("t.hall", (await client.GetRoomAsync("tok", "t.hall"))!.Key);
+        Assert.Null(await client.GetRoomAsync("tok", "t.nope"));
+        var created = await client.CreateRoomAsync("tok", new RoomEditRequest { Key = "t.new" });
+        Assert.Equal((AdminResult.Ok, "t.new"), (created.Result, created.Room.Key));
+        Assert.Equal(AdminResult.NoChange, (await client.UpdateRoomAsync("tok", new RoomEditRequest { Key = "t.hall" })).Result);
+        var deleted = await client.DeleteRoomAsync("tok", "t.hall");
+        Assert.Equal((AdminResult.Refused, "fixed"), (deleted.Result, deleted.Message));
+    }
+
+    [Fact]
+    public async Task RoomCalls_MapCoresStatusesOntoTheTwoExceptions()
+    {
+        var client = await Start();
+        var ended = await Assert.ThrowsAsync<CoreRefusedException>(() => client.ListRoomsAsync("stale"));
+        Assert.True(ended.SessionEnded);
+        var tooLow = await Assert.ThrowsAsync<CoreRefusedException>(() => client.GetRoomAsync("low", "t.hall"));
+        Assert.False(tooLow.SessionEnded);
+        await Assert.ThrowsAsync<CoreUnavailableException>(() => client.CreateRoomAsync("busy", new RoomEditRequest { Key = "t.x" }));
+        await Assert.ThrowsAsync<CoreUnavailableException>(() => client.DeleteRoomAsync("busy", "t.x"));
+    }
+
+    [Fact]
+    public async Task RoomCalls_WhenNothingListens_ReportCoreUnavailable()
+    {
+        Directory.CreateDirectory(_directory);
+        var client = new GrpcAdminClient(new Admin.AdminClient(CoreSocket.OpenChannel(Path.Combine(_directory, "none.sock"))));
+        await Assert.ThrowsAsync<CoreUnavailableException>(() => client.ListRoomsAsync("tok"));
     }
 
     [Fact]

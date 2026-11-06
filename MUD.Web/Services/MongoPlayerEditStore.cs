@@ -51,13 +51,24 @@ public class MongoPlayerEditStore : IPlayerEditStore
     public StoreUpdateOutcome UpdateIfRev(string id, int expectedRev, BsonDocument set)
     {
         var filter = new BsonDocument("_id", id);
-        filter.AddRange(MongoRoomEditStore.RevFilter(expectedRev));
+        filter.AddRange(RevFilter(expectedRev));
         var update = new BsonDocument { { "$set", set }, { "$inc", new BsonDocument("Rev", 1) } };
         var result = _players.UpdateOne(filter, new BsonDocumentUpdateDefinition<BsonDocument>(update));
         if (result.IsAcknowledged && result.MatchedCount == 1) { return StoreUpdateOutcome.Applied; }
         return _players.CountDocuments(new BsonDocument("_id", id), new CountOptions { Limit = 1 }) > 0
             ? StoreUpdateOutcome.Conflict : StoreUpdateOutcome.Missing;
     }
+
+    // A missing Rev counts as 0. (Moved here from the room store; card P6-4 removes it with the rest of the player store.)
+    public static BsonDocument RevFilter(int expectedRev) =>
+        expectedRev == 0
+            ? new BsonDocument("$or", new BsonArray
+            {
+                new BsonDocument("Rev", new BsonDocument("$exists", false)),
+                new BsonDocument("Rev", BsonNull.Value),
+                new BsonDocument("Rev", 0),
+            })
+            : new BsonDocument("Rev", expectedRev);
 
     public int CountAdmins()
     {

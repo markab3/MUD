@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using MongoDB.Bson;
 using MUD.Web.Pages;
 using MUD.Web.Services;
 using Xunit;
@@ -175,34 +174,54 @@ public class RoomMapLayoutTests
     }
 
     [Fact]
-    public void MongoRoomReader_MapsDocumentFields()
+    public void RoomRecord_MapsTheRoomCoreReturns()
     {
-        var doc = new BsonDocument
+        var room = new MUD.Contracts.RoomDetail
         {
-            { "_id", "castle.hall" }, { "ShortDescription", "a hall" }, { "Area", "castle" },
-            { "X", 1 }, { "Y", BsonNull.Value },
-            { "Exits", new BsonArray { new BsonDocument { { "Name", "north" }, { "DestinationId", "castle.keep" } } } },
-            { "Password", "must-not-matter" },
+            Key = "castle.hall", ShortDescription = "a hall", LongDescription = "never used by the map", Area = "castle", X = 1,
         };
-        var r = MongoRoomReader.From(doc);
+        room.Exits.Add(new MUD.Contracts.RoomExit { Name = "north", To = "castle.keep" });
+        var r = RoomRecord.From(room);
         Assert.Equal("castle.hall", r.Key);
+        Assert.Equal("castle", r.Area);
+        Assert.Equal("a hall", r.Short);
         Assert.Equal(1, r.X);
-        Assert.Null(r.Y);
+        Assert.Null(r.Y); // absent in the message means unplaced, never 0
         Assert.Null(r.Z);
         var e = Assert.Single(r.Exits);
         Assert.Equal(("north", "castle.keep"), (e.Name, e.To));
     }
-}
 
-public class FakeRoomReader : IRoomReader
-{
-    private readonly IReadOnlyList<RoomRecord> _rooms;
-    public FakeRoomReader(params RoomRecord[] rooms) => _rooms = rooms;
-    public IReadOnlyList<RoomRecord> GetAll() => _rooms;
+    [Fact]
+    public void RoomRecord_EmptyArea_IsNoArea() => Assert.Null(RoomRecord.From(new MUD.Contracts.RoomDetail { Key = "loose" }).Area);
+
+    [Fact]
+    public void RoomRecord_ZeroCoordinatesStayPlaced()
+    {
+        var room = new MUD.Contracts.RoomDetail { Key = "a.x", Area = "a", X = 0, Y = 0, Z = 0 };
+        var r = RoomRecord.From(room);
+        Assert.Equal((0, 0, 0), (r.X, r.Y, r.Z));
+    }
 }
 
 public class CreatorMapPageTests
 {
+    private static FakeAdminClient Core(params RoomRecord[] rooms)
+    {
+        var core = new FakeAdminClient();
+        foreach (var r in rooms) { core.AddRoom(r.Key, r.Area ?? string.Empty, r.X, r.Y, r.Z); }
+        return core;
+    }
+
+    private static CreatorMapModel Make(FakeAdminClient core, string token = "token-1")
+    {
+        var page = new CreatorMapModel(core);
+        var http = new DefaultHttpContext();
+        http.Request.Headers.Cookie = SessionAuthentication.CookieName + "=" + token;
+        page.PageContext = new Microsoft.AspNetCore.Mvc.RazorPages.PageContext { HttpContext = http };
+        return page;
+    }
+
     private static RoomRecord R(string key, string area, int? x, int? y, int? z) =>
         new(key, area, "s " + key, x, y, z, Array.Empty<RoomExitRecord>());
 
@@ -215,10 +234,12 @@ public class CreatorMapPageTests
     }
 
     [Fact]
-    public void Page_DefaultsToFirstAreaAndLevelZero()
+    public async Task Page_DefaultsToFirstAreaAndLevelZero()
     {
-        var page = new CreatorMapModel(new FakeRoomReader(R("b.x", "b", 0, 0, 0), R("a.x", "a", 0, 0, 0), R("a.y", "a", 0, 0, 2)));
-        page.OnGet(null, null);
+        var core = Core(R("b.x", "b", 0, 0, 0), R("a.x", "a", 0, 0, 0), R("a.y", "a", 0, 0, 2));
+        var page = Make(core, "abc");
+        await page.OnGetAsync(null, null);
+        Assert.Equal(new[] { "abc" }, core.RoomTokens);
         Assert.Equal(new[] { "a", "b" }, page.Areas);
         Assert.Equal("a", page.Area);
         Assert.Equal(0, page.Z);
@@ -227,20 +248,47 @@ public class CreatorMapPageTests
     }
 
     [Fact]
-    public void Page_UnknownAreaFallsBackToFirst()
+    public async Task Page_UnknownAreaFallsBackToFirst()
     {
-        var page = new CreatorMapModel(new FakeRoomReader(R("a.x", "a", 0, 0, 0)));
-        page.OnGet("nope", 0);
+        var page = Make(Core(R("a.x", "a", 0, 0, 0)));
+        await page.OnGetAsync("nope", 0);
         Assert.Equal("a", page.Area);
     }
 
     [Fact]
-    public void Page_NoRooms_RendersNothing()
+    public async Task Page_NoRooms_RendersNothing()
     {
-        var page = new CreatorMapModel(new FakeRoomReader());
-        page.OnGet(null, null);
+        var page = Make(Core());
+        Assert.IsType<Microsoft.AspNetCore.Mvc.RazorPages.PageResult>(await page.OnGetAsync(null, null));
         Assert.Empty(page.Areas);
         Assert.Null(page.Map);
+        Assert.Null(page.Error);
+    }
+
+    [Fact]
+    public async Task Page_UnplacedRoom_IsListedAsUnplaced_NotDrawnAtZero()
+    {
+        var page = Make(Core(R("a.x", "a", 0, 0, 0), R("a.u", "a", null, null, null)));
+        await page.OnGetAsync(null, null);
+        Assert.Equal(new[] { "a.x" }, page.Map!.Rects.Select(r => r.Key));
+        Assert.Equal(new[] { "a.u" }, page.Map.Unplaced.Select(u => u.Key));
+    }
+
+    [Fact]
+    public async Task Page_WhenCoreIsUnavailable_ShowsAFixedMessage_AndNoMap()
+    {
+        var page = Make(new FakeAdminClient { Unavailable = true });
+        await page.OnGetAsync(null, null);
+        Assert.Equal(CreatorMapModel.UnavailableError, page.Error);
+        Assert.Null(page.Map);
+    }
+
+    [Fact]
+    public async Task Page_WhenCoreRefusesTheSession_GoesToAccessDenied()
+    {
+        var page = Make(new FakeAdminClient { RefuseRoomCalls = true });
+        var result = await page.OnGetAsync(null, null);
+        Assert.Equal("/access-denied", Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectResult>(result).Url);
     }
 
     [Fact]
