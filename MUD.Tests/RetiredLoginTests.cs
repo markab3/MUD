@@ -12,7 +12,8 @@ using Xunit;
 
 namespace MUD.Tests
 {
-    // Telnet side of retirement and the login-into-a-missing-room rule (specs/WEB_EDITING.md section 15).
+    // Telnet side of retirement and the login-into-a-missing-room rule (specs/WEB_EDITING.md section 15). Core is the only writer
+    // of the player document (D30), so the live Retired flag is the truth.
     [Collection("World construction")] // World registers BSON class maps; constructing it in parallel races
     public class RetiredLoginTests
     {
@@ -62,8 +63,7 @@ namespace MUD.Tests
             var f = new Fixture();
             f.AddRoom("t.start");
             f.Ann.CurrentLocationId = "t.start";
-            f.Players.Stored[f.Ann.Id]["Retired"] = true;
-            f.Players.Stored[f.Ann.Id]["Rev"] = 1;
+            f.Ann.Retired = true;
 
             Assert.Equal(LoginResult.Retired, f.World.DoLogin("Ann", "secret", f.Client));
 
@@ -77,21 +77,11 @@ namespace MUD.Tests
         public void RetiredCharacter_WrongPassword_IsNotToldItIsRetired()
         {
             var f = new Fixture();
-            f.Players.Stored[f.Ann.Id]["Retired"] = true;
+            f.Ann.Retired = true;
 
             Assert.Equal(LoginResult.BadCredentials, f.World.DoLogin("Ann", "wrong", f.Client));
 
             Assert.DoesNotContain(PlayerAccounts.RetiredMessage, f.Sink.Sent);
-        }
-
-        [Fact]
-        public void RetiredFlagSetWithoutARevBump_IsStillCaughtAtLogin()
-        {
-            var f = new Fixture();
-            f.Players.Stored[f.Ann.Id]["Retired"] = true; // Rev unchanged: a direct database edit
-
-            Assert.Equal(LoginResult.Retired, f.World.DoLogin("Ann", "secret", f.Client));
-            Assert.Contains(PlayerAccounts.RetiredMessage, f.Sink.Sent);
         }
 
         [Fact]
@@ -114,8 +104,7 @@ namespace MUD.Tests
             f.AddRoom("t.start");
             f.Ann.CurrentLocationId = "t.start";
             f.Ann.Retired = true;
-            f.Players.Stored[f.Ann.Id]["Retired"] = false;
-            f.Players.Stored[f.Ann.Id]["Rev"] = 2;
+            f.Ann.Retired = false; // the Admin service clears the live flag when it un-retires a character
 
             Assert.Equal(LoginResult.Success, f.World.DoLogin("Ann", "secret", f.Client));
             Assert.False(f.Ann.Retired);

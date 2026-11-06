@@ -1,26 +1,12 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
-using MongoDB.Driver;
 using MUD.Contracts;
 using MUD.Web.Services;
 
-// The connection string is a secret: only ever read from the environment, never printed.
-var mongoUri = Environment.GetEnvironmentVariable("MUD_MONGO_URI");
-if (string.IsNullOrWhiteSpace(mongoUri))
-{
-    Console.Error.WriteLine("MUD_MONGO_URI is not set. Set it to the MongoDB connection string (it lives in ~/.config/mud/mongo.env).");
-    return 1;
-}
-
 var builder = WebApplication.CreateBuilder(args);
-
-var databaseName = builder.Configuration["WorldSettings:DatabaseName"];
-if (string.IsNullOrWhiteSpace(databaseName)) { databaseName = "testmud"; }
 
 var url = Environment.GetEnvironmentVariable("MUD_WEB_URL");
 builder.WebHost.UseUrls(string.IsNullOrWhiteSpace(url) ? "http://127.0.0.1:5080" : url);
-
-builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoUri));
 
 // Accounts and sign-in go through core's Admin service on frontends.sock (D22, D31). The cookie holds only the session token.
 builder.Services.AddSingleton<IAdminClient>(_ =>

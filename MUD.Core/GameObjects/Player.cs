@@ -54,115 +54,19 @@ namespace MUD.Core.GameObjects
 
         public string SelectedTerm { get; set; }
 
-        // Website-owned (specs/WEB_EDITING.md 4.2, 15). Rev is the revision of the stored document this object last
-        // applied; the website bumps it on every edit and the game never writes it. Retired characters cannot log in.
-        public int Rev { get; set; }
-
         public bool Retired { get; set; }
 
-        // Set by an in-game role change (promote) so the next save also writes the roles component. Otherwise the game
-        // leaves roles alone: the website owns them.
-        private volatile bool _rolesChanged;
-
-        /// <summary>Call after changing the roles component in-game, before Save.</summary>
-        public void MarkRolesChanged() { _rolesChanged = true; }
-
-        [Flags]
-        public enum WebChanges { None = 0, Text = 1, Roles = 2, Retired = 4 }
-
-        /// <summary>
-        /// Applies the website-owned fields of the stored document to this live player (game thread only):
-        /// ShortDescription, LongDescription, Race, Gender, Class, Retired and the creator/admin flags of the roles component, plus Rev.
-        /// Inventory, location, password and every other field are left alone. Announces nothing.
-        /// </summary>
-        public WebChanges ApplyWebEdit(BsonDocument doc)
+        // Core is the only writer of the player document (D30), so the live object is the truth and a save writes every field
+        // except the immutable _id.
+        private BsonDocument SavedFields(BsonDocument whole)
         {
-            var changes = WebChanges.None;
-            if (SetText(doc, PlayerFields.ShortDescription, ShortDescription, v => ShortDescription = v)) { changes |= WebChanges.Text; }
-            if (SetText(doc, PlayerFields.LongDescription, LongDescription, v => LongDescription = v)) { changes |= WebChanges.Text; }
-            if (SetText(doc, PlayerFields.Race, Race, v => Race = v)) { changes |= WebChanges.Text; }
-            if (SetText(doc, PlayerFields.Gender, Gender, v => Gender = v)) { changes |= WebChanges.Text; }
-            if (SetText(doc, PlayerFields.Class, Class, v => Class = v)) { changes |= WebChanges.Text; }
-
-            BsonValue retired = doc.GetValue(PlayerFields.Retired, BsonNull.Value);
-            bool nowRetired = retired.IsBoolean && retired.AsBoolean;
-            if (nowRetired != Retired) { Retired = nowRetired; changes |= WebChanges.Retired; }
-
-            bool hasCreator, hasAdmin;
-            StoredRoles(doc, out hasCreator, out hasAdmin);
-            if (Roles.Creator != hasCreator) { Roles.Creator = hasCreator; changes |= WebChanges.Roles; }
-            if (Roles.Admin != hasAdmin) { Roles.Admin = hasAdmin; changes |= WebChanges.Roles; }
-
-            BsonValue rev = doc.GetValue(PlayerFields.Rev, BsonNull.Value);
-            Rev = rev.IsNumeric ? rev.ToInt32() : 0;
-            return changes;
-        }
-
-        private static bool SetText(BsonDocument doc, string field, string current, Action<string> set)
-        {
-            BsonValue value = doc.GetValue(field, BsonNull.Value);
-            if (!value.IsString && !value.IsBsonNull) { return false; }
-            string updated = value.IsString ? value.AsString : null;
-            if (string.Equals(updated, current, StringComparison.Ordinal)) { return false; }
-            set(updated);
-            return true;
-        }
-
-        // The website owns the creator and admin flags inside the stored roles document. Anything else (the creator's
-        // current directory) is the game's and is left alone.
-        private static void StoredRoles(BsonDocument doc, out bool hasCreator, out bool hasAdmin)
-        {
-            hasCreator = false;
-            hasAdmin = false;
-            BsonValue roles;
-            if (!doc.TryGetValue(PlayerFields.Roles, out roles) || !roles.IsBsonDocument) { return; }
-            BsonValue value;
-            if (roles.AsBsonDocument.TryGetValue("creator", out value) && value.IsBoolean) { hasCreator = value.AsBoolean; }
-            if (roles.AsBsonDocument.TryGetValue("admin", out value) && value.IsBoolean) { hasAdmin = value.AsBoolean; }
-        }
-
-        // The document the game may write: everything except the website-owned fields. The roles component is included
-        // only after an in-game role change.
-        private BsonDocument GameOwnedFields(BsonDocument whole)
-        {
-            bool includeRoles = _rolesChanged;
-            _rolesChanged = false;
             var set = new BsonDocument();
             foreach (var element in whole)
             {
-                if (Array.IndexOf(PlayerFields.NotWrittenByGame, element.Name) >= 0 &&
-                    !(includeRoles && element.Name == PlayerFields.Roles)) { continue; }
+                if (element.Name == PlayerFields.Id) { continue; }
                 set[element.Name] = element.Value;
             }
             return set;
-        }
-
-        /// <summary>
-        /// Adopts the website-owned fields of the stored document when its Rev or Retired flag differs, so a player
-        /// cached before a web edit shows the current text, roles and retirement. Never throws.
-        /// </summary>
-        public bool SyncWebFieldsFromStore()
-        {
-            lock (_saveLock)
-            {
-                if (string.IsNullOrWhiteSpace(Id)) { return false; }
-                try
-                {
-                    BsonDocument stored = _playerRepository.GetRawDocument(Id);
-                    if (stored == null) { return false; }
-                    BsonValue rev = stored.GetValue(PlayerFields.Rev, BsonNull.Value);
-                    int storedRev = rev.IsNumeric ? rev.ToInt32() : 0;
-                    BsonValue retired = stored.GetValue(PlayerFields.Retired, BsonNull.Value);
-                    bool storedRetired = retired.IsBoolean && retired.AsBoolean;
-                    if (storedRev == Rev && storedRetired == Retired) { return false; }
-                    ApplyWebEdit(stored);
-                    return true;
-                }
-                catch (Exception)
-                {
-                    return false;
-                }
-            }
         }
 
         // Input and disconnects reach the player through the game loop (World routes lines to
@@ -272,7 +176,7 @@ namespace MUD.Core.GameObjects
                 // since this player was loaded).
                 SyncPasswordFromStore();
                 snapshot = this.ToBsonDocument();
-                gameFields = GameOwnedFields(snapshot);
+                gameFields = SavedFields(snapshot);
                 if (passwordChange) { _unconfirmedPasswordWrites++; }
             }
             _lastSave = Clock.Now;
@@ -281,8 +185,8 @@ namespace MUD.Core.GameObjects
             {
                 Collection = ((ISnapshotRepository)_playerRepository).CollectionName,
                 Id = Id,
-                // Field-level $set of the game-owned fields; the whole snapshot is only written when nothing is stored
-                // yet (a new character). Website-owned fields and Rev are never rewritten from this object.
+                // Field-level $set of the saved fields; the whole snapshot is only written when nothing is stored
+                // yet (a new character).
                 Kind = PersistKind.SetFields,
                 Doc = gameFields,
                 Fallback = snapshot,
@@ -331,10 +235,10 @@ namespace MUD.Core.GameObjects
                 else
                 {
                     // The Password it carries must not be older than the stored one (the website may have changed it
-                    // since this player was loaded). Only game-owned fields are written; the whole document only
+                    // since this player was loaded). A field-level update is written; the whole document only
                     // when nothing is stored yet.
                     SyncPasswordFromStore();
-                    if (_playerRepository.UpdateFields(Id, GameOwnedFields(this.ToBsonDocument())) || _playerRepository.Update(this))
+                    if (_playerRepository.UpdateFields(Id, SavedFields(this.ToBsonDocument())) || _playerRepository.Update(this))
                     {
                         _lastSave = DateTime.Now;
                         return true;

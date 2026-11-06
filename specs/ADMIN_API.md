@@ -5,8 +5,8 @@ The Admin service is the web front end's whole view of the game. It is served by
 is `AdminService.cs` and only maps refusals to status codes. Core is the only process that talks to MongoDB (the Admin service reads and
 writes it from core), and everything that changes live game objects runs on the single game thread.
 
-This card builds the service. `MUD.Web` still reads and writes the database itself until cards P6-2 to P6-4 move its pages, and the poll and
-`Rev` stay until P6-5.
+This card built the service. Cards P6-2 to P6-4 moved every `MUD.Web` page onto it, and card P6-5 removed the poll, `Rev` and the web's Mongo
+reference, so the web no longer reads or writes the database itself.
 
 ## Session tokens (D31)
 
@@ -62,8 +62,8 @@ CORE_API 7.2, not needed by any page). Each is a later addition if a page turns 
 ## Live objects
 
 An edit to a room or player that is loaded changes the live object on the game thread after the database write was handed over (room edits go
-through the persistence worker like every other room save; player edits are a field-level `$set` of the fields the game's own save leaves
-alone, `PlayerFields.NotWrittenByGame`). Online players in the room or the player edited are told, as the poll told them: "Something feels
+through the persistence worker like every other room save; player edits are a field-level `$set` of the edited fields, and the live
+object is set afterwards; the game's own save writes the whole live player, since core is the only writer). Online players in the room or the player edited are told, as the poll told them: "Something feels
 different...", "Something about you feels different...", "Your status has changed.", and the retired message followed by the normal quit path.
 
 ## Not verified here
@@ -76,8 +76,8 @@ socket (`MUD.Tests/AdminApiTests.cs`, `AdminServiceHostTests.cs`).
 
 - Contract version: `ContractVersion.Current` stays 1. The note on that constant says to raise it with every `.proto` change, but the module
   tests use the literal 1 and `admin.proto` adds a service without touching the module wire. Raising it is a one-line change plus those tests.
-- A web request and the poll can both still write the `player` and `room` collections until P6-5. Edits made through this service set the live
-  object themselves, so a poll that sees the unchanged `Rev` does nothing; a website edit made the old way is still picked up by the poll.
+- The poll is gone (card P6-5). A direct database edit made outside core is no longer noticed by a running core: a live room or player keeps
+  its in-memory values until core restarts. This follows from D30 and from core being the only writer.
 - No token file or `FrontEndHello` handshake guards `frontends.sock` yet. The socket is mode 0600 inside a 0700 directory, which is the same
   protection the module socket had before its token. The front-end token of D66 is card P7-1; the web card (P6-2) decides whether the web
   presents one earlier.

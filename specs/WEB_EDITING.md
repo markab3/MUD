@@ -3,6 +3,11 @@
 > **SUPERSEDED IN PART by the V2 owner decisions (D30); see [ARCHITECTURE_V2.md](ARCHITECTURE_V2.md) section 3 and [OPEN_QUESTIONS_V2.md](OPEN_QUESTIONS_V2.md).**
 > `Rev` (optimistic concurrency) is dropped: web and creator edits are last-write-wins and the per-field audit keeps history. The Rev/poll machinery (sections 6, 8, 9 and the matching parts of 13 and 14) is superseded and is removed in V2 phase 6.
 > Allow-lists, roles, audit and the owner decisions of section 15 survive as rules enforced in core. Nothing else in this file was rewritten.
+>
+> **REMOVED IN PHASE 6 (card P6-5):** the code described by sections 6, 8 and 9 no longer exists: `RoomWebSync`, `PlayerWebSync`,
+> `Room.ApplyWebEdit`, `Player.ApplyWebEdit`, `Player.SyncWebFieldsFromStore`, `PlayerFields.NotWrittenByGame`, `Rev` on rooms and players,
+> and `IRepository` revision reads (`GetRevisions`). Each of those sections carries a REMOVED banner below. The web holds no
+> database access at all; it calls core's Admin service ([ADMIN_API.md](ADMIN_API.md)).
 
 Status: APPROVED with owner decisions (section 15). Docs only; no code accompanies this spec.
 Based on `hermes` at 599721a. `specs/GAME_LOOP.md` exists only on branch `gameloop-spec`
@@ -106,6 +111,8 @@ Rules, enforced server-side in the web service layer:
 
 ## 6. Game-side refresh
 
+> **REMOVED (P6-5, D30).** There is no change detection and no poll; core applies web edits itself (`AdminApi`). Kept for history only.
+
 ### 6.1 Change detection
 
 Both collections gain an integer `Rev` (absent = 0). The game polls on a slow tick (proposed every
@@ -194,6 +201,8 @@ Retention is an open question (Q10).
 
 ## 8. Conflict handling (optimistic concurrency)
 
+> **REMOVED (P6-5, D30).** `Rev` is gone; edits are last write wins and the per-field audit keeps the history. Kept for history only.
+
 An edit form loads the document and carries its `Rev` as a hidden field. Save is one atomic
 operation:
 
@@ -221,6 +230,9 @@ poll (section 6.3) and the walking player's own write loses nothing because loca
 written by the game (section 9).
 
 ## 9. What the game writes (stops writing)
+
+> **REMOVED (P6-5, D30).** Core is the only writer, so the game's save writes the whole live object and `PlayerFields.NotWrittenByGame`
+> no longer exists. The allow-lists of section 4 still apply, as rules in `AdminRules`. Kept for history only.
 
 Web-owned fields are those on the allow-lists. The game must not overwrite them from a stale cache.
 
@@ -334,6 +346,9 @@ Q19 HTTPS/session handling of the web admin UI is out of scope here but required
 
 ## 13. Migration steps (game and web code that must change)
 
+> **PARTLY REMOVED (P6-5).** Steps 2 (conditional update on `Rev`), 5 and 6 (applier and poller) and the conflict page of step 9 were never built
+> in this form or were deleted; the web moved to the Admin service instead (P6-1 to P6-4). Kept for history only.
+
 Each step is a separate card/PR; order matters where stated.
 
 1. Add `Rev` (int, default 0) and `WebUpdatedAt` to `Room` and `Player` models; ensure
@@ -367,6 +382,9 @@ Each step is a separate card/PR; order matters where stated.
     (poll event and persistence worker kinds) once approved.
 
 ## 14. Test strategy
+
+> **PARTLY REMOVED (P6-5).** The conflict, poller and applier tests were deleted with the code. `MUD.Tests/AdminApiTests.cs` and
+> `MUD.Web.Tests` hold the tests that now cover the allow-lists, roles, audit and the pages. Kept for history only.
 
 No test in this spec was run; nothing was built. Mongo is not available in the worker sandbox, so
 Mongo-dependent behaviour below must be verified by someone with a mongod before release.

@@ -2,26 +2,25 @@
 
 ASP.NET Core (Razor Pages, net8.0) site for logging in with the same character
 accounts the telnet game uses. It does not start the World or the telnet
-server and does not reference MUD.Core; it reads the `player` collection
-directly through the Mongo driver.
+server and does not reference MUD.Core. It is a client of core's Admin service on `frontends.sock` and has no
+database access: `MongoDB.Driver` is not referenced by `MUD.Web` and no Mongo setting is read (core is the only process
+that talks to MongoDB).
 
 ## Configuration
 
 | Setting | Source | Default |
 |---|---|---|
-| Mongo connection string | env `MUD_MONGO_URI` (required; the process exits with a message if unset; never logged) | none |
-| Database name | config `WorldSettings:DatabaseName` | `testmud` |
 | Listen URL | env `MUD_WEB_URL` | `http://127.0.0.1:5080` |
 | Core socket | env `MUD_FRONTENDS_SOCKET` (full path), else `MUD_RUN_DIRECTORY`, else `$XDG_RUNTIME_DIR/mud`, else `~/.local/share/mud/run`, plus `frontends.sock` | see left |
 | Default room key | no longer read by the web; core reads `WorldSettings:StartRoomKey` for the room delete rule | none; when unset core refuses every room delete |
 
-Run: `MUD_MONGO_URI=... dotnet run --project MUD.Web`.
+Run: `dotnet run --project MUD.Web` (core must be running for any page that needs it).
 
 ## Deployment
 
 `scripts/deploy.sh` publishes the site into `web/` of each release and the systemd user unit
-`planar-realms-web.service` runs it, reading `~/.config/mud/mongo.env` and the optional
-`~/.config/mud/web.env` (`MUD_WEB_URL`). Default bind is `127.0.0.1:5080`. Install steps and
+`planar-realms-web.service` runs it, reading only the optional `~/.config/mud/web.env`
+(`MUD_WEB_URL`, `MUD_FRONTENDS_SOCKET`); the unit no longer reads `mongo.env`. Default bind is `127.0.0.1:5080`. Install steps and
 rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Routes
@@ -86,9 +85,8 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
 
 ### Game side
 
-Room edits made on this page change the live room in core at once (`AdminApi`), so the poll is not involved. The old
-`RoomWebSync` poll and `Room.ApplyWebEdit` still exist in core until card P6-5 removes them; the web no longer writes
-`Rev`, so the poll sees no change from a page edit and does nothing for it.
+Room edits made on this page change the live room in core at once (`AdminApi`). There is no poll: `RoomWebSync`,
+`Room.ApplyWebEdit` and `Room.Rev` were removed in card P6-5, and so was the stored `Rev` read (D30).
 
 ### Not run
 
@@ -190,8 +188,8 @@ collection for sign-in and holds no password or role of its own.
 - On every request `SessionAuthenticationHandler` asks core `GetSession` for the player name and CURRENT role and
   builds the claims from the answer (`Name`, `Role` = Player/Creator/Admin). A demotion or retirement therefore
   applies on the next request. If core cannot be reached the request is anonymous and the cookie is kept.
-- `IAccountService.GetByName` now answers from those claims for the signed-in player only (the player editor still
-  uses it to resolve the actor until card P6-4 moves it; the room pages and the map call core with the token instead).
+- `IAccountService.GetByName` answers from those claims for the signed-in player only; the room, map and player pages call
+  core with the token instead.
 - Policy `CreatorOrAdmin` requires role Creator or Admin.
 - Throttling of sign-in is core's (D43). The password page keeps its own small per-IP limit
   (5 failures in 5 minutes, 500 ms delay; in memory) in the web until core throttles password changes too.
@@ -207,9 +205,9 @@ also changes the telnet game; it is out of scope here.
 
 ## Tests
 
-`MUD.Web.Tests` (xunit) uses a fake `IAdminClient` for the account, room and map pages (plus tests of the real client
-over a Unix socket); no Mongo needed. The player pages still use the fake Mongo stores until card P6-4. Not run here: a browser sign-in against a live core (needs MongoDB). CI builds and tests
-`MUD.sln`, which includes both projects.
+`MUD.Web.Tests` (xunit) uses a fake `IAdminClient` for the account, room, map and player pages (plus tests of the real client
+over a Unix socket); no Mongo needed, and a test checks that the web assembly references no MongoDB assembly. Not run here: a browser
+sign-in against a live core (needs MongoDB). CI builds and tests `MUD.sln`, which includes both projects.
 
 ## Seeding
 

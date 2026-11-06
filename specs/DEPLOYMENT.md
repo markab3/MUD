@@ -75,11 +75,13 @@ Modules are separate programs that core starts and supervises. They need no unit
 ## Website unit (maintainer, optional)
 
 `planar-realms-web.service` runs `MUD.Web` (see [WEB.md](WEB.md)) from `current/web/MUD.Web`. It
-reads `mongo.env` (required, same file as the game) and the optional `~/.config/mud/web.env`.
+reads only the optional `~/.config/mud/web.env` (it no longer reads `mongo.env`: the web has no database access and talks to core on
+`frontends.sock`).
 It listens on `http://127.0.0.1:5080` by default (set in the unit); to change that, put
 `MUD_WEB_URL=...` in `web.env`. Restart policy and start limits are the same as the game unit
 (restart on failure after 5 s, give up after 5 failed starts in 2 minutes). It does not start the
-game World or telnet server, and has no dependency on the game unit.
+game World or telnet server. The unit has no `Requires=` on the game unit, but its pages need core running: with core down
+they show a fixed "not reachable" message and sign-in does not work.
 
 The site speaks plain HTTP and the login sends the password in clear, so keep the default
 localhost bind unless something in front of it provides HTTPS (see WEB.md).
@@ -122,7 +124,7 @@ The script:
 Other overrides: `MUD_DEPLOY_ROOT` (default `~/.local/share/mud`),
 `MUD_SERVICE` (default `planar-realms`) and `MUD_WEB_SERVICE` (default
 `planar-realms-web`). Requires `git` and the .NET 8 SDK
-on the host. The script never touches `mongo.env`.
+on the host. The script never touches `mongo.env` (only the game unit reads it).
 
 Note: a deploy restarts the game, which disconnects connected players.
 Runtime state is written through to MongoDB (see RUNTIME_STATE.md).
