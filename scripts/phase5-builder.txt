@@ -1,0 +1,36 @@
+# Builder walkthrough for the phase 5 modules (card P5-3). Run as a creator and admin:
+#   python3 -I scripts/telnet_session.py PORT builder PASSWORD scripts/phase5-builder.txt
+# Rooms come from the two area files (import), the two cross-area exits from terraform link, and the module behaviors from
+# the behavior command. Step 1 of the document (specs/ACCEPTANCE_PHASE5.md) copies the area files into the content directory.
+import sample_area
+import desert
+import temple
+# Each cross-area exit is made from its own side, with no return name (see the findings in the document).
+navigate desert.dune_1
+terraform link sample_area.hall west
+navigate sample_area.hall
+terraform link desert.dune_1 east
+navigate desert.dune_4
+terraform link temple.antechamber east
+navigate temple.antechamber
+terraform link desert.dune_4 west
+navigate desert.dune_1
+behavior here add heartbeat desert DesertStormRoom {"next":["desert.dune_2"],"step_s":5}
+behavior here add living.enter desert DesertStormExposure {"blind_s":20}
+navigate desert.dune_2
+behavior here add heartbeat desert DesertStormRoom {"next":["desert.dune_3"],"step_s":5}
+behavior here add living.enter desert DesertStormExposure {"blind_s":20}
+navigate desert.dune_3
+behavior here add heartbeat desert DesertStormRoom {"next":["desert.dune_4"],"step_s":5}
+behavior here add living.enter desert DesertStormExposure {"blind_s":20}
+navigate desert.dune_4
+behavior here add heartbeat desert DesertStormRoom {"next":["desert.dune_1"],"step_s":5}
+behavior here add living.enter desert DesertStormExposure {"blind_s":20}
+navigate temple.antechamber
+behavior here add command.entered temple TempleLeverRoom {"verb":"pull","noun":"lever","group":"main","traps":["temple.corridor_2","temple.corridor_3"],"rearm_after_s":60}
+navigate temple.corridor_2
+behavior here add living.enter temple DesertTempleTrap {"pit_room":"temple.pit","group":"main","rearm_after_s":60}
+navigate temple.corridor_3
+behavior here add living.enter temple DesertTempleTrap {"pit_room":"temple.pit","group":"main","rearm_after_s":60}
+behavior here list
+modules list

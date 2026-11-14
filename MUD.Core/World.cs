@@ -2,21 +2,24 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
 using Microsoft.Extensions.DependencyInjection;
-using MUD.Telnet;
+using MUD.CoreApi;
+using MUD.Core.Sessions;
 using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Core.GameObjects;
+using MUD.Core.Events;
 using MUD.Data;
 using System.IO;
 using System.Reflection;
 
 namespace MUD.Core
 {
-    public class World
+    public class World : ICoreApi
     {
         public List<Player> Players;
 
@@ -28,21 +31,83 @@ namespace MUD.Core
 
         public CommandSource AdminCommands;
 
-        public List<ITerminalHandler> TerminalHandlers;
+        /// <summary>The module supervisor, set by the host after start-up (null in tests and when modules are not used). Used by the `modules` command.</summary>
+        public MUD.Core.Modules.ModuleSupervisor ModuleSupervisor { get; set; }
+
+        // The one brute-force limit for every front end (decision D43); wrong passwords typed into in-game commands count too. May be null.
+        public LoginThrottle LoginThrottle { get; set; }
+
+        /// <summary>How long a front end's Authenticate, CreatePlayer or GetOnlineNames call waits for the game thread before giving up.</summary>
+        public TimeSpan ApiCallTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+        private int _gameThreadId;
 
         private IServiceProvider _serviceProvider;
-
-        private Timer _heartbeatTimer;
-
-        private bool _isRunning;
 
         private CommandQueue _commandQueue;
 
         private WorldSettings _settings;
 
-        public World(IMongoClient dbClient, WorldSettings settings)
+        private static readonly object _classMapLock = new object();
+
+        private static bool _classMapsRegistered;
+
+        private IClock _clock;
+
+        private GameLoop _loop;
+
+        /// <summary>The event queue and After-phase dispatcher (owner decisions D4, D9). Used on the game thread only.</summary>
+        public EventDispatcher Events { get; }
+
+        private PersistenceWorker _persistence;
+
+        // Everything below is touched only on the game thread (specs/GAME_LOOP.md section 3).
+        private Dictionary<SessionId, Player> _sessions;
+
+        private HashSet<string> _finalSavesPending;
+
+        private bool _shuttingDown;
+
+        // Per-session inbound accounting; touched from socket threads, so it is concurrent.
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<SessionId, ClientInbox> _inboxes =
+            new System.Collections.Concurrent.ConcurrentDictionary<SessionId, ClientInbox>();
+
+        // Open sessions: session id to sink and player (decision D46). Safe from any thread.
+        private readonly SessionRegistry _sessionRegistry = new SessionRegistry();
+
+        private readonly ManualResetEventSlim _stopped = new ManualResetEventSlim(false);
+
+        private class ClientInbox
+        {
+            public int Pending;
+            public int Dropped;
+        }
+
+        /// <summary>Max unprocessed lines queued per client; further lines are dropped (specs/GAME_LOOP.md Q4).</summary>
+        public const int MaxQueuedLinesPerClient = 20;
+
+        /// <summary>Dropped lines after which a client is disconnected for flooding.</summary>
+        public const int MaxDroppedLinesBeforeDisconnect = 50;
+
+        /// <summary>How long shutdown waits for the persistence worker before spooling what is left.</summary>
+        public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+        /// <summary>The time source used by the loop, command timing and autosave. Replaceable for tests.</summary>
+        public IClock Clock { get { return _clock ?? SystemClock.Instance; } }
+
+        /// <summary>True once shutdown has begun (game thread); sessions closed from then on end with WorldStopping.</summary>
+        public bool IsStopping { get { return _shuttingDown; } }
+
+        public World(IMongoClient dbClient, WorldSettings settings) : this(dbClient, settings, null)
+        {
+        }
+
+        public World(IMongoClient dbClient, WorldSettings settings, IClock clock)
         {
             _settings = settings;
+            _clock = clock ?? SystemClock.Instance;
+            _sessions = new Dictionary<SessionId, Player>();
+            _finalSavesPending = new HashSet<string>();
             _serviceProvider = LoadTypes(dbClient);
 
             List<ICommand> loadedCommands = _serviceProvider.GetServices<ICommand>().ToList();
@@ -51,11 +116,31 @@ namespace MUD.Core
             CreatorCommands = new CommandSource(loadedCommands.Where(c => c.CommandCategory == CommandCategories.Creator).ToList());
             AdminCommands = new CommandSource(loadedCommands.Where(c => c.CommandCategory == CommandCategories.Admin).ToList());
 
-            TerminalHandlers = _serviceProvider.GetServices<ITerminalHandler>().ToList();
-
             _commandQueue = _serviceProvider.GetService<CommandQueue>();
 
             Players = new List<Player>();
+
+            Events = new EventDispatcher(clock: Clock); // resolves (Module, Type) through the in-process registry
+            // A handler redirects by denying and emitting a new entity.move (D6). The request needs a "mover" living and a
+            // "to" room; it runs its own Before chain through the same MoveToRoom path as a walk.
+            Events.RegisterAction(EventNames.EntityMove, request =>
+            {
+                MUD.Core.Events.EventParty mover = null, destination = null;
+                foreach (MUD.Core.Events.EventParty party in request.Parties)
+                {
+                    if (party.Role == "mover") { mover = party; }
+                    else if (party.Role == "to") { destination = party; }
+                }
+                var living = mover == null ? null : mover.Entity as Living;
+                var room = destination == null ? null : destination.Entity as Room;
+                if (living == null || room == null) { return false; }
+                object reason;
+                string reasonText = request.Payload != null && request.Payload.TryGetValue("reason", out reason) && reason is string ? (string)reason : "redirect";
+                living.MoveToRoom(room, string.Format("{0} leaves.", living.ShortDescription), null, reasonText);
+                return true;
+            });
+            _loop = new GameLoop(Clock, handleInbound, onTick, () => doHeartbeat(null), null, () => Events.Pump());
+            _loop.OnFatal = beginShutdown;
         }
 
         public IServiceProvider LoadTypes(IMongoClient dbClient)
@@ -90,21 +175,20 @@ namespace MUD.Core
                     .WithSingletonLifetime()
                 )
 
-                // Load all terminals
-                .Scan(scan => scan
-                    .FromAssemblies(libAssemblies)
-                    .AddClasses(classes => classes.AssignableTo<ITerminalHandler>())
-                    .AsImplementedInterfaces()
-                    .WithSingletonLifetime()
-                )
-
                 // Load up the mongo client
                 .AddSingleton<IMongoClient>(dbClient)
                 .AddSingleton<WorldSettings>(_settings)
                 .AddSingleton<IMongoDatabase>(dbClient.GetDatabase(_settings.DatabaseName))
 
                 // Load utility stuff?
+                .AddSingleton<IClock>(Clock)
                 .AddSingleton<CommandQueue>()
+                .AddSingleton<MUD.Core.Components.ComponentRegistry>(_ =>
+                {
+                    var registry = new MUD.Core.Components.ComponentRegistry();
+                    registry.RegisterCore<MUD.Core.Components.Roles>(MUD.Core.Components.Roles.FieldName);
+                    return registry;
+                })
 
                 // Load repositories
                 .Scan(scan => scan
@@ -129,39 +213,445 @@ namespace MUD.Core
 
             // Make sure the classMaps are properly registered.
             // TODO: Do assembly scans here.
-            var classMapManager = new MUD.Data.MongoDBClassMapManager(serviceProvider);
-            classMapManager.ClearClassMaps();
+            // BSON class maps are process-global, so they are registered once, by the first World.
+            // Later Worlds must not clear them: that corrupts maps other threads are using.
+            lock (_classMapLock)
+            {
+                if (!_classMapsRegistered)
+                {
+                    var classMapManager = new MUD.Data.MongoDBClassMapManager(serviceProvider);
+                    classMapManager.RegisterRootClassMap(typeof(MUD.Data.Entity));
 
-            // Add Things that go to the DB.
-            classMapManager.RegisterEntityClasses(libAssemblies);
+                    // Add Things that go to the DB.
+                    classMapManager.RegisterEntityClasses(libAssemblies);
+                    _classMapsRegistered = true;
+                }
+            }
 
             return serviceProvider;
         }
 
+        /// <summary>
+        /// Runs the game on the calling thread until Stop: starts the persistence worker, then loops. Everything
+        /// that changes the world happens on this thread. Returns after shutdown has finished.
+        /// </summary>
         public void Start()
         {
-            var startTimeSpan = TimeSpan.Zero;
-            var periodTimeSpan = TimeSpan.FromSeconds(2);
-
-            _heartbeatTimer = new System.Threading.Timer(new TimerCallback(doHeartbeat), null, startTimeSpan, periodTimeSpan);
-
-            _isRunning = true;
-
-            while (_isRunning)
+            Thread persistenceThread = startPersistence();
+            IDisposable eventBinding = null;
+            try
             {
-                _commandQueue.ExecuteAllCommands();
+                Volatile.Write(ref _gameThreadId, Thread.CurrentThread.ManagedThreadId);
+                // Component and behavior edits on this thread now emit their change events to Events.
+                eventBinding = Events.Bind();
+                IndexStoredHeartbeatEntries();
+                _loop.Run();
+            }
+            finally
+            {
+                if (eventBinding != null) { eventBinding.Dispose(); }
+                Volatile.Write(ref _gameThreadId, 0);
+                // Normally a no-op: shutdown has already run. Covers a loop that stopped some other way.
+                if (!_shuttingDown) { beginShutdown(); }
+                if (persistenceThread != null && !persistenceThread.Join(ShutdownTimeout + TimeSpan.FromSeconds(5)))
+                {
+                    Console.WriteLine("The persistence worker did not finish before the shutdown deadline.");
+                }
+                _stopped.Set();
             }
         }
 
+        /// <summary>
+        /// Asks the game thread to log everyone out, flush persistence and exit, and waits (bounded) for it.
+        /// Safe to call from any thread, and repeated calls are ignored.
+        /// </summary>
         public void Stop()
         {
-            _heartbeatTimer.Change(Timeout.Infinite, Timeout.Infinite);
-            _isRunning = false;
+            if (_loop == null) { return; }
+            Post(beginShutdown);
+            _stopped.Wait(ShutdownTimeout + TimeSpan.FromSeconds(10));
+        }
+
+        /// <summary>
+        /// Describes what a shutdown that ran out of time may have left unsaved: players still online or with a
+        /// final save pending, and snapshots still queued in the persistence worker. Safe from any thread (best
+        /// effort; the game thread may be mid-change).
+        /// </summary>
+        public string DescribeUnsaved()
+        {
+            var parts = new List<string>();
+            try { parts.AddRange(Players.ToList().Select(p => "player " + p.PlayerName + " (still online)")); } catch (Exception) { }
+            try { parts.AddRange(_finalSavesPending.ToList().Select(id => "player " + id + " (final save pending)")); } catch (Exception) { }
+            if (_persistence != null) { parts.Add(_persistence.PendingCount + " snapshot(s) queued in the persistence worker"); }
+            return string.Join("; ", parts);
+        }
+
+        /// <summary>Queues a callback to run on the game thread. Safe from any thread; never blocks.</summary>
+        public bool Post(Action action)
+        {
+            return _loop != null && _loop.Post(InboundItem.ForEvent(action));
+        }
+
+        /// <summary>
+        /// Queues a module call to run on the game thread, in the separate bounded queue with its own per-pass share (CORE_API 1).
+        /// Safe from any thread; never blocks. Returns false when that queue is full or the game is stopping.
+        /// </summary>
+        public bool PostModuleCall(Action action)
+        {
+            return _loop != null && _loop.PostModuleCall(action);
+        }
+
+        private MUD.Core.Modules.ModuleDispatcher _moduleDispatcher;
+
+        /// <summary>
+        /// Connects the (Module, Type) dictionary to the connected modules (card P4-4): behavior entries whose module is connected and ready are
+        /// delivered to it, and the module's emitted events, state and timers are served. The in-process registry is asked first (D49). Call once,
+        /// before Start. Returns the dispatcher for the module service.
+        /// </summary>
+        public MUD.Core.Modules.ModuleDispatcher AttachModules(MUD.Core.Modules.ModuleRegistry registry, MUD.Core.Modules.ModuleHostOptions options)
+        {
+            if (_moduleDispatcher != null) { throw new InvalidOperationException("Modules are already attached."); }
+            var store = new MUD.Core.Modules.ModuleStateStore(_serviceProvider.GetService<IModuleStateRepository>(), options, Clock);
+            _moduleDispatcher = new MUD.Core.Modules.ModuleDispatcher(registry, Events, store, options, Clock, FindEntity);
+            // The resolver and the action table belong to the game thread; the host calls this while the loop may already run.
+            Action apply = () =>
+            {
+                Events.Resolver = new MUD.Core.Modules.CompositeEventHandlerResolver(Events.Resolver, _moduleDispatcher);
+                MUD.Core.Modules.ModuleEmitActions.Register(Events);
+            };
+            if (!Post(apply)) { apply(); }
+            return _moduleDispatcher;
+        }
+
+        // The entity a module names by id in an emitted event: an online player, a living standing in a loaded room, or a room.
+        // Items are not addressable by id yet; a module reaches them through the room or holder that carries them.
+        private GameObject FindEntity(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id)) { return null; }
+            Player player = Players.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.Ordinal));
+            if (player != null) { return player; }
+            return GetRoom(id);
+        }
+
+        /// <summary>Sets the module-call queue size and per-pass share from the module host options. Call before Start.</summary>
+        public void ConfigureModuleCalls(int capacity, int perPassShare)
+        {
+            if (_loop == null) { return; }
+            _loop.ModuleCallCapacity = capacity;
+            _loop.ModuleCallsPerPass = perPassShare;
+        }
+
+        /// <summary>
+        /// Called on socket threads with each decoded line. Only counts and enqueues; the line is handled on the
+        /// game thread. A client that is more than MaxQueuedLinesPerClient behind has lines dropped, and is
+        /// disconnected if it keeps doing it.
+        /// </summary>
+        public void EnqueueLine(SessionId session, string line)
+        {
+            if (_loop == null) { return; }
+            ClientInbox inbox = _inboxes.GetOrAdd(session, c => new ClientInbox());
+            if (Interlocked.Increment(ref inbox.Pending) > MaxQueuedLinesPerClient)
+            {
+                Interlocked.Decrement(ref inbox.Pending);
+                SessionConnection connection;
+                _sessionRegistry.TryGet(session, out connection);
+                if (Interlocked.Increment(ref inbox.Dropped) >= MaxDroppedLinesBeforeDisconnect)
+                {
+                    if (connection != null) { connection.Terminate("You are sending too much input. Goodbye.", SessionEndReason.Flood, true); }
+                }
+                else
+                {
+                    if (connection != null) { connection.Send("Too much input; that line was ignored."); }
+                }
+                return;
+            }
+            if (!_loop.Post(InboundItem.ForLine(session, line))) { Interlocked.Decrement(ref inbox.Pending); }
+        }
+
+        /// <summary>
+        /// ICoreApi: opens a session. Core generates the id and keeps the sink in its registry; the session is not
+        /// logged in yet. Safe from any thread; never blocks.
+        /// </summary>
+        public SessionId OpenSession(string frontEnd, string remoteKey, IFrontEndSink sink)
+        {
+            return _sessionRegistry.Open(frontEnd, remoteKey, sink, () => _shuttingDown).Id;
+        }
+
+        /// <summary>ICoreApi: the same as EnqueueLine, including the per-session pending cap. Unknown ids are ignored.</summary>
+        public void SubmitLine(SessionId id, string rawLine)
+        {
+            SessionConnection connection;
+            if (_sessionRegistry.TryGet(id, out connection)) { EnqueueLine(id, rawLine); }
+        }
+
+        /// <summary>
+        /// ICoreApi: the front end has closed the session. The session leaves the registry and core stops calling
+        /// its sink; the logout then runs on the game thread exactly as EnqueueDisconnect does. Unknown ids are ignored.
+        /// </summary>
+        public void CloseSession(SessionId id, SessionEndReason reason)
+        {
+            SessionConnection connection;
+            if (_sessionRegistry.Remove(id, out connection))
+            {
+                connection.Detach();
+                EnqueueDisconnect(id);
+            }
+        }
+
+        /// <summary>Number of open sessions in the registry.</summary>
+        public int OpenSessionCount { get { return _sessionRegistry.Count; } }
+
+        /// <summary>ICoreApi: true while the key has had too many failed logins.</summary>
+        public bool IsThrottled(string remoteKey)
+        {
+            LoginThrottle throttle = LoginThrottle;
+            return throttle != null && throttle.IsBlocked(remoteKey ?? string.Empty);
+        }
+
+        /// <summary>ICoreApi: counts a failed login against the key, or clears its failure count after a success.</summary>
+        public void RecordLoginOutcome(string remoteKey, bool success)
+        {
+            LoginThrottle throttle = LoginThrottle;
+            if (throttle == null) { return; }
+            if (success) { throttle.RecordSuccess(remoteKey ?? string.Empty); }
+            else { throttle.RecordFailure(remoteKey ?? string.Empty); }
+        }
+
+        /// <summary>ICoreApi: logs the session in on the game thread; the caller waits (bounded) for the result.</summary>
+        public LoginResult Authenticate(SessionId id, string name, string password)
+        {
+            return RunOnGameThread(() => DoLogin(name, password, id), LoginResult.TryAgainLater);
+        }
+
+        /// <summary>ICoreApi: creates a character on the game thread; the caller waits (bounded) for the result.</summary>
+        public LoginResult CreatePlayer(SessionId id, string name, string password)
+        {
+            return RunOnGameThread(() => DoCreateUser(name, password, id), LoginResult.TryAgainLater);
+        }
+
+        /// <summary>ICoreApi: the names of the players online, read on the game thread.</summary>
+        public IReadOnlyList<string> GetOnlineNames()
+        {
+            return RunOnGameThread(() => (IReadOnlyList<string>)Players.Select(p => p.PlayerName).ToList(), new List<string>());
+        }
+
+        /// <summary>
+        /// Runs work on the game thread and waits for it, at most ApiCallTimeout. Returns false when the work did not run (the game is
+        /// stopping, the queue is full, the wait ran out before it started) or when it threw. Used by the Admin service.
+        /// </summary>
+        public bool TryRunOnGameThread<T>(Func<T> work, out T result)
+        {
+            Tuple<bool, T> outcome = RunOnGameThread(() => Tuple.Create(true, work()), Tuple.Create(false, default(T)));
+            result = outcome.Item2;
+            return outcome.Item1;
+        }
+
+        /// <summary>The player repository (live players), for the Admin service.</summary>
+        public IPlayerRepository GetPlayerRepository()
+        {
+            return _serviceProvider.GetService<IPlayerRepository>();
+        }
+
+        /// <summary>The room repository (live rooms), for the Admin service.</summary>
+        public IRoomRepository GetRoomRepository()
+        {
+            return _serviceProvider.GetService<IRoomRepository>();
+        }
+
+        /// <summary>
+        /// Builds the Admin service logic (phase 6, card P6-1) on this world: web session tokens, room and player edits and the audit trail.
+        /// Core is the only process that talks to the database, so the Admin service reads and writes it from here.
+        /// </summary>
+        public MUD.Core.Administration.AdminApi CreateAdminApi(IMongoDatabase database)
+        {
+            return new MUD.Core.Administration.AdminApi(
+                new MUD.Core.Administration.WorldAdminHost(this, _settings.StartRoomKey),
+                GetPlayerRepository(),
+                GetRoomRepository(),
+                new MUD.Core.Administration.MongoAdminQueries(database),
+                new MUD.Core.Administration.MongoAuditStore(database),
+                new MUD.Core.Administration.AdminSessions(),
+                Clock,
+                Console.WriteLine);
+        }
+
+        // Runs work on the game thread and waits for it, at most ApiCallTimeout. Called on the game thread itself the
+        // work runs at once. If the wait runs out before the game thread has started the work, the work is cancelled
+        // (so a login nobody is waiting for never happens) and valueWhenUnavailable is returned; if it had already
+        // started, its result is awaited.
+        private T RunOnGameThread<T>(Func<T> work, T valueWhenUnavailable)
+        {
+            if (Thread.CurrentThread.ManagedThreadId == Volatile.Read(ref _gameThreadId)) { return work(); }
+
+            const int pending = 0, started = 1, abandoned = 2;
+            int state = pending;
+            var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+            bool posted = Post(() =>
+            {
+                if (Interlocked.CompareExchange(ref state, started, pending) != pending) { return; }
+                try { completion.SetResult(work()); }
+                catch (Exception ex) { completion.SetException(ex); }
+            });
+            if (!posted) { return valueWhenUnavailable; }
+
+            try
+            {
+                if (completion.Task.Wait(ApiCallTimeout)) { return completion.Task.Result; }
+                if (Interlocked.CompareExchange(ref state, abandoned, pending) == pending) { return valueWhenUnavailable; }
+                return completion.Task.GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Exception running a front-end request on the game thread: " + ex);
+                return valueWhenUnavailable;
+            }
+        }
+
+        /// <summary>Called on socket threads when a session closes, for any reason.</summary>
+        public void EnqueueDisconnect(SessionId session)
+        {
+            if (_loop != null) { _loop.Post(InboundItem.ForDisconnected(session)); }
+        }
+
+        private Thread startPersistence()
+        {
+            var players = _serviceProvider.GetService<IPlayerRepository>() as ISnapshotRepository;
+            var rooms = _serviceProvider.GetService<IRoomRepository>() as ISnapshotRepository;
+            var byCollection = new Dictionary<string, ISnapshotRepository>();
+            if (players != null) { byCollection[players.CollectionName] = players; }
+            if (rooms != null) { byCollection[rooms.CollectionName] = rooms; }
+            var moduleStates = _serviceProvider.GetService<IModuleStateRepository>() as ISnapshotRepository;
+            if (moduleStates != null) { byCollection[moduleStates.CollectionName] = moduleStates; }
+
+            var writer = new RepositoryPersistWriter(name => byCollection.TryGetValue(name, out ISnapshotRepository r) ? r : null);
+            _persistence = new PersistenceWorker(writer, Clock, action => Post(action), new SpoolStore(SpoolDirectory));
+            int replayed = _persistence.ReplaySpool();
+            if (replayed > 0) { Console.WriteLine("Replaying " + replayed + " unsaved snapshot(s) spooled by an earlier run."); }
+
+            // From here on, saves are snapshots handed to the worker. Before this point (startup import, account
+            // preparation) repositories are written synchronously, as before.
+            foreach (var repository in byCollection.Values) { repository.Sink = _persistence; }
+
+            var thread = new Thread(_persistence.Run) { Name = "persistence" };
+            thread.Start();
+            return thread;
+        }
+
+        /// <summary>Where snapshots that could not be written at shutdown are kept (~/.local/share/mud/spool).</summary>
+        public string SpoolDirectory
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(_settings != null ? _settings.SpoolDirectory : null)) { return _settings.SpoolDirectory; }
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mud", "spool");
+            }
+        }
+
+        // Shutdown sequence (specs/GAME_LOOP.md section 9), on the game thread: log every player out (final
+        // snapshots posted), tell the persistence worker to drain, and stop the loop.
+        private void beginShutdown()
+        {
+            if (_shuttingDown) { return; }
+            _shuttingDown = true;
+
+            foreach (Player player in Players.ToList())
+            {
+                try
+                {
+                    player.ReceiveMessage("The server is shutting down.");
+                    player.Quit();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(string.Format("Exception logging out {0} at shutdown: {1}", player.PlayerName, ex));
+                }
+            }
+
+            if (_persistence != null) { _persistence.Shutdown(ShutdownTimeout); }
+            _loop.Stop();
+        }
+
+        private void onTick()
+        {
+            if (_commandQueue != null) { _commandQueue.Dispatch(); }
+            if (_moduleDispatcher != null) { _moduleDispatcher.Tick(); }
+        }
+
+        // Routes one inbound item. Game thread only.
+        private void handleInbound(InboundItem item)
+        {
+            switch (item.Kind)
+            {
+                case InboundKind.Line:
+                    {
+                        ClientInbox inbox;
+                        if (_inboxes.TryGetValue(item.Session, out inbox)) { Interlocked.Decrement(ref inbox.Pending); }
+                        if (_shuttingDown) { return; }
+
+                        Player player;
+                        if (_sessions.TryGetValue(item.Session, out player))
+                        {
+                            // After logout has started, further input from that session is ignored.
+                            if (player.ConnectionStatus == PlayerConnectionStatuses.Offline) { return; }
+                            player.DataReceivedHandler(null, item.Line);
+                        }
+                        // A line from a session that has not logged in is not core's: the front end runs the login dialogue.
+                        break;
+                    }
+                case InboundKind.Disconnected:
+                    {
+                        ClientInbox ignored;
+                        _inboxes.TryRemove(item.Session, out ignored);
+                        Player player;
+                        if (_sessions.TryGetValue(item.Session, out player))
+                        {
+                            _sessions.Remove(item.Session);
+                            // Current behavior preserved: losing the connection logs the player out.
+                            player.Quit();
+                        }
+                        break;
+                    }
+                case InboundKind.WorldEvent:
+                    item.Action();
+                    break;
+            }
+        }
+
+        /// <summary>Records that a player's final save is queued; their account cannot log in until it completes.</summary>
+        public void BeginFinalSave(Player player, PersistRequest request)
+        {
+            string id = player.Id;
+            _finalSavesPending.Add(id);
+            var snapshots = _serviceProvider != null ? _serviceProvider.GetService<IPlayerRepository>() as ISnapshotRepository : null;
+            Action<bool> previous = request.OnCompleted;
+            request.OnCompleted = persisted =>
+            {
+                if (previous != null) { previous(persisted); }
+                _finalSavesPending.Remove(id);
+                // The saved snapshot is now the truth; drop the stale live object so a re-login reloads it.
+                if (snapshots != null) { snapshots.Evict(id); }
+            };
+        }
+
+        /// <summary>True while a logout save for this player id has been queued but not yet written.</summary>
+        public bool IsFinalSavePending(string playerId)
+        {
+            return _finalSavesPending != null && _finalSavesPending.Contains(playerId);
+        }
+
+        /// <summary>
+        /// Called by Player.Quit: the session no longer maps to a player, so a later Disconnected item for it
+        /// does not run the logout a second time.
+        /// </summary>
+        public void RetireConnection(SessionId session)
+        {
+            if (!session.IsEmpty && _sessions != null) { _sessions.Remove(session); }
         }
 
         public void AddPlayer(Player newPlayer)
         {
             if (newPlayer == null) { return; }
+            if (!newPlayer.SessionId.IsEmpty) { _sessions[newPlayer.SessionId] = newPlayer; }
             Players.Add(newPlayer);
             foreach (var currentPlayer in Players)
             {
@@ -189,27 +679,125 @@ namespace MUD.Core
             }
         }
 
-        public bool DoLogin(string userName, string password, Client client)
+        /// <summary>
+        /// Duplicate login: moves a live player to a new session (game thread). The old session is told why and
+        /// closed WITHOUT Quit, and its session mapping is removed first so its later Disconnected item finds no
+        /// player and cannot quit or save-and-remove it. The player stays in the world. An unknown new session id
+        /// does nothing.
+        /// </summary>
+        public void TakeOverSession(Player player, SessionId newSession)
         {
-            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
+            SessionConnection newConnection;
+            if (!_sessionRegistry.TryGet(newSession, out newConnection)) { return; }
+            SessionId oldSession = player.SessionId;
+            IFrontEndSink oldSink = player.OutputSink;
+            bool replacing = oldSink != null && oldSession != newSession;
+            if (replacing)
+            {
+                _sessions.Remove(oldSession);
+                oldSink.Output(oldSession, OutputChannel.System, "You have been logged in from another location.", false);
+            }
+            player.ClearPromptHandler();
+            AttachPlayer(player, newConnection);
+            player.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
+            _sessions[newSession] = player;
+            if (replacing)
+            {
+                oldSink.Close(oldSession, string.Empty, true);
+                oldSink.SessionEnded(oldSession, SessionEndReason.TakenOver);
+            }
+
+            player.ReceiveMessage("Reconnecting to your existing session.");
+            player.DataReceivedHandler(null, "look");
+        }
+
+        /// <summary>
+        /// Attaches a player to an open session (game thread). The player's sink is the session's own sink behind the terminal conversion
+        /// that used to be done in the player (the player's selected terminal is read when each message is sent).
+        /// </summary>
+        public bool AttachPlayer(Player player, SessionId session)
+        {
+            SessionConnection connection;
+            if (player == null || !_sessionRegistry.TryGet(session, out connection)) { return false; }
+            AttachPlayer(player, connection);
+            return true;
+        }
+
+        private void AttachPlayer(Player player, SessionConnection connection)
+        {
+            player.Attach(connection.Id, connection, connection.RemoteKey);
+            connection.Player = player;
+        }
+
+        /// <summary>
+        /// Logs the session in (game thread). Returns the outcome; the retired and still-saving explanations are also
+        /// sent to the session's sink, as before.
+        /// </summary>
+        public LoginResult DoLogin(string userName, string password, SessionId session)
+        {
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return LoginResult.BadCredentials; }
+            SessionConnection client;
+            if (!_sessionRegistry.TryGet(session, out client)) { return LoginResult.BadCredentials; }
 
             var foundPlayer = GetPlayerAccounts().Authenticate(userName, password);
 
+            if (foundPlayer != null && PlayerAccounts.IsRetired(foundPlayer))
+            {
+                // Only reached with the right password. A retired character cannot be played (specs/WEB_EDITING.md 15).
+                client.Send(PlayerAccounts.RetiredMessage);
+                return LoginResult.Retired;
+            }
+
+            if (foundPlayer != null && IsFinalSavePending(foundPlayer.Id))
+            {
+                // The previous session's logout save is still queued; logging in now could load stale data.
+                client.Send("Your previous session is still being saved, try again in a moment.");
+                return LoginResult.TryAgainLater;
+            }
+
+            if (foundPlayer != null && Players.Contains(foundPlayer))
+            {
+                // The account already has a live player: the new connection takes it over.
+                TakeOverSession(foundPlayer, session);
+                return LoginResult.AlreadyOnline;
+            }
+
             if (foundPlayer != null)
             {
-                foundPlayer.Connection = client;
+                AttachPlayer(foundPlayer, client);
                 foundPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
+                MoveToDefaultRoomIfLocationMissing(foundPlayer);
                 AddPlayer(foundPlayer);
-                return true;
+                return LoginResult.Success;
             }
-            return false;
+            return LoginResult.BadCredentials;
         }
 
-        public bool DoCreateUser(string userName, string password, Client connectingClient)
-        {
-            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return false; }
+        public const string LostLocationMessage = "While you were away the world shifted, and the place you remember is gone. The currents of the realm carry you back to where all journeys begin.";
 
-            // Every failure is reported to the client here; the caller only needs to know it did not succeed.
+        // A character whose saved room no longer exists (deleted on the website while they were away) wakes up in the
+        // default room. Does nothing when the room exists, or when the default room does not exist either.
+        private void MoveToDefaultRoomIfLocationMissing(Player player)
+        {
+            if (player.CurrentLocation != null) { return; }
+            string startKey = _settings != null ? _settings.StartRoomKey : null;
+            if (string.IsNullOrWhiteSpace(startKey) || GetRoom(startKey) == null) { return; }
+            player.CurrentLocation = null;
+            player.CurrentLocationId = startKey;
+            player.ReceiveMessage(LostLocationMessage);
+        }
+
+        /// <summary>
+        /// Creates a character and logs the session in as it (game thread). A name that is not allowed and a failed
+        /// save are explained to the session's sink here; a taken name is only returned as NameTaken, for the front
+        /// end to word.
+        /// </summary>
+        public LoginResult DoCreateUser(string userName, string password, SessionId session)
+        {
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrWhiteSpace(password)) { return LoginResult.BadCredentials; }
+            SessionConnection connectingClient;
+            if (!_sessionRegistry.TryGet(session, out connectingClient)) { return LoginResult.BadCredentials; }
+
             var accounts = GetPlayerAccounts();
             userName = PlayerAccounts.Clean(userName);
 
@@ -217,7 +805,7 @@ namespace MUD.Core
             if (nameProblem != null)
             {
                 connectingClient.Send(nameProblem);
-                return false;
+                return LoginResult.BadCredentials;
             }
 
             if (accounts.FindByName(userName) == null)
@@ -232,26 +820,21 @@ namespace MUD.Core
                 newPlayer.CurrentLocationId = _settings.StartRoomKey;
                 newPlayer.SelectedTerm = "Default"; // Or just do the subnegotiation to get a value for this...
                 newPlayer.ConnectionStatus = PlayerConnectionStatuses.LoggedIn;
-                newPlayer.Connection = connectingClient;
+                AttachPlayer(newPlayer, connectingClient);
 
                 // The unique index decides under concurrent creates: a duplicate-key error on save means the name is taken.
                 var saved = accounts.TrySave(newPlayer);
-                if (saved == PlayerSaveResult.NameTaken)
-                {
-                    connectingClient.Send(string.Format("There is already someone by the name of {0}.", userName));
-                    return false;
-                }
+                if (saved == PlayerSaveResult.NameTaken) { return LoginResult.NameTaken; }
                 if (saved != PlayerSaveResult.Saved)
                 {
                     connectingClient.Send("Unable to create your character right now. Please try again later.\r\n");
-                    return false;
+                    return LoginResult.TryAgainLater;
                 }
 
                 AddPlayer(newPlayer);
-                return true;
+                return LoginResult.Success;
             }
-            connectingClient.Send(string.Format("There is already someone by the name of {0}.", userName));
-            return false;
+            return LoginResult.NameTaken;
         }
 
         // Backfills Player.NameKey for stored players and creates the unique NameKey index. Never throws:
@@ -264,6 +847,24 @@ namespace MUD.Core
         private PlayerAccounts GetPlayerAccounts()
         {
             return new PlayerAccounts(_serviceProvider.GetService<IPlayerRepository>(), Console.WriteLine);
+        }
+
+        // Puts the stored rooms that carry a heartbeat entry in the heartbeat index (D56), so they tick from the start rather
+        // than from the first time somebody enters them. Rooms are never evicted, so loading them all is no extra
+        // residency. Needs the database, which is not available to the tests: a failure is logged and the rooms are
+        // indexed when first entered instead.
+        private void IndexStoredHeartbeatEntries()
+        {
+            try
+            {
+                var rooms = _serviceProvider.GetService<IRoomRepository>();
+                if (rooms == null) { return; }
+                foreach (Room room in rooms.GetAll()) { Events.Heartbeats.Track(room); }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Could not index the stored rooms with heartbeat entries: " + ex.Message);
+            }
         }
 
         // Imports every area file in the configured content directory (no-op when none is configured).
@@ -292,6 +893,7 @@ namespace MUD.Core
         {
             // Do heartbeat updates. Iterate a snapshot so players added or removed during the tick
             // cannot break enumeration, and catch per player so one failure cannot stop the timer.
+            if (Events != null) { Events.HeartbeatTick = _loop == null ? 0 : _loop.TickCount; }
             foreach (Player currentPlayer in Players.ToList())
             {
                 try
@@ -303,6 +905,9 @@ namespace MUD.Core
                     Console.WriteLine(string.Format("Exception encountered during heartbeat for {0}: {1}", currentPlayer.PlayerName, ex));
                 }
             }
+
+            // Rooms, NPCs and anything else that carries a heartbeat entry (owner decision D56). Nothing else is visited.
+            if (Events != null) { Events.DeliverIndexedHeartbeats(); }
         }
     }
 }

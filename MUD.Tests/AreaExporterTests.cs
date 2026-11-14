@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 using MongoDB.Bson;
@@ -32,13 +33,6 @@ rooms:
       - short: a table
         long: A table.
         handles: [table]
-        properties:
-          - behavior: search
-            id: f1
-            params:
-              target: table
-              refresh_ms: 1000
-              reward: {short: a coin, long: A coin.}
     properties:
       - behavior: search
         id: s1
@@ -129,13 +123,13 @@ rooms:
 
             // A dropped item and a persisted cooldown are state, and must not appear in the file.
             store.Docs["t.hall"]["Items"].AsBsonArray.Add(new BsonDocument { { "_id", "abc" }, { "ShortDescription", "a rope" } });
-            store.Docs["t.hall"]["ExtendedProperties"].AsBsonArray[0].AsBsonDocument["NextRewardTicks"] = 12345L;
+            store.Docs["t.hall"]["search"]["entries"].AsBsonArray[0].AsBsonDocument["nextRewardAt"] = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 
             var exported = new AreaExporter(store).ExportArea("t");
 
             Assert.True(exported.Success, string.Join("; ", exported.Errors));
             Assert.DoesNotContain("a rope", exported.Yaml);
-            Assert.DoesNotContain("NextRewardTicks", exported.Yaml);
+            Assert.DoesNotContain("nextRewardAt", exported.Yaml);
             Assert.DoesNotContain("Items", exported.Yaml);
         }
 

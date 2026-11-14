@@ -1,0 +1,54 @@
+# Temple area for the temple module acceptance walkthrough (card P5-3). Format: specs/ROOM_FILES.md.
+# The module-needed behavior entries are NOT in this file: they are attached with the creator command 'behavior'
+# (see specs/ACCEPTANCE_PHASE5.md), because how module content gets created is still an open item.
+area:
+  schema_version: 1
+  prefix: temple
+  name: "The Buried Temple"
+  description: "An antechamber with a lever, two trapped corridors, a sanctum, and the pit below."
+  defaults:
+    coords:
+      z: 0
+
+rooms:
+  - key: antechamber
+    short: "a sandy antechamber"
+    long: "Drifted sand covers a carved floor. Set into the east wall, a stone lever juts out of its slot. A doorway leads west to the desert and a dark corridor leads east."
+    coords: {x: 14, y: 0}
+    # The exit west to desert.dune_4 is added with 'terraform link' (see desert.yaml).
+    exits:
+      - dir: east
+        to: corridor_2
+        reverse: west
+
+  - key: corridor_2
+    short: "a narrow corridor"
+    long: "Worn flagstones run east and west between blank walls."
+    coords: {x: 15, y: 0}
+    exits:
+      - dir: east
+        to: corridor_3
+        reverse: west
+
+  - key: corridor_3
+    short: "a narrow corridor"
+    long: "The corridor ends at an archway to the east. The flagstones are cracked here."
+    coords: {x: 16, y: 0}
+    exits:
+      - dir: east
+        to: sanctum
+        reverse: west
+
+  - key: sanctum
+    short: "the inner sanctum"
+    long: "A quiet round chamber with an empty stone altar."
+    coords: {x: 17, y: 0}
+
+  - key: pit
+    short: "a dusty pit"
+    long: "You have fallen into a pit of old sand and bones. A rough stair climbs back up to the antechamber."
+    coords: {x: 14, y: 0, z: -1}
+    exits:
+      - dir: up
+        to: antechamber
+        reverse: down

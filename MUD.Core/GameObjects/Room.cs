@@ -4,12 +4,35 @@ using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using MUD.Core.Commands;
 using MUD.Core.Formatting;
+using MUD.CoreApi;
 using MUD.Core.Repositories.Interfaces;
 
 namespace MUD.Core.GameObjects
 {
-    public class Room : GameObject
+    public class Room : GameObject, MUD.Core.Components.IBehaviorHolder
     {
+        // Behavior entries (owner decisions D5, D53): stored as the embedded array "behaviors". Not dispatched yet.
+        [BsonElement("behaviors")]
+        public List<MUD.Core.Components.BehaviorRef> Behaviors
+        {
+            // Never null, including for a stored document that has no behaviors element.
+            get { return _behaviors ?? (_behaviors = new List<MUD.Core.Components.BehaviorRef>()); }
+            set { _behaviors = value; }
+        }
+
+        private List<MUD.Core.Components.BehaviorRef> _behaviors;
+
+        // The search configuration and cooldown (core component "search", owner decisions D2, D13). Never null,
+        // including for a stored document that has no search element. The cooldown is stored with the room.
+        [BsonElement("search")]
+        public MUD.Core.Components.Search Search
+        {
+            get { return _search ?? (_search = new MUD.Core.Components.Search()); }
+            set { _search = value; }
+        }
+
+        private MUD.Core.Components.Search _search;
+
         // Area prefix this room belongs to (e.g. "castle"). Definition field.
         public string Area { get; set; }
 
@@ -66,7 +89,7 @@ namespace MUD.Core.GameObjects
             _roomRepository = roomRepository;
         }
 
-        public void TellRoom(string message, Living[] exclusionList = null)
+        public void TellRoom(string message, Living[] exclusionList = null, OutputChannel channel = OutputChannel.Room)
         {
             var recipients = _occupants.ToList();
             if (exclusionList != null)
@@ -75,7 +98,7 @@ namespace MUD.Core.GameObjects
             }
             foreach (var currentOccupant in recipients)
             {
-                currentOccupant.ReceiveMessage(message);
+                currentOccupant.ReceiveMessage(message, channel);
             }
         }
 
@@ -90,6 +113,15 @@ namespace MUD.Core.GameObjects
                 TellRoom(entranceMessage);
             }
             _occupants.Add(newOccupant);
+
+            // A room or a living that carries a heartbeat entry joins the heartbeat index (D56) when it is entered, which
+            // covers entities that were loaded after the world started.
+            MUD.Core.Events.EventDispatcher dispatcher = MUD.Core.Events.EventDispatcher.Current;
+            if (dispatcher != null)
+            {
+                dispatcher.Heartbeats.Track(this);
+                dispatcher.Heartbeats.Track(newOccupant);
+            }
         }
 
         public void ExitRoom(Living occupant, string exitMessage = null)
@@ -116,6 +148,7 @@ namespace MUD.Core.GameObjects
 
                 _roomCommandSource.AddCommand(new AnonymousCommand()
                 {
+                    ExitName = currentExit.Name,
                     CommandKeywords = keywords,
                     ParseCommandHandler = ((Living commandIssuer, string input) =>
                         {
@@ -125,7 +158,7 @@ namespace MUD.Core.GameObjects
                     {
                         if (commandArgs[0] != null && commandArgs[0] is Exit)
                         {
-                            commandIssuer.MoveToRoom(((Exit)commandArgs[0]).DestinationId);
+                            commandIssuer.MoveToRoom(((Exit)commandArgs[0]).DestinationId, ((Exit)commandArgs[0]).Name);
                         }
                     })
                 });
@@ -141,7 +174,8 @@ namespace MUD.Core.GameObjects
             Handles = source.Handles;
             Adjectives = source.Adjectives;
             Plurals = source.Plurals;
-            ExtendedProperties = source.ExtendedProperties;
+            Components = source.Components;
+            Search.ApplyDefinition(source.Search);
             Features = source.Features;
             Exits = source.Exits;
             Area = source.Area;
@@ -151,10 +185,54 @@ namespace MUD.Core.GameObjects
             RebuildExitCommands();
         }
 
+        // The persistence sink for rooms, or null when saves are written synchronously (startup, plain fakes in tests).
+        private MUD.Data.IPersistSink Sink
+        {
+            get
+            {
+                var snapshots = _roomRepository as MUD.Data.ISnapshotRepository;
+                return snapshots == null ? null : snapshots.Sink;
+            }
+        }
+
+        // Snapshots this room and hands it to the persistence worker (specs/GAME_LOOP.md 8.2a). Game thread only.
+        private void Post(MUD.Data.PersistKind kind, MongoDB.Bson.BsonDocument document, MongoDB.Bson.BsonDocument fallback)
+        {
+            Sink.Post(new MUD.Data.PersistRequest
+            {
+                Collection = ((MUD.Data.ISnapshotRepository)_roomRepository).CollectionName,
+                Id = Id,
+                Kind = kind,
+                Doc = document,
+                Fallback = fallback,
+                Reason = kind == MUD.Data.PersistKind.Replace ? "room save" : "room state"
+            });
+        }
+
+        // The stored document without _id, which a field-level $set cannot change.
+        private MongoDB.Bson.BsonDocument WithoutId(MongoDB.Bson.BsonDocument whole)
+        {
+            var set = new MongoDB.Bson.BsonDocument();
+            foreach (var element in whole)
+            {
+                if (element.Name == "_id") { continue; }
+                set[element.Name] = element.Value;
+            }
+            return set;
+        }
+
+        // With a persistence sink this only queues the write and returns true; otherwise it writes now.
+        // An existing stored document gets a field-level $set; the whole document is only written when nothing is stored yet.
         public bool Save()
         {
             try
             {
+                if (Sink != null && !string.IsNullOrWhiteSpace(Id))
+                {
+                    var whole = MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this);
+                    Post(MUD.Data.PersistKind.SetFields, WithoutId(whole), whole);
+                    return true;
+                }
                 if (string.IsNullOrWhiteSpace(Id))
                 {
                     _roomRepository.Insert(this);
@@ -162,7 +240,8 @@ namespace MUD.Core.GameObjects
                 }
                 else
                 {
-                    if (_roomRepository.Update(this))
+                    var whole = MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this);
+                    if (_roomRepository.UpdateFields(Id, WithoutId(whole)) || _roomRepository.Update(this))
                     {
                         return true;
                     }
@@ -171,6 +250,30 @@ namespace MUD.Core.GameObjects
             catch (System.Exception ex)
             {
                 System.Console.WriteLine("Exception encountered while saving room: " + ex.Message);
+            }
+            return false;
+        }
+
+        // Persists the search component (its cooldown is runtime state, ROOM_FILES 7.4). Call after a reward is found.
+        public bool SaveSearchState()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(Id)) { return Save(); }
+
+                var whole = MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this);
+                var state = new MongoDB.Bson.BsonDocument("search", whole["search"]);
+                if (Sink != null)
+                {
+                    Post(MUD.Data.PersistKind.SetFields, state, whole);
+                    return true;
+                }
+                if (_roomRepository.UpdateFields(Id, state)) { return true; }
+                return Save();
+            }
+            catch (System.Exception ex)
+            {
+                System.Console.WriteLine("Exception encountered while saving room search state: " + ex.Message);
             }
             return false;
         }
@@ -184,7 +287,14 @@ namespace MUD.Core.GameObjects
             {
                 if (string.IsNullOrWhiteSpace(Id)) { return Save(); }
 
-                var state = new MongoDB.Bson.BsonDocument("Items", MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this)["Items"]);
+                var whole = MongoDB.Bson.BsonExtensionMethods.ToBsonDocument(this);
+                var state = new MongoDB.Bson.BsonDocument("Items", whole["Items"]);
+                if (Sink != null)
+                {
+                    // The worker falls back to replacing the whole document if no stored document matches.
+                    Post(MUD.Data.PersistKind.SetFields, state, whole);
+                    return true;
+                }
                 if (_roomRepository.UpdateFields(Id, state)) { return true; }
                 return Save();
             }

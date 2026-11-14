@@ -4,11 +4,13 @@ using System.Net.Sockets;
 using MongoDB.Driver;
 using MUD.Core;
 using MUD.Core.GameObjects;
+using MUD.CoreApi;
 using MUD.Telnet;
 using Xunit;
 
 namespace MUD.Tests
 {
+    [Collection("World construction")] // World registers BSON class maps; constructing it in parallel races
     public class PlayerQuitTests
     {
         private static World NewWorld()
@@ -40,17 +42,19 @@ namespace MUD.Tests
             var player = new Player(world, null, repo) { Id = "p.tester", PlayerName = "tester", Password = "x" };
             var client = NewConnectedClient(out TcpClient peer);
             int clientDisconnects = 0;
-            client.ClientDisconnected += (s, c) => clientDisconnects++;
+            var disconnected = new System.Threading.ManualResetEventSlim(false);
+            client.ClientDisconnected += (s, c) => { System.Threading.Interlocked.Increment(ref clientDisconnects); disconnected.Set(); };
 
             try
             {
                 world.Players.Add(player);
-                player.Connection = client;
+                world.AttachPlayer(player, world.OpenSession("test", "test", new ClientSink(client)));
 
                 player.Quit();
                 player.Quit();
 
-                // Quit's own Disconnect() re-enters Quit through ClientDisconnectedHandler; that re-entry must be a no-op.
+                // Quit disconnects with a flush (the farewell is written first), so the close completes shortly after.
+                Assert.True(disconnected.Wait(5000), "the connection was not closed after Quit");
                 Assert.Equal(1, repo.ReplaceCount);
                 Assert.Equal(1, clientDisconnects);
                 Assert.DoesNotContain(player, world.Players);
@@ -72,15 +76,18 @@ namespace MUD.Tests
             var second = NewConnectedClient(out TcpClient secondPeer);
             try
             {
-                player.Connection = first;
+                world.AttachPlayer(player, world.OpenSession("test", "test", new ClientSink(first)));
                 player.Quit();
                 Assert.Equal(1, repo.ReplaceCount);
 
                 // A new session (new connection on the same player object) must be able to quit.
-                player.Connection = second;
+                world.AttachPlayer(player, world.OpenSession("test", "test", new ClientSink(second)));
                 player.Quit();
 
-                Assert.Equal(2, repo.ReplaceCount);
+                // First quit: the $set matched no stored document, so the whole document was written once.
+                // Second quit: the document exists, so only a field-level $set of the game-owned fields.
+                Assert.Equal(1, repo.ReplaceCount);
+                Assert.Equal(2, repo.FieldUpdateCount);
             }
             finally
             {

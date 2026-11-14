@@ -1,8 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties.PlayerProperties;
-using MUD.Core.Properties.RoomProperties;
+using MUD.Core.Components;
 using MUD.Core.Repositories.Interfaces;
 
 namespace MUD.Core.Commands
@@ -15,7 +14,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Creator; }
 
-        public string HelpText { get => "Build a room."; }
+        public string HelpText { get => "Build a room. 'build feature list|add|set|remove' edits the features of the room you are in."; }
 
         private WorldSettings _settings;
 
@@ -32,10 +31,17 @@ namespace MUD.Core.Commands
 
         public void DoCommand(Living commandIssuer, object[] commandArgs)
         {
-            CreatorProperty creatorStatusObj = (CreatorProperty)commandIssuer.ExtendedProperties.FirstOrDefault(s => s.GetType() == typeof(CreatorProperty));
+            Roles creatorStatusObj = commandIssuer.Roles.Creator ? commandIssuer.Roles : null;
             if (creatorStatusObj == null)
             {
                 commandIssuer.ReceiveMessage("This is a creator only command. How did you get this?!");
+                return;
+            }
+
+            string subArgs = commandArgs != null && commandArgs.Length > 0 ? (commandArgs[0] as string ?? "").Trim() : "";
+            if (subArgs == "feature" || subArgs.StartsWith("feature "))
+            {
+                BuildFeatureEditor.Execute(commandIssuer, subArgs.Substring("feature".Length));
                 return;
             }
 
@@ -49,13 +55,12 @@ namespace MUD.Core.Commands
                     LongDescription = "Debris covers the floor. It is presumably what remains of the shop's inventory, though it appears everything that is left is broken or worthless."
                  }
             };
-            newRoom.ExtendedProperties = new List<Properties.ExtendedProperty>() {
-                new BasicSearchProperty() {
-                    SearchTarget = "debris",
-                    Reward = new InventoryItem() { ShortDescription = "emerald", LongDescription = "A small, green emerald." },
-                    RefreshInterval = 10000
-                }
-            };
+            newRoom.Search.Entries.Add(new MUD.Core.Components.SearchEntry() {
+                EntryId = "debris_search",
+                Target = "debris",
+                Reward = new InventoryItem() { ShortDescription = "emerald", LongDescription = "A small, green emerald." },
+                RefreshMilliseconds = 10000
+            });
             newRoom.Exits = new List<Exit>() {
                 new Exit() { Name = "out", DestinationId= _settings.StartRoomKey }
             };

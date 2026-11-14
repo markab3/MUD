@@ -1,0 +1,237 @@
+syntax = "proto3";
+
+// Module service, served on modules.sock (D22). The module dials core (D16): it makes unary calls and
+// opens one server stream (Subscribe) to receive deliveries. Specified in specs/CORE_API.md sections 2, 3 and 7.
+
+package mud;
+
+import "google/protobuf/struct.proto";
+import "mud/common.proto";
+
+option csharp_namespace = "MUD.Contracts";
+
+service ModuleHost {
+  // First call. Carries the per-spawn token (D17), the contract version (D24) and the manifest.
+  rpc Hello(HelloRequest) returns (HelloReply);
+  // Opens the server stream of deliveries; stays open for the life of the connection (D16).
+  rpc Subscribe(SubscribeRequest) returns (stream CoreEvent);
+  // The module finished reconciling. Releases the front-end gate when the launch entry says required (D21).
+  rpc Ready(ReadyRequest) returns (Ack);
+  // Hung-module detection, separate from the stream (D16).
+  rpc Ping(PingRequest) returns (PingReply);
+  // Answers a BEFORE delivery. Late verdicts are matched by event_id and dropped (D16).
+  rpc SubmitVerdict(VerdictRequest) returns (VerdictReply);
+  // Emit events outside a verdict. Needs the emit:<event name> capability (D65).
+  rpc Emit(EmitRequest) returns (EmitReply);
+  // Module-owned state document (D12). Needs the state capability (D65).
+  rpc SetState(SetStateRequest) returns (Ack);
+  rpc GetState(GetStateRequest) returns (GetStateReply);
+  // Timers (D11). Need the timer.schedule capability (D65).
+  rpc ScheduleTimer(TimerRequest) returns (Ack);
+  rpc CancelTimer(CancelTimerRequest) returns (Ack);
+  // Reads of the world beyond a delivery snapshot (D58). Need the read capability (D65).
+  rpc GetEntity(GetEntityRequest) returns (GetEntityReply);
+  rpc QueryEntities(QueryEntitiesRequest) returns (QueryEntitiesReply);
+  // Structured line into the core log.
+  rpc Log(LogRequest) returns (Ack);
+}
+
+// ---- handshake ----
+
+message HelloRequest {
+  string module = 1;
+  string token = 2;
+  // Strict equality with the core's number, or the connection is refused with both numbers logged (D24).
+  uint32 contract_version = 3;
+  Manifest manifest = 4;
+  string module_version = 5;
+}
+
+message HelloReply {
+  bool ok = 1;
+  string connection_id = 2;
+  // Capabilities from the manifest that the grants file allowed, and those it did not (D18, D65).
+  repeated string granted = 3;
+  repeated string rejected = 4;
+  // Non-empty when ok is false: the reason, for example a contract version mismatch or a missing required capability.
+  string refusal = 5;
+  // The core's contract version, so a refused module can log both numbers.
+  uint32 core_contract_version = 6;
+}
+
+// Ships with the module and is sent in Hello; never compiled into core (D18).
+message Manifest {
+  string name = 1;
+  repeated BehaviorDecl behaviors = 2;
+  // Capability strings, one per entry, in the vocabulary of D65:
+  // "emit:<event name>" (optional scope), "timer.schedule", "state", "read".
+  repeated string capabilities = 3;
+  // Subset of capabilities whose absence makes core refuse the start (D18).
+  repeated string required_capabilities = 4;
+}
+
+// No schema versions are declared: core does not check SchemaVersion in version 1 (D51).
+message BehaviorDecl {
+  string type = 1;
+  repeated string hooks = 2;
+}
+
+message SubscribeRequest { string connection_id = 1; }
+message ReadyRequest { string connection_id = 1; }
+message PingRequest { string connection_id = 1; uint64 n = 2; }
+message PingReply { uint64 n = 1; }
+
+// ---- deliveries (server stream) ----
+
+enum Phase {
+  PHASE_UNSPECIFIED = 0;
+  BEFORE = 1;
+  AFTER = 2;
+}
+
+// One delivery. Events are generic string-named records (D4); the payload is one generic map for every event (D52).
+message CoreEvent {
+  // Per connection, gap-free while connected.
+  uint64 seq = 1;
+  // The key SubmitVerdict refers to. One per handler call (D57).
+  string event_id = 2;
+  // "entity.move", "item.move", "command.entered", "heartbeat", "timer.fired", ...
+  string name = 3;
+  Phase phase = 4;
+  // One of: heartbeat, command.entered, living.exit, living.enter, item.drop, item.take (D54). Empty for timer.fired and similar.
+  string hook = 5;
+  // Relative to send time; 0 for AFTER.
+  uint32 deadline_ms = 6;
+  string trace_id = 7;
+  string cause_id = 8;
+  // The entry being invoked, including its own Config (D57). Absent for timer.fired.
+  BehaviorRef behavior = 9;
+  // Immutable snapshots with CORE components only (D57).
+  repeated PartySnapshot parties = 10;
+  google.protobuf.Struct payload = 11;
+}
+
+message BehaviorRef {
+  string hook = 1;
+  string module = 2;
+  string type = 3;
+  int32 priority = 4;
+  google.protobuf.Struct config = 5;
+  // Stored and copied; core does not compare it in version 1 (D51).
+  uint32 schema_version = 6;
+}
+
+message PartySnapshot {
+  // For example mover, from, to, actor, room, item.
+  string role = 1;
+  string entity_id = 2;
+  string kind = 3;
+  google.protobuf.Struct components = 4;
+}
+
+// ---- verdicts and emitted events ----
+
+enum Decision {
+  DECISION_UNSPECIFIED = 0;
+  ALLOW = 1;
+  DENY = 2;
+}
+
+message VerdictRequest {
+  string connection_id = 1;
+  string event_id = 2;
+  // ALLOW or DENY only (D6).
+  Decision decision = 3;
+  // Shown to the player on DENY.
+  string message = 4;
+  repeated EventRecord emitted = 5;
+  // Meaningful only for command.entered: this behavior took the command, stop looking (D63).
+  bool handled = 6;
+}
+
+// Which emitted events core refused; the valid ones were applied (D61). A late verdict is answered with ok = false.
+message VerdictReply {
+  bool ok = 1;
+  string error = 2;
+  repeated EmitRefusal refusals = 3;
+}
+
+message EmitRefusal {
+  // Position in the submitted list.
+  uint32 index = 1;
+  string event_name = 2;
+  string reason = 3;
+}
+
+message EmitRequest {
+  string connection_id = 1;
+  string cause_id = 2;
+  repeated EventRecord events = 3;
+}
+
+message EmitReply {
+  repeated EmitRefusal refusals = 1;
+}
+
+message EventRecord {
+  string name = 1;
+  Phase phase = 2;
+  repeated string targets = 3;
+  google.protobuf.Struct payload = 4;
+}
+
+// ---- state and timers ----
+
+message SetStateRequest { string connection_id = 1; string key = 2; google.protobuf.Struct doc = 3; }
+message GetStateRequest { string connection_id = 1; string key = 2; }
+message GetStateReply { bool found = 1; google.protobuf.Struct doc = 2; }
+
+message TimerRequest {
+  string connection_id = 1;
+  string timer_id = 2;
+  int64 at_unix_ms = 3;
+  google.protobuf.Struct payload = 4;
+}
+message CancelTimerRequest { string connection_id = 1; string timer_id = 2; }
+
+// ---- reads (D58) ----
+
+message GetEntityRequest { string connection_id = 1; string entity_id = 2; }
+
+message GetEntityReply {
+  bool found = 1;
+  EntityView entity = 2;
+}
+
+// One entity with its core and module components. Module components live under their module name (D50).
+message EntityView {
+  string entity_id = 1;
+  string kind = 2;
+  google.protobuf.Struct core_components = 3;
+  google.protobuf.Struct module_components = 4;
+  repeated BehaviorRef behaviors = 5;
+}
+
+// Find by area, by component name, or both; an empty field does not filter.
+message QueryEntitiesRequest {
+  string connection_id = 1;
+  string area = 2;
+  string component = 3;
+  // Page size; core applies its own cap and reports truncation. The cap is not set in version 1.
+  uint32 limit = 4;
+  string page_token = 5;
+}
+
+message QueryEntitiesReply {
+  repeated EntityView entities = 1;
+  // Non-empty when more results exist.
+  string next_page_token = 2;
+  bool truncated = 3;
+}
+
+message LogRequest {
+  string connection_id = 1;
+  string level = 2;
+  string text = 3;
+  string trace_id = 4;
+}

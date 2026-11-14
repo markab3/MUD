@@ -1,12 +1,19 @@
 using System.Linq;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties;
-using MUD.Core.Properties.Interfaces;
 
 namespace MUD.Core.Commands
 {
     public class SearchCommand : ICommand
     {
+        /// <summary>How long a search keeps the searcher busy before the result is found.</summary>
+        public static readonly System.TimeSpan SearchDuration = System.TimeSpan.FromSeconds(3);
+
+        private readonly CommandQueue _commandQueue;
+
+        public SearchCommand(CommandQueue commandQueue)
+        {
+            _commandQueue = commandQueue;
+        }
 
         public string[] CommandKeywords { get => new string[] { "search" }; }
 
@@ -26,21 +33,31 @@ namespace MUD.Core.Commands
             // SearchProperty searchProp = (SearchProperty)currentRoom.ExtendedProperties.FirstOrDefault(p => p.GetType() == typeof(SearchProperty));
             // if (searchProp != null)
             // {
-            //     searchProp.DoSearch(commandIssuer, (string)commandArgs[0]);
+            //     searchProp.DoSearch(commandIssuer, target);
             // }
             // else
             // {
             //     commandIssuer.ReceiveMessage(string.Format("You search the {0} but find nothing of any value.", (string)commandArgs[0]));
             // }
             commandIssuer.ReceiveMessage("You begin your search.");
-            System.Threading.Thread.Sleep(3000);
+            // The game thread must never sleep: the searcher is busy for SearchDuration (NextActionAt) and the
+            // search itself runs as their next command ("stop" cancels it).
+            string target = (string)commandArgs[0];
+            _commandQueue.DelayThen(commandIssuer, SearchDuration, () => FinishSearch(commandIssuer, target));
+        }
+
+        private void FinishSearch(Living commandIssuer, string target)
+        {
 
             bool success = false;
 
-            var searchProp = commandIssuer.CurrentLocation.ExtendedProperties.FirstOrDefault(ep => ep is ISearchable);
-            if (searchProp != null)
+            // Search is baked into core (D2): the room's "search" component holds the reward and the cooldown.
+            Room room = commandIssuer.CurrentLocation;
+            success = room.Search.TrySearch(commandIssuer, target, _commandQueue.Now);
+            if (success)
             {
-                success = ((ISearchable)searchProp).DoSearch(commandIssuer, (string)commandArgs[0]);
+                // The cooldown is stored with the room, so it does not reset when the game restarts.
+                room.SaveSearchState();
             }
 
             if (!success)

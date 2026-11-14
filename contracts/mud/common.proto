@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+// Messages shared by the module service (module.proto) and the front-end service (frontend.proto).
+// Wire contract rules: D23 (contracts live here), D24 (strict version equality), D25 (no C#-only types),
+// D26 (no automated contract tests yet). Field numbers are never reused once a field has shipped.
+// The contract version number is the C# constant MUD.Contracts.ContractVersion.Current; the wire carries only the number.
+
+package mud;
+
+option csharp_namespace = "MUD.Contracts";
+
+// Generic result of a call that returns nothing else.
+message Ack {
+  bool ok = 1;
+  string error = 2;
+}

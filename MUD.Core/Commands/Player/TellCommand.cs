@@ -1,5 +1,6 @@
 using System.Linq;
 using MUD.Core.GameObjects;
+using MUD.CoreApi;
 
 namespace MUD.Core.Commands
 {
@@ -54,8 +55,8 @@ namespace MUD.Core.Commands
             string recipientMessage = string.Format("{0} tells you: {1}", commandIssuer.ShortDescription, text);
             string myMessage = string.Format("You tell {0}: {1}", recipient.ShortDescription, text);
 
-            recipient.ReceiveMessage(recipientMessage);
-            commandIssuer.ReceiveMessage(myMessage);
+            recipient.ReceiveMessage(recipientMessage, OutputChannel.Tell);
+            commandIssuer.ReceiveMessage(myMessage, OutputChannel.Tell);
             if (shortened) { commandIssuer.ReceiveMessage(CommandExtensions.MessageShortenedNotice); }
         }
     }

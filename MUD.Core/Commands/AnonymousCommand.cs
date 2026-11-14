@@ -19,6 +19,10 @@ namespace MUD.Core.Commands
 
         public DoCommandDelegate DoCommandHandler;
 
+        // Set on the commands Room.RebuildExitCommands builds: the exit's name, so the move can be re-validated against the
+        // room's exits before it commits (D15). Null for every other command.
+        public string ExitName { get; set; }
+
         public AnonymousCommand() { }
 
         public object[] ParseCommand(Living commandIssuer, string input)

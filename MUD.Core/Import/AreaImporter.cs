@@ -4,7 +4,6 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using MongoDB.Bson;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties.RoomProperties;
 
 namespace MUD.Core.Import
 {
@@ -42,6 +41,13 @@ namespace MUD.Core.Import
         // Rooms stored under this area whose key is no longer in the file. Never deleted.
         public List<string> Orphans { get; set; } = new List<string>();
 
+        // Behavior entries of the file that were NOT written because the stored room already has an entry with the
+        // same (hook, module, type). Reported, never silently dropped (owner decision D39).
+        public List<string> SkippedBehaviors { get; set; } = new List<string>();
+
+        // Stored entries replaced by the file's entry because the replace flag was set.
+        public List<string> ReplacedBehaviors { get; set; } = new List<string>();
+
         public bool DryRun { get; set; }
 
         public bool Success { get { return Errors.Count == 0; } }
@@ -63,13 +69,11 @@ namespace MUD.Core.Import
     // field-level upserts that touch definition fields only.
     public class AreaImporter
     {
-        private static readonly Regex ObjectIdPattern = new Regex("^[0-9a-f]{24}$");
-
         // The complete definition-field list (spec section 5). Everything else is state.
         public static readonly string[] DefinitionFields = new[]
         {
             "ShortDescription", "LongDescription", "Handles", "Adjectives", "Plurals",
-            "Exits", "Features", "ExtendedProperties", "Area", "X", "Y", "Z"
+            "Exits", "Features", "search", "behaviors", "Area", "X", "Y", "Z"
         };
 
         private readonly IRoomImportStore _store;
@@ -79,7 +83,10 @@ namespace MUD.Core.Import
             _store = store;
         }
 
-        public ImportResult Import(string yaml, bool dryRun = false)
+        // replaceBehaviors: by default a behavior entry in the file whose (hook, module, type) already exists on the
+        // stored room is reported and skipped, and stored entries absent from the file are kept (the database is the
+        // source of truth, D39). With the flag the file's entry replaces the stored one; absent entries are still kept.
+        public ImportResult Import(string yaml, bool dryRun = false, bool replaceBehaviors = false)
         {
             var result = new ImportResult { DryRun = dryRun };
 
@@ -96,7 +103,7 @@ namespace MUD.Core.Import
             foreach (var room in area.Rooms)
             {
                 var existing = _store.Find(room.FullKey);
-                var desired = BuildDesiredFields(room, area.Prefix, existing);
+                var desired = BuildDesiredFields(room, area.Prefix, existing, result, replaceBehaviors);
                 var changed = new BsonDocument();
                 foreach (var element in desired)
                 {
@@ -159,14 +166,14 @@ namespace MUD.Core.Import
 
             foreach (var room in area.Rooms)
             {
-                if (ObjectIdPattern.IsMatch(room.FullKey))
+                if (MUD.Data.RoomRules.LooksLikeObjectId(room.FullKey))
                 {
                     errors.Add(string.Format("Room '{0}': authored keys must not look like generated ObjectIds.", room.FullKey));
                 }
 
-                foreach (var dup in room.Exits.GroupBy(e => (e.Dir ?? "").ToLowerInvariant()).Where(g => g.Count() > 1))
+                foreach (var dup in MUD.Data.RoomRules.DuplicateDirections(room.Exits.Select(e => e.Dir)))
                 {
-                    errors.Add(string.Format("Room '{0}': duplicate exit '{1}'.", room.FullKey, dup.Key));
+                    errors.Add(string.Format("Room '{0}': duplicate exit '{1}'.", room.FullKey, dup));
                 }
                 foreach (var dup in room.Features.GroupBy(f => (f.Short ?? "").ToLowerInvariant()).Where(g => g.Count() > 1))
                 {
@@ -175,13 +182,6 @@ namespace MUD.Core.Import
                 foreach (var dup in room.Properties.GroupBy(p => p.Id).Where(g => g.Key != null && g.Count() > 1))
                 {
                     errors.Add(string.Format("Room '{0}': duplicate property id '{1}'.", room.FullKey, dup.Key));
-                }
-                foreach (var feature in room.Features)
-                {
-                    foreach (var dup in feature.Properties.GroupBy(p => p.Id).Where(g => g.Key != null && g.Count() > 1))
-                    {
-                        errors.Add(string.Format("Room '{0}', feature '{1}': duplicate property id '{2}'.", room.FullKey, feature.Short, dup.Key));
-                    }
                 }
             }
 
@@ -234,7 +234,7 @@ namespace MUD.Core.Import
 
         // Builds the complete desired value of every definition field for one room, merging in
         // state that lives inside matched list elements.
-        private BsonDocument BuildDesiredFields(RoomDefinition def, string prefix, BsonDocument existing)
+        private BsonDocument BuildDesiredFields(RoomDefinition def, string prefix, BsonDocument existing, ImportResult result, bool replaceBehaviors)
         {
             var carrier = new Room(null)
             {
@@ -249,7 +249,8 @@ namespace MUD.Core.Import
                 Y = def.Y,
                 Z = def.Z,
                 Exits = def.Exits.Select(e => new Exit { Name = e.Dir, DestinationId = e.To }).ToList(),
-                ExtendedProperties = def.Properties.Select(ToProperty).ToList(),
+                Search = new MUD.Core.Components.Search { Entries = def.Properties.Select(ToSearchEntry).ToList() },
+                Behaviors = def.Behaviors.Select(b => b.Clone()).ToList(),
                 Features = def.Features.Select(f =>
                 {
                     var feature = new Feature
@@ -262,7 +263,6 @@ namespace MUD.Core.Import
                         Handles = new List<string>(f.Handles),
                         Adjectives = new List<string>(f.Adjectives),
                         Plurals = new List<string>(f.Plurals),
-                        ExtendedProperties = f.Properties.Select(ToProperty).ToList()
                     };
                     return feature;
                 }).ToList()
@@ -278,24 +278,63 @@ namespace MUD.Core.Import
             if (existing != null)
             {
                 // Keep state inside matched elements (spec 6.2 element-level merge).
-                var existingProps = existing.GetValue("ExtendedProperties", BsonNull.Value) as BsonArray;
-                desired["ExtendedProperties"] = MergeElements(existingProps, desired["ExtendedProperties"].AsBsonArray, ById);
+                // The search component keeps the stored cooldown (nextRewardAt) of every entry that has the same id.
+                var existingSearch = existing.GetValue("search", BsonNull.Value) as BsonDocument;
+                var existingEntries = existingSearch == null ? null : existingSearch.GetValue("entries", BsonNull.Value) as BsonArray;
+                var mergedEntries = MergeElements(existingEntries, desired["search"].AsBsonDocument["entries"].AsBsonArray, SearchEntryId);
+                desired["search"] = new BsonDocument("entries", mergedEntries);
 
                 var existingFeatures = existing.GetValue("Features", BsonNull.Value) as BsonArray;
                 var features = MergeElements(existingFeatures, desired["Features"].AsBsonArray, ByShort);
-                foreach (var featureValue in features)
-                {
-                    var featureDoc = featureValue.AsBsonDocument;
-                    var oldFeature = existingFeatures == null ? null : existingFeatures.OfType<BsonDocument>().FirstOrDefault(o => o["_id"] == featureDoc["_id"]);
-                    if (oldFeature != null)
-                    {
-                        var oldProps = oldFeature.GetValue("ExtendedProperties", BsonNull.Value) as BsonArray;
-                        featureDoc["ExtendedProperties"] = MergeElements(oldProps, featureDoc["ExtendedProperties"].AsBsonArray, ById);
-                    }
-                }
                 desired["Features"] = features;
+
+                var existingBehaviors = existing.GetValue("behaviors", BsonNull.Value) as BsonArray;
+                var merged = MergeBehaviors(def.FullKey, existingBehaviors, desired["behaviors"].AsBsonArray, result, replaceBehaviors);
+                if (merged.Count == 0 && existingBehaviors == null) { desired.Remove("behaviors"); }
+                else { desired["behaviors"] = merged; }
             }
             return desired;
+        }
+
+        // Collision-safe merge of behavior entries (owner decision D39). Stored entries are always kept, in their
+        // order. A file entry whose (hook, module, type) is already stored is skipped and reported, or replaces the
+        // stored entry in place when replaceBehaviors is set. File entries that are new are appended in file order.
+        private static BsonArray MergeBehaviors(string roomKey, BsonArray stored, BsonArray authored, ImportResult result, bool replaceBehaviors)
+        {
+            var merged = new BsonArray();
+            if (stored != null) { foreach (var value in stored) { merged.Add(value.DeepClone()); } }
+
+            foreach (var authoredValue in authored)
+            {
+                var authoredDoc = authoredValue.AsBsonDocument;
+                var label = string.Format("{0} {1} {2}", authoredDoc["hook"], authoredDoc["module"], authoredDoc["type"]);
+                int index = -1;
+                for (int i = 0; i < merged.Count; i++)
+                {
+                    var storedDoc = merged[i] as BsonDocument;
+                    if (storedDoc != null && SameBinding(storedDoc, authoredDoc)) { index = i; break; }
+                }
+
+                if (index < 0) { merged.Add(authoredDoc); }
+                else if (replaceBehaviors)
+                {
+                    if (!merged[index].Equals(authoredDoc)) { result.ReplacedBehaviors.Add(string.Format("Room '{0}': behavior ({1}) replaced.", roomKey, label)); }
+                    merged[index] = authoredDoc;
+                }
+                else if (!merged[index].Equals(authoredDoc))
+                {
+                    // An identical stored entry is already in place: nothing to report. Only a differing one is a collision.
+                    result.SkippedBehaviors.Add(string.Format("Room '{0}': behavior ({1}) already exists; skipped.", roomKey, label));
+                }
+            }
+            return merged;
+        }
+
+        private static bool SameBinding(BsonDocument a, BsonDocument b)
+        {
+            return a.GetValue("hook", BsonNull.Value).Equals(b.GetValue("hook", BsonNull.Value))
+                && a.GetValue("module", BsonNull.Value).Equals(b.GetValue("module", BsonNull.Value))
+                && a.GetValue("type", BsonNull.Value).Equals(b.GetValue("type", BsonNull.Value));
         }
 
         private static BsonValue ById(BsonDocument doc) { return doc.GetValue("_id", BsonNull.Value); }
@@ -329,13 +368,15 @@ namespace MUD.Core.Import
             return merged;
         }
 
-        private static MUD.Core.Properties.ExtendedProperty ToProperty(SearchPropertyDefinition def)
+        private static BsonValue SearchEntryId(BsonDocument doc) { return doc.GetValue("id", BsonNull.Value); }
+
+        private static MUD.Core.Components.SearchEntry ToSearchEntry(SearchPropertyDefinition def)
         {
-            return new BasicSearchProperty
+            return new MUD.Core.Components.SearchEntry
             {
-                Id = def.Id,
-                SearchTarget = def.Target,
-                RefreshInterval = def.RefreshMs,
+                EntryId = def.Id,
+                Target = def.Target,
+                RefreshMilliseconds = def.RefreshMs,
                 Reward = new InventoryItem
                 {
                     Id = def.Id + ".reward",

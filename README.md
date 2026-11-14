@@ -15,6 +15,11 @@ Things to do:
 * Determine best practices for serializing/deserializing and handling _id in mongo world
 * Figure out streamlined way to persist objects with arbitrary classes - include class as a string in the BSON document? Make a different table for each?
 
+**Layout**
+
+`MUD.Main` is the composition root. `MUD.Core` (the game) and `MUD.Telnet` (the telnet front end) do not
+reference each other; both depend on `MUD.CoreApi`, the front-end-neutral surface (`ICoreApi`, `IFrontEndSink`). See `specs/ARCHITECTURE.md`.
+
 **Telnet Stuff**
 
 ~~You can connect now, but I am pretty sure not all the edge cases are getting handled or handled correctly.~~

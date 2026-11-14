@@ -1,0 +1,29 @@
+namespace MUD.Core.Events
+{
+    // The numbers that keep emitted events from running away (owner decision D9). The owner has not set them
+    // (CORE_API 2.8); the defaults below were chosen by card P3-1 and are flagged in its pull request for the owner
+    // to confirm or change. They are plain settings so a later card can read them from configuration.
+    public class EventLimits
+    {
+        // Longest chain of emitted events: a root event is depth 0, an event it emitted is depth 1, and so on.
+        // An event deeper than this is refused, counted and logged.
+        public int MaxCascadeDepth { get; set; } = 8;
+
+        // Events processed per pass of the game loop, whatever else is queued. A pass handles up to
+        // GameLoop.MaxItemsPerPass inbound items; this is the share reserved for events on top of that, so a burst of
+        // events cannot starve input and a flood of input cannot starve events. Events over the budget stay queued and
+        // are processed on the next pass.
+        public int MaxEventsPerPass { get; set; } = 50;
+
+        // The single deadline of one Before chain (owner decision D15): handlers that have not answered when it passes
+        // are misses and follow the fail policy. For command.entered, which asks one behavior at a time (D63), it is the
+        // deadline of each hop. The owner has not set it; the spec's unmeasured proposal of 150 ms per chain (CORE_API
+        // 2.3) is used, chosen by card P3-2 and flagged in its pull request. There is no separate per-handler deadline.
+        public System.TimeSpan BeforeChainDeadline { get; set; } = System.TimeSpan.FromMilliseconds(150);
+
+        // How often skipped dormant behavior entries (owner decision D10: the module is not loaded, so nothing is registered
+        // for the entry) are summarised in the log: at most one line per interval, however many entries were skipped. The
+        // owner has not set it; 60 seconds was chosen by card P3-3 and is flagged in its pull request.
+        public System.TimeSpan DormantLogInterval { get; set; } = System.TimeSpan.FromSeconds(60);
+    }
+}

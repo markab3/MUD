@@ -138,12 +138,11 @@ namespace MUD.Tests
 
     public static class TestWorld
     {
-        // World's constructor loads assemblies and needs Mongo; commands only need Players/TerminalHandlers.
+        // World's constructor loads assemblies and needs Mongo; commands only need Players.
         public static World Create(params Player[] players)
         {
             var world = (World)FormatterServices.GetUninitializedObject(typeof(World));
             world.Players = new List<Player>(players);
-            world.TerminalHandlers = new List<MUD.Core.Formatting.ITerminalHandler>();
             return world;
         }
     }
@@ -175,7 +174,7 @@ namespace MUD.Tests
     {
         public TestPlayer(World world, Client connection) : base(world, null, null)
         {
-            Connection = connection;
+            Attach(new MUD.CoreApi.SessionId("test"), new ClientSink(connection));
         }
     }
 

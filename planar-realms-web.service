@@ -17,8 +17,6 @@ ExecStart=%h/.local/share/mud/current/web/MUD.Web
 
 # Default listen URL (localhost only); override MUD_WEB_URL in ~/.config/mud/web.env.
 Environment=MUD_WEB_URL=http://127.0.0.1:5080
-# Required: provides MUD_MONGO_URI (created by the maintainer's install script, mode 600).
-EnvironmentFile=%h/.config/mud/mongo.env
 # Optional overrides (MUD_WEB_URL); the leading '-' tolerates a missing file.
 EnvironmentFile=-%h/.config/mud/web.env
 

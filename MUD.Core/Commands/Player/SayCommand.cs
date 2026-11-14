@@ -1,4 +1,5 @@
 using MUD.Core.GameObjects;
+using MUD.CoreApi;
 
 namespace MUD.Core.Commands
 {
@@ -35,9 +36,9 @@ namespace MUD.Core.Commands
             Room currentRoom = commandIssuer.CurrentLocation;
             if (currentRoom != null)
             {
-                currentRoom.TellRoom(roomSayMessage, new Living[] { commandIssuer });
+                currentRoom.TellRoom(roomSayMessage, new Living[] { commandIssuer }, OutputChannel.Say);
             }
-            commandIssuer.ReceiveMessage(mySayMessage);
+            commandIssuer.ReceiveMessage(mySayMessage, OutputChannel.Say);
             if (shortened) { commandIssuer.ReceiveMessage(CommandExtensions.MessageShortenedNotice); }
         }
     }

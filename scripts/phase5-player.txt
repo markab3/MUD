@@ -1,0 +1,27 @@
+# Player session for the phase 5 acceptance run (card P5-3), as an ordinary player standing in sample_area.hall:
+#   python3 -I scripts/telnet_session.py PORT walker PASSWORD scripts/phase5-player.txt
+# Walks into the desert (a storm may scour the player), reaches the temple, falls through the first trap, climbs out, pulls the
+# lever twice, walks both corridors, and comes back. 'pull the lever' is deliberately not a lever command (the module takes
+# the exact two words 'pull lever').
+look
+east
+east
+sleep:10
+look
+east
+east
+east
+look
+east
+up
+pull the lever
+pull lever
+pull lever
+east
+east
+east
+look
+west
+west
+west
+look

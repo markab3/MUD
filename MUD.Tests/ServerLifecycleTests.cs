@@ -69,6 +69,8 @@ namespace MUD.Tests
 
                 Assert.Null(stopException);
                 Assert.True(stopped.Wait(TimeSpan.FromSeconds(10)), "accept loop did not exit after Stop");
+                // Stop disconnects with a flush (the shutdown text is written first), so the closes complete just after it returns.
+                for (int i = 0; i < 200 && Volatile.Read(ref disconnected) < 3; i++) { Thread.Sleep(25); }
                 Assert.Equal(3, Volatile.Read(ref disconnected));
             }
             finally

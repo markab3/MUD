@@ -4,9 +4,14 @@ using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using MUD.Core.Commands;
+using MUD.Core.Components;
+using MUD.Core.Events;
 using MUD.Core.Formatting;
 using MUD.Core.Repositories.Interfaces;
-using MUD.Telnet;
+using MUD.Data;
+using MUD.CoreApi;
+using MUD.Core.Sessions;
+using System.Threading;
 
 namespace MUD.Core.GameObjects
 {
@@ -14,11 +19,21 @@ namespace MUD.Core.GameObjects
     {
         private IPlayerRepository _playerRepository;
 
-        private Client _connection;
+        // The session this player is attached to and where the player's output goes (null before login).
+        private SessionId _sessionId;
+        private IFrontEndSink _frontEndSink;
+        private string _remoteKey = string.Empty;
 
         private CommandQueue _commandQueue;
 
-        // True once Quit() has started for the current connection; cleared when a new connection is attached.
+        // Autosave interval (specs/GAME_LOOP.md 8.2).
+        private static readonly TimeSpan AutosaveInterval = TimeSpan.FromMinutes(10);
+
+        // Password writes handed to the persistence worker and not yet confirmed. While any are outstanding the
+        // stored password is older than the in-memory one, so SyncPasswordFromStore must not "adopt" it.
+        private int _unconfirmedPasswordWrites;
+
+        // True once Quit() has started for the current session; cleared when a new session is attached.
         private bool _isQuitting;
 
         public string PlayerName { get; set; }
@@ -28,31 +43,64 @@ namespace MUD.Core.GameObjects
 
         public string Password { get; set; }
 
+        // Serialises persistence and password changes (Save runs from the heartbeat, quit and commands).
+        private readonly object _saveLock = new object();
+
+        // True only while TryChangePassword is saving a password chosen in-game; only then may Save write it.
+        private bool _passwordChangePending;
+
+        // When set, input lines go here instead of the command queue (see SetPromptHandler).
+        private volatile Action<string> _promptHandler;
+
         public string SelectedTerm { get; set; }
 
-        [BsonIgnore]
-        public Client Connection
+        public bool Retired { get; set; }
+
+        // Core is the only writer of the player document (D30), so the live object is the truth and a save writes every field
+        // except the immutable _id.
+        private BsonDocument SavedFields(BsonDocument whole)
         {
-            get { return _connection; }
-            set
+            var set = new BsonDocument();
+            foreach (var element in whole)
             {
-                // If connection is changing, drop event handlers for the old one.
-                if (_connection != null && value != _connection)
-                {
-                    _connection.DataReceived -= DataReceivedHandler;
-                    _connection.ClientDisconnected -= ClientDisconnectedHandler;
-                }
-                if (value != null && value != _connection)
-                {
-                    _isQuitting = false; // a new connection starts a new session
-                }
-                _connection = value;
-                if (value != null)
-                {
-                    _connection.DataReceived += DataReceivedHandler;
-                    _connection.ClientDisconnected += ClientDisconnectedHandler;
-                }
+                if (element.Name == PlayerFields.Id) { continue; }
+                set[element.Name] = element.Value;
             }
+            return set;
+        }
+
+        // Input and disconnects reach the player through the game loop (World routes lines to
+        // DataReceivedHandler and calls Quit on a Disconnected item), so no event handlers are attached here.
+        /// <summary>The id of the session this player is attached to; empty before login.</summary>
+        [BsonIgnore]
+        public SessionId SessionId { get { return _sessionId; } }
+
+        /// <summary>Where this player's output goes; null before login. It never blocks (decision D42).</summary>
+        [BsonIgnore]
+        public IFrontEndSink OutputSink { get { return _frontEndSink; } }
+
+        /// <summary>
+        /// Attaches the player to a session: its id, the sink that receives its output, and the remote key the login
+        /// throttle uses. Attaching a different session starts a new session, so Quit can run again.
+        /// </summary>
+        public void Attach(SessionId sessionId, IFrontEndSink sink, string remoteKey = null)
+        {
+            if (sink != null && (sessionId != _sessionId || !ReferenceEquals(sink, _frontEndSink)))
+            {
+                _isQuitting = false; // a new session
+            }
+            _sessionId = sessionId;
+            _frontEndSink = sink;
+            _remoteKey = remoteKey ?? string.Empty;
+            if (sink != null) { sink.SetTerminal(sessionId, SelectedTerm); }
+        }
+
+        /// <summary>Changes the persisted terminal choice and tells the session's front end, which does the conversion.</summary>
+        public void ChangeTerminal(string terminalName)
+        {
+            SelectedTerm = terminalName;
+            IFrontEndSink sink = _frontEndSink;
+            if (sink != null) { sink.SetTerminal(_sessionId, terminalName); }
         }
 
         [BsonIgnore]
@@ -64,55 +112,226 @@ namespace MUD.Core.GameObjects
             _playerRepository = playerRepository;
         }
 
+        /// <summary>The session as seen by prompted input (echo control, prompts), backed by the sink; null when not attached. Overridable for tests.</summary>
+        [BsonIgnore]
+        public virtual IPromptChannel PromptChannel
+        {
+            get { return _frontEndSink == null ? null : new SinkPromptChannel(_sessionId, _frontEndSink, _remoteKey); }
+        }
+
+        [BsonIgnore]
+        public bool HasPrompt { get { return _promptHandler != null; } }
+
+        /// <summary>
+        /// While a handler is set, every line the player types goes to it and is NOT resolved as a command,
+        /// queued, or kept anywhere (used for passwords). The handler must call ClearPromptHandler when done.
+        /// </summary>
+        public void SetPromptHandler(Action<string> handler)
+        {
+            _promptHandler = handler;
+        }
+
+        public void ClearPromptHandler()
+        {
+            _promptHandler = null;
+        }
+
+        private IClock Clock { get { return _world != null ? _world.Clock : SystemClock.Instance; } }
+
+        // The persistence sink for this player's collection, or null when saves are written synchronously
+        // (before the game thread exists, and in tests that use a plain fake repository).
+        private IPersistSink Sink
+        {
+            get
+            {
+                var snapshots = _playerRepository as ISnapshotRepository;
+                return snapshots == null ? null : snapshots.Sink;
+            }
+        }
+
+        /// <summary>
+        /// Saves the player. With a persistence sink (normal operation) this snapshots the player and hands it to
+        /// the worker without touching the database, and returns true meaning "queued"; the outcome is reported to
+        /// the player later. Without a sink the write happens here and the result is the database's.
+        /// </summary>
         public bool Save(bool quiet = false)
         {
+            return SavePlayer(quiet, false, false);
+        }
+
+        private bool SavePlayer(bool quiet, bool final, bool passwordChange)
+        {
             if (!quiet) { ReceiveMessage("%^Bold%^%^Yellow%^Saving...%^Reset%^"); }
-            if (string.IsNullOrWhiteSpace(Id))
+            if (Sink != null) { return PostSnapshot(quiet, final, passwordChange); }
+            return SaveSynchronously();
+        }
+
+        private bool PostSnapshot(bool quiet, bool final, bool passwordChange)
+        {
+            BsonDocument snapshot;
+            BsonDocument gameFields;
+            lock (_saveLock)
             {
-                _playerRepository.Insert(this);
-                _lastSave = DateTime.Now;
-                return true;
+                // The Password it carries must not be older than the stored one (the website may have changed it
+                // since this player was loaded).
+                SyncPasswordFromStore();
+                snapshot = this.ToBsonDocument();
+                gameFields = SavedFields(snapshot);
+                if (passwordChange) { _unconfirmedPasswordWrites++; }
             }
-            else
+            _lastSave = Clock.Now;
+
+            var request = new PersistRequest
             {
-                if (_playerRepository.Update(this))
+                Collection = ((ISnapshotRepository)_playerRepository).CollectionName,
+                Id = Id,
+                // Field-level $set of the saved fields; the whole snapshot is only written when nothing is stored
+                // yet (a new character).
+                Kind = PersistKind.SetFields,
+                Doc = gameFields,
+                Fallback = snapshot,
+                Final = final,
+                Reason = final ? "logout" : "player save"
+            };
+            if (passwordChange)
+            {
+                request.OnCompleted = persisted => { lock (_saveLock) { _unconfirmedPasswordWrites--; } };
+            }
+            if (!quiet)
+            {
+                request.OnFailed = attempts => Notify("%^Bold%^%^Red%^Saving failed; it will be retried.%^Reset%^");
+                request.OnCompleted = Chain(request.OnCompleted, persisted =>
                 {
+                    if (persisted) { Notify("%^Bold%^%^Yellow%^Saved.%^Reset%^"); }
+                });
+            }
+            if (final && _world != null) { _world.BeginFinalSave(this, request); }
+            Sink.Post(request);
+            return true;
+        }
+
+        private static Action<bool> Chain(Action<bool> first, Action<bool> second)
+        {
+            if (first == null) { return second; }
+            return v => { first(v); second(v); };
+        }
+
+        // Tells a still-connected player about a persistence outcome (callbacks arrive on the game thread).
+        private void Notify(string message)
+        {
+            if (ConnectionStatus == PlayerConnectionStatuses.LoggedIn && _frontEndSink != null) { ReceiveMessage(message); }
+        }
+
+        private bool SaveSynchronously()
+        {
+            lock (_saveLock)
+            {
+                if (string.IsNullOrWhiteSpace(Id))
+                {
+                    _playerRepository.Insert(this);
                     _lastSave = DateTime.Now;
                     return true;
+                }
+                else
+                {
+                    // The Password it carries must not be older than the stored one (the website may have changed it
+                    // since this player was loaded). A field-level update is written; the whole document only
+                    // when nothing is stored yet.
+                    SyncPasswordFromStore();
+                    if (_playerRepository.UpdateFields(Id, SavedFields(this.ToBsonDocument())) || _playerRepository.Update(this))
+                    {
+                        _lastSave = DateTime.Now;
+                        return true;
+                    }
                 }
             }
             return false;
         }
 
-        public void Quit()
+        /// <summary>
+        /// Adopts the stored password if it differs from the in-memory one, so a stale object never overwrites a
+        /// password changed elsewhere. Does nothing while an in-game change is being saved. Returns true if the
+        /// in-memory password was replaced. Never throws: on a read failure the in-memory value is kept.
+        /// </summary>
+        public bool SyncPasswordFromStore()
         {
-            // Connection.Disconnect() re-enters through ClientDisconnectedHandler, so run the sequence once per session.
-            if (_isQuitting) { return; }
-            _isQuitting = true;
-
-            ReceiveMessage("Thanks for playing!");
-            ConnectionStatus = PlayerConnectionStatuses.Offline;
-            if (Save())
+            lock (_saveLock)
             {
-                _world.RemovePlayer(this);
-                Connection.Disconnect();
-            }
-            else
-            {
-                // Uh oh!
-                // Save failed, so the player is still online: allow another quit attempt.
-                _isQuitting = false;
+                if (_passwordChangePending || _unconfirmedPasswordWrites > 0 || string.IsNullOrWhiteSpace(Id)) { return false; }
+                try
+                {
+                    BsonDocument stored = _playerRepository.GetRawDocument(Id);
+                    BsonValue value;
+                    if (stored == null || !stored.TryGetValue("Password", out value) || !value.IsString) { return false; }
+                    if (value.AsString == Password) { return false; }
+                    Password = value.AsString;
+                    return true;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
             }
         }
 
+        /// <summary>
+        /// Sets and saves a new password chosen in-game. If the save fails the old password stays in memory.
+        /// </summary>
+        public bool TryChangePassword(string newPassword)
+        {
+            lock (_saveLock)
+            {
+                string oldPassword = Password;
+                Password = newPassword;
+                _passwordChangePending = true;
+                bool saved = false;
+                try
+                {
+                    saved = SavePlayer(true, false, Sink != null);
+                }
+                finally
+                {
+                    _passwordChangePending = false;
+                    if (!saved) { Password = oldPassword; }
+                }
+                return saved;
+            }
+        }
+
+        /// <summary>
+        /// Logout (specs/GAME_LOOP.md 8.4), on the game thread, once per session: farewell, leave the world,
+        /// final snapshot to the persistence worker, then a flushing close so the farewell reaches the client.
+        /// Logout never waits on the database: a failed final save is retried by the worker (and spooled).
+        /// </summary>
+        public void Quit()
+        {
+            if (_isQuitting) { return; }
+            _isQuitting = true;
+            _promptHandler = null;
+            if (_commandQueue != null) { _commandQueue.Clear(this); }
+
+            ReceiveMessage("Thanks for playing!");
+            ConnectionStatus = PlayerConnectionStatuses.Offline;
+            if (_world != null) { _world.RemovePlayer(this); }
+            SavePlayer(true, true, false);
+            if (_world != null) { _world.RetireConnection(_sessionId); }
+            IFrontEndSink sink = _frontEndSink;
+            if (sink != null)
+            {
+                sink.Close(_sessionId, string.Empty, true);
+                sink.SessionEnded(_sessionId, _world != null && _world.IsStopping ? SessionEndReason.WorldStopping : SessionEndReason.Quit);
+            }
+        }
+
+        /// <summary>
+        /// Sends the message to the player's sink on the message's channel, as markup: the terminal conversion is
+        /// not done here (the sink the world attaches does it). Dropped when the player has no session.
+        /// </summary>
         public override void ReceiveMessage(string message)
         {
-            var selectedTerminalHandler = _world.TerminalHandlers.FirstOrDefault(th => th.TerminalName.ToLower() == SelectedTerm?.ToLower() || (th.Aliases != null && th.Aliases.Any(a => a.ToLower() == SelectedTerm?.ToLower())));
-            if (selectedTerminalHandler != null)
-            {
-                message = selectedTerminalHandler.ResolveOutput(message);
-            }
-            _connection.Send(message);
+            IFrontEndSink sink = _frontEndSink;
+            if (sink == null) { return; }
+            sink.Output(_sessionId, DeliveryChannel, message, false);
         }
 
         public override void DoHeartbeat()
@@ -121,18 +340,62 @@ namespace MUD.Core.GameObjects
 
             if (ConnectionStatus == PlayerConnectionStatuses.LoggedIn)
             {
-                if (DateTime.Now.Subtract(_lastSave).TotalMinutes >= 10)
+                if (Clock.Now.Subtract(_lastSave).TotalMinutes >= AutosaveInterval.TotalMinutes)
                 {
                     Save();
                 }
             }
         }
 
+        /// <summary>
+        /// Handles one input line from this player. Runs on the game thread (World routes lines here from the
+        /// inbound queue); it resolves and parses the command there, then queues it.
+        /// </summary>
         public void DataReceivedHandler(object sender, string message)
         {
             // check to see if this matches a command that the player has available.
             // if it does, add that command to the queue
+            var promptHandler = _promptHandler;
+            if (promptHandler != null)
+            {
+                promptHandler(message);
+                return;
+            }
+
             ICommand matchedCommand = ResolveCommand(message);
+            var sensitiveCommand = matchedCommand as ISensitiveInputCommand;
+            if (sensitiveCommand != null)
+            {
+                // Keep arguments (which may be a password) out of the queued command text.
+                string redacted = sensitiveCommand.Redact(message);
+                if (redacted != message)
+                {
+                    message = redacted;
+                    ReceiveMessage("Do not type a password on the command line. You will be prompted for it.");
+                }
+            }
+
+            // A line is offered to command.entered behaviors before the built-in command runs (D63, D64). Only quit is
+            // protected: it never reaches behaviors. A stop typed while a chain is waiting also goes straight to the queue,
+            // because it is what ends the wait (D62). With no command.entered entry anywhere nothing changes.
+            if (!(matchedCommand is QuitCommand) && !(IsParked && matchedCommand is StopCommand) && _world != null && _world.Events != null)
+            {
+                if (_lineChain != null)
+                {
+                    // Parked on an earlier line's chain: this line waits its turn (D62).
+                    _heldLines.Enqueue(message);
+                    ReceiveMessage("Command queued.");
+                    return;
+                }
+                if (OfferLineToBehaviors(message, matchedCommand)) { return; }
+            }
+
+            RunLine(message, matchedCommand);
+        }
+
+        // The built-in path for a typed line: queue the resolved command, or say it is not recognized.
+        private void RunLine(string message, ICommand matchedCommand)
+        {
             if (matchedCommand != null) // Move this logic to something else..something to match Command classes with input.
             {
                 _commandQueue.AddCommand(new CommandExecution(this, message, matchedCommand));
@@ -143,15 +406,81 @@ namespace MUD.Core.GameObjects
             }
         }
 
-        private void ClientDisconnectedHandler(object sender, Client e)
+        private BeforeChain _lineChain;
+        private readonly System.Collections.Generic.Queue<string> _heldLines = new System.Collections.Generic.Queue<string>();
+
+        private static readonly string[] CommandEnteredHooks = { BehaviorHooks.CommandEntered };
+
+        // True when the line was given to a sequential command.entered chain (the chain, not this method, then decides what
+        // happens to it). False when no entity near the player carries a command.entered entry: the caller carries on.
+        private bool OfferLineToBehaviors(string line, ICommand matchedCommand)
         {
-            // I think this is what we want for now... 
-            // I think in other muds the player object doesn't get removed unless you quit via the actual command. That way you can't just kill your connection and avoid death or whatever.
-            // We would need to add a timeout feature...
-            e.DataReceived -= DataReceivedHandler;
-            e.ClientDisconnected -= ClientDisconnectedHandler;
-            Quit();
-            //ConnectionStatus = EPlayerConnectionStatus.NetDead; // Maybe just online/offline? Not sure when net dead is a thing...
+            Room room = CurrentLocation;
+            bool hooked = EventDispatcher.HasEntry(this, BehaviorHooks.CommandEntered);
+            if (!hooked) { foreach (InventoryItem item in Inventory) { if (EventDispatcher.HasEntry(item, BehaviorHooks.CommandEntered)) { hooked = true; break; } } }
+            if (!hooked && room != null)
+            {
+                hooked = EventDispatcher.HasEntry(room, BehaviorHooks.CommandEntered);
+                if (!hooked) { foreach (InventoryItem item in room.Items) { if (EventDispatcher.HasEntry(item, BehaviorHooks.CommandEntered)) { hooked = true; break; } } }
+            }
+            if (!hooked) { return false; }
+
+            // The snapshot is the player, the room, and everything in the room and in the inventory (D63). Group order is
+            // the order they are asked in: the player, the player's inventory, the room, the room's items.
+            var parties = new System.Collections.Generic.List<EventParty>();
+            parties.Add(new EventParty("actor", this, CommandEnteredHooks, 0));
+            foreach (InventoryItem item in Inventory) { parties.Add(new EventParty("inventory", item, CommandEnteredHooks, 1)); }
+            if (room != null)
+            {
+                parties.Add(new EventParty("room", room, CommandEnteredHooks, 2));
+                foreach (InventoryItem item in room.Items) { parties.Add(new EventParty("item", item, CommandEnteredHooks, 3)); }
+                foreach (Living occupant in room.Occupants) { if (!ReferenceEquals(occupant, this)) { parties.Add(new EventParty("occupant", occupant, null, 4)); } }
+            }
+            var payload = new System.Collections.Generic.Dictionary<string, object> { { "line", line } };
+
+            BeforeChain chain = null;
+            chain = _world.Events.BeginBefore(EventNames.CommandEntered, parties, payload, true, outcome =>
+            {
+                if (chain != null) { UnregisterWaitingChain(chain); }
+                if (ReferenceEquals(_lineChain, chain)) { _lineChain = null; }
+                FinishLine(line, matchedCommand, outcome);
+            });
+            if (chain != null && !chain.IsComplete) { _lineChain = chain; RegisterWaitingChain(chain); }
+            return true;
+        }
+
+        private void FinishLine(string line, ICommand matchedCommand, BeforeOutcome outcome)
+        {
+            switch (outcome.Result)
+            {
+                case BeforeResult.Cancelled:
+                    ReceiveMessage("You stop.");
+                    _heldLines.Clear();
+                    return;
+                case BeforeResult.Refused:
+                    RunLine(line, matchedCommand);
+                    break;
+                case BeforeResult.Denied:
+                    if (!string.IsNullOrEmpty(outcome.Message)) { ReceiveMessage(outcome.Message); }
+                    break;
+                default:
+                    if (outcome.Handled)
+                    {
+                        // A behavior took the line: nothing else runs for it (D63).
+                        if (!string.IsNullOrEmpty(outcome.Message)) { ReceiveMessage(outcome.Message); }
+                    }
+                    else
+                    {
+                        RunLine(line, matchedCommand);
+                    }
+                    break;
+            }
+
+            // Lines typed while the chain waited are offered now, in order, unless one of them starts another wait.
+            while (_heldLines.Count > 0 && _lineChain == null && ConnectionStatus != PlayerConnectionStatuses.Offline)
+            {
+                DataReceivedHandler(null, _heldLines.Dequeue());
+            }
         }
     }
 }

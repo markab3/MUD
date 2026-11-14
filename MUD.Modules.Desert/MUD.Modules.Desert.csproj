@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <!-- Core finds a module at modules/<folder>/<folder> (D67), so the program is named after its folder: modules/desert/desert. -->
+    <AssemblyName>desert</AssemblyName>
+    <RootNamespace>MUD.Modules.Desert</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MUD.Modules.Sdk\MUD.Modules.Sdk.csproj" />
+  </ItemGroup>
+
+</Project>

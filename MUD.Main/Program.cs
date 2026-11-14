@@ -2,26 +2,28 @@
 using System.Net;
 using Microsoft.Extensions.Configuration;
 using MUD.Telnet;
+using MUD.CoreApi;
+using MUD.Core.Sessions;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using MUD.Core;
 using System.Linq;
 using System.Threading;
-using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using MUD.Core.Formatting;
 using MongoDB.Bson.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson.Serialization.IdGenerators;
 using MUD.Core.Commands;
+using MUD.Core.Modules;
+using MUD.Contracts;
 
 namespace MUD.Main
 {
     class Program
     {
         private static World _gameWorld;
-        private static Server _serverInstance;
         private static TelnetLimits _telnetLimits = TelnetLimits.FromEnvironment();
-        private static readonly ConditionalWeakTable<Client, LoginSession> _loginSessions = new ConditionalWeakTable<Client, LoginSession>();
         private static LoginThrottle _loginThrottle = new LoginThrottle(_telnetLimits.LoginMaxFailures, _telnetLimits.LoginThrottleDuration);
         private static string alternateMessage =
 @"
@@ -45,33 +47,29 @@ namespace MUD.Main
     Use 'who' to see who is currently online.
     Use 'quit' to disconnect.
 --------------------------------------------------------------------------------";
-        private static string welcomeMessage =
-@"
-                          Welcome to Planar Realms 0.2
-                        _____  _                         
-                        |  __ \| |                        
-                        | |__) | | __ _ _ __   __ _ _ __  
-                        |  ___/| |/ _` | '_ \ / _` | '__| 
-                        | |    | | (_| | | | | (_| | |    
-                  />___|_|___ |_|\__,_|_|_|_|\__,_|_|__________    
-         [#########[]____________________________________________\
-                   \>   |  __ \          | |              
-                        | |__) |___  __ _| |_ __ ___  ___ 
-                        |  _  // _ \/ _` | | '_ ` _ \/ __|
-                        | | \ \  __/ (_| | | | | | | \__ \
-                        |_|  \_\___|\__,_|_|_| |_| |_|___/
-                                                                                |
---------------------------------------------------------------------------------
-    Use 'connect' to log in to an existing player. You will be prompted for a
-    name and password; the password is not echoed.
-    Use 'create' to create a new player (name, password and confirmation).
-    Scripted clients may use 'connect <username> <password>' and
-    'create <username> <password>', but then the password is visible.
-    Use 'who' to see who is currently online.
-    Use 'quit' to disconnect.
---------------------------------------------------------------------------------";
+        private static ShutdownCoordinator _shutdown;
 
-        static void Main(string ip = null, int? port = null)
+        private static RunDirectory _runDirectory;
+
+        private static ModuleHostRunner _moduleHost;
+
+        private static ModuleSupervisor _moduleSupervisor;
+
+        private static readonly ManualResetEventSlim _shutdownRequested = new ManualResetEventSlim(false);
+
+        // Runs the shutdown sequence off the signal thread, then exits the process. Used by the signal handlers.
+        private static void shutdownAndExit(string reason)
+        {
+            Console.WriteLine("SHUTDOWN requested: " + reason);
+            _shutdownRequested.Set();
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                if (_shutdown != null) { _shutdown.Run(); }
+                Environment.Exit(0);
+            });
+        }
+
+        static void Main()
         {
             var config = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
@@ -89,20 +87,22 @@ namespace MUD.Main
             var databaseName = config["WorldSettings:DatabaseName"];
             if (string.IsNullOrWhiteSpace(databaseName)) { databaseName = "testmud"; }
 
-            // Bind address and port: command line, then environment, then appsettings.json.
-            if (string.IsNullOrWhiteSpace(ip)) { ip = Environment.GetEnvironmentVariable("MUD_BIND_ADDRESS"); }
-            if (string.IsNullOrWhiteSpace(ip)) { ip = config["TelnetSettings:IPAddress"]; }
-            if (port == null)
-            {
-                int parsedPort;
-                if (int.TryParse(Environment.GetEnvironmentVariable("MUD_PORT"), out parsedPort)) { port = parsedPort; }
-                else if (int.TryParse(config["TelnetSettings:Port"], out parsedPort)) { port = parsedPort; }
-                else { port = 7680; }
-            }
             var startRoomKey = config["WorldSettings:StartRoomKey"];
             if (string.IsNullOrWhiteSpace(startRoomKey))
             {
                 Console.WriteLine("WorldSettings:StartRoomKey is not configured in appsettings.json!");
+                return;
+            }
+
+            // The run directory lock comes first (CORE_API 3 and 7.3): a second core fails fast, before it touches the database.
+            try
+            {
+                _runDirectory = RunDirectory.Acquire(RunDirectory.ResolvePath());
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("Could not take the run directory: " + ex.Message);
+                Environment.Exit(1);
                 return;
             }
 
@@ -165,6 +165,11 @@ namespace MUD.Main
                 if (database == null) { Console.WriteLine("Database not found!"); }
                 var collection = database.GetCollection<BsonDocument>("player"); // Check that the collection is there. If it is not, then the collection exists in memory and is created on the actual DB when needed.
                 var testFind = collection.AsQueryable().FirstOrDefault();
+                foreach (var legacyCollection in new[] { "room", "player" })
+                {
+                    var count = MUD.Data.ObjectIdMigration.MigrateCollection(database.GetCollection<BsonDocument>(legacyCollection), Console.WriteLine);
+                    if (count > 0) { Console.WriteLine(string.Format("Migrated {0} legacy ObjectId documents in '{1}'.", count, legacyCollection)); }
+                }
                 // collection = database.GetCollection<BsonDocument>("rooms"); // Check that the collection is there.
                 // collection.InsertOne(BsonDocument.Parse(jsonContent)); // The BSON object will have _id and it will be set by the insert call.
 
@@ -239,7 +244,7 @@ namespace MUD.Main
                 contentDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, contentDirectory);
             }
             bool importOnStartup;
-            if (!bool.TryParse(config["WorldSettings:ImportOnStartup"], out importOnStartup)) { importOnStartup = true; }
+            if (!bool.TryParse(config["WorldSettings:ImportOnStartup"], out importOnStartup)) { importOnStartup = false; }
             _gameWorld = new World(dbClient, new WorldSettings { StartRoomKey = startRoomKey, DatabaseName = databaseName, ContentDirectory = contentDirectory, ImportOnStartup = importOnStartup });
             try
             {
@@ -257,62 +262,122 @@ namespace MUD.Main
             {
                 Console.WriteLine("Player account preparation failed: " + ex.Message);
             }
+            _gameWorld.LoginThrottle = _loginThrottle;
             Thread gameWorldThread = new Thread(_gameWorld.Start);
             gameWorldThread.Start();
             Console.WriteLine("done.");
 
-            Console.Write("Starting telnet server...");
-            IPAddress ipAddress = null;
-            if (!IPAddress.TryParse(ip, out ipAddress)) { ipAddress = IPAddress.Any; }
-
-            _serverInstance = new Server(ipAddress, port.Value, _telnetLimits);
-            _serverInstance.ClientConnected += clientConnected;
-            _serverInstance.ClientDisconnected += clientDisconnected;
-
-            Thread serverThread = new Thread(_serverInstance.Start);
-            serverThread.Start();
+            // Module host: Kestrel on modules.sock and frontends.sock. With no module started it is an idle listener
+            // and the game behaves as before. Module calls reach the game thread through its separate bounded queue.
+            Console.Write("Starting module host...");
+            var moduleHostOptions = new ModuleHostOptions();
+            int configuredValue;
+            if (int.TryParse(config["ModuleHost:InboundQueueCapacity"], out configuredValue) && configuredValue > 0) { moduleHostOptions.InboundQueueCapacity = configuredValue; }
+            if (int.TryParse(config["ModuleHost:InboundPerPassShare"], out configuredValue) && configuredValue > 0) { moduleHostOptions.InboundPerPassShare = configuredValue; }
+            if (int.TryParse(config["ModuleHost:OutboundQueueCapacity"], out configuredValue) && configuredValue > 0) { moduleHostOptions.OutboundQueueCapacity = configuredValue; }
+            if (int.TryParse(config["ModuleHost:StateMaxDocumentBytes"], out configuredValue) && configuredValue > 0) { moduleHostOptions.StateMaxDocumentBytes = configuredValue; }
+            if (int.TryParse(config["ModuleHost:TimersPerModule"], out configuredValue) && configuredValue > 0) { moduleHostOptions.TimersPerModule = configuredValue; }
+            double configuredNumber;
+            var invariant = System.Globalization.CultureInfo.InvariantCulture;
+            if (double.TryParse(config["ModuleHost:StateWritesPerSecond"], System.Globalization.NumberStyles.Float, invariant, out configuredNumber) && configuredNumber > 0) { moduleHostOptions.StateWritesPerSecond = configuredNumber; }
+            if (double.TryParse(config["ModuleHost:StateWriteBurst"], System.Globalization.NumberStyles.Float, invariant, out configuredNumber) && configuredNumber >= 1) { moduleHostOptions.StateWriteBurst = configuredNumber; }
+            if (double.TryParse(config["ModuleHost:EmitPerSecond"], System.Globalization.NumberStyles.Float, invariant, out configuredNumber) && configuredNumber > 0) { moduleHostOptions.EmitPerSecond = configuredNumber; }
+            if (double.TryParse(config["ModuleHost:EmitBurst"], System.Globalization.NumberStyles.Float, invariant, out configuredNumber) && configuredNumber >= 1) { moduleHostOptions.EmitBurst = configuredNumber; }
+            if (int.TryParse(config["ModuleHost:TimerMinimumDelayMilliseconds"], out configuredValue) && configuredValue >= 0) { moduleHostOptions.TimerMinimumDelay = TimeSpan.FromMilliseconds(configuredValue); }
+            _gameWorld.ConfigureModuleCalls(moduleHostOptions.InboundQueueCapacity, moduleHostOptions.InboundPerPassShare);
+            string grantsFile = config["ModuleHost:GrantsFile"];
+            var moduleGrants = new ModuleGrants(string.IsNullOrWhiteSpace(grantsFile) ? ModuleGrants.DefaultPath : grantsFile);
+            moduleGrants.Reload();
+            var moduleRegistry = new ModuleRegistry(new ModuleTokenRegistry(), moduleGrants, ContractVersion.Current, moduleHostOptions);
+            ModuleDispatcher moduleDispatcher = _gameWorld.AttachModules(moduleRegistry, moduleHostOptions);
+            // The Admin service (card P6-1) is served on frontends.sock for the web front end. Core is the only process that reads and writes the database for it.
+            var adminApi = _gameWorld.CreateAdminApi(dbClient.GetDatabase(databaseName));
+            // The Session service (card P7-1) is served on frontends.sock for a telnet front end in its own process (D66). The token file is
+            // created with mode 600 on first start; the front end reads it at its own start. The in-process telnet server below keeps working.
+            var frontEndTokenFile = FrontEndTokenFile.LoadOrCreate(FrontEndTokenFile.ResolvePath(config["FrontEnds:TokenFile"]));
+            int frontEndQueueCapacity;
+            if (!int.TryParse(config["FrontEnds:OutboundQueueCapacity"], out frontEndQueueCapacity) || frontEndQueueCapacity <= 0) { frontEndQueueCapacity = FrontEndRegistry.DefaultOutboundQueueCapacity; }
+            var frontEnds = new FrontEndRegistry(_gameWorld, frontEndTokenFile, ContractVersion.Current, frontEndQueueCapacity);
+            // Held shut until every required module is Ready (D21); opened below. A front end that is refused retries by itself.
+            frontEnds.AcceptingConnections = false;
+            _moduleHost = new ModuleHostRunner(_runDirectory, moduleRegistry, action => _gameWorld.PostModuleCall(action), null, moduleDispatcher, adminApi, frontEnds);
+            try
+            {
+                _moduleHost.Start();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("The module host could not start: " + ex);
+                _gameWorld.Stop();
+                Environment.Exit(1);
+                return;
+            }
             Console.WriteLine("done.");
 
+            // Module supervisor (D20, D67): scans the modules directory and starts every module. The telnet front end below is held
+            // until every module that is marked required is Ready (D21). A required module that is not Ready within the start-up
+            // timeout (D70, default 30 s) makes core stop what it started and exit with a clear error. With an empty or missing
+            // modules directory nothing is required and the game starts as before.
+            Console.Write("Starting modules...");
+            var supervisorOptions = ModuleSupervisorSettings.Read(config, AppContext.BaseDirectory, Console.WriteLine);
+            _moduleSupervisor = new ModuleSupervisor(moduleRegistry, supervisorOptions, _runDirectory.ModulesSocketPath);
+            _gameWorld.ModuleSupervisor = _moduleSupervisor;
+            _moduleSupervisor.Start();
+            string gateError = _moduleSupervisor.WaitForRequiredModules();
+            if (gateError != null)
+            {
+                Console.WriteLine();
+                Console.Error.WriteLine("STARTUP FAILED: " + gateError);
+                _moduleSupervisor.Stop();
+                _moduleHost.Stop();
+                _gameWorld.Stop();
+                _runDirectory.Dispose();
+                Environment.Exit(1);
+                return;
+            }
+            Console.WriteLine("done.");
+
+            frontEnds.AcceptingConnections = true;
+            // Telnet is served by MUD.Telnet.Host in its own process (phase 7); core has no telnet listener. Players reach the game
+            // through the Session service on frontends.sock, which is already serving.
             Console.WriteLine("SERVER STARTED: " + DateTime.Now);
 
+            // Graceful shutdown: stop accepting, tell clients, save every online player through the persistence
+            // worker and drain it, then close connections. Bounded: after 10 s it exits anyway and logs what
+            // was not saved. The World's own drain deadline is shorter so it can spool before this one fires.
+            _shutdown = new ShutdownCoordinator(
+                null,
+                null,
+                () => _gameWorld.Stop(),
+                () =>
+                {
+                    // Modules are ended first (terminate signal, grace period, kill), then the module host closes.
+                    if (_moduleSupervisor != null) { _moduleSupervisor.Stop(); }
+                    if (_moduleHost != null) { _moduleHost.Stop(); }
+                    if (_runDirectory != null) { _runDirectory.Dispose(); }
+                },
+                () => _gameWorld.DescribeUnsaved(),
+                Console.WriteLine);
+            _gameWorld.ShutdownTimeout = _shutdown.Timeout - TimeSpan.FromSeconds(2);
+
+            // SIGTERM (systemd stop), Ctrl+C / SIGINT, and process exit.
+            PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; shutdownAndExit("SIGTERM"); });
+            PosixSignalRegistration.Create(PosixSignal.SIGINT, context => { context.Cancel = true; shutdownAndExit("SIGINT"); });
+            Console.CancelKeyPress += (s, e) => { e.Cancel = true; shutdownAndExit("Ctrl+C"); };
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => _shutdown.Run();
+
             char read2 = ' ';
-            bool isInteractive = true;
+            bool isInteractive = !Console.IsInputRedirected;
+            if (!isInteractive)
+            {
+                // Under systemd stdin is not a terminal: block until a shutdown is requested instead of spinning.
+                _shutdownRequested.Wait();
+                _shutdown.Run();
+                return;
+            }
 
             while (read2 != 'q')
             {
-                if (read2 == 'b')
-                {
-                    _serverInstance.SendMessageToAll(Console.ReadLine());
-                }
-
-                if (read2 == 'c')
-                {
-                    string colorTest = "";
-                    for (int i = 0; i < 256; i++)
-                    {
-                        colorTest += "\x1B[38;5;" + i + "m " + i.ToString("D3") + " \x1B[0m";
-                        if (i == 15 || i == 231 || ((i > 15) && (i < 232) && (((i - 15) % 6) == 0)))
-                        {
-                            colorTest += "\r\n";
-                        }
-                    }
-                    _serverInstance.SendMessageToAll(colorTest);
-
-                    _serverInstance.SendMessageToAll("\x1B[32mGREEN\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[92mBRIGHT GREEN\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[32mBOLD GREEN\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[92mBOLD BRIGHT GREEN\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[42mGREEN BACKGROUND\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[102mBRIGHT GREEN BACKGROUND\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[42mBOLD GREEN BACKGROUND\x1B[0m");
-                    _serverInstance.SendMessageToAll("\x1B[1m\x1B[102mBOLD BRIGHT GREEN BACKGROUND\x1B[0m");
-                }
-
-                if (read2 == 't')
-                {
-                    _serverInstance.SendMessageToAll(new byte[] { (byte)CommandCode.IAC, (byte)CommandCode.DO, (byte)OptionCode.TerminalType });
-                }
-
                 if (isInteractive)
                 {
                     try
@@ -321,112 +386,14 @@ namespace MUD.Main
                     }
                     catch (InvalidOperationException)
                     {
-                        // Can't accept console input.
-                        isInteractive = false;
+                        // Can't accept console input: wait for a shutdown signal instead.
+                        _shutdownRequested.Wait();
+                        break;
                     }
                 }
             }
 
-            _gameWorld.Stop();
-            _serverInstance.Stop();
-        }
-
-        private static void clientConnected(object sender, Client client)
-        {
-            Console.WriteLine("CONNECTED: " + client);
-
-            client.DataReceived += messageReceived;
-            client.Send(welcomeMessage);
-            messageReceived(client, "who");
-            client.Send("");
-        }
-
-        private static void clientDisconnected(object sender, Client client)
-        {
-            client.DataReceived -= messageReceived;
-            Console.WriteLine("DISCONNECTED: " + client);
-        }
-
-        private static void connectionBlocked(IPEndPoint ep)
-        {
-            Console.WriteLine(string.Format("BLOCKED: {0}:{1} at {2}", ep.Address, ep.Port, DateTime.Now));
-        }
-
-        private static void messageReceived(object sender, string message)
-        {
-            Client client = (Client)sender;
-            message = message.TrimEnd('\n').TrimEnd('\r');
-
-            LoginSession session = _loginSessions.GetValue(client, k => new LoginSession(k, new WorldLoginHandler(_gameWorld, k), _loginThrottle));
-
-            // Never log a line that may contain a password.
-            Console.WriteLine("MESSAGE: " + session.Loggable(message));
-
-            if (session.State != LoginState.Idle)
-            {
-                session.HandleLine(message);
-            }
-            else if (message == "quit" || message.StartsWith("quit "))
-            {
-                client.Disconnect();
-            }
-            else if (message == "who" || message.StartsWith("who "))
-            {
-                // Show the list of logged in players
-                if (_gameWorld.Players == null || _gameWorld.Players.Count == 0)
-                {
-                    client.Send("No one is logged on.");
-                }
-                else if (_gameWorld.Players.Count == 1)
-                {
-                    client.Send(String.Format("{0} is logged on.", _gameWorld.Players.First().PlayerName));
-                }
-                else
-                {
-                    client.Send(String.Format("{0} are logged on.", _gameWorld.Players.Select(p => p.PlayerName).GetListText()));
-                }
-            }
-            else if (session.HandleLine(message))
-            {
-                // Consumed by the login flow.
-            }
-            else
-            {
-                string commandString = message;
-                if (message.Contains(" "))
-                {
-                    message = message.Substring(0, message.IndexOf(" "));
-                }
-                client.Send(string.Format("Command {0} was not recognized.", commandString));
-            }
-
-            if (session.IsLoggedIn)
-            {
-                client.DataReceived -= messageReceived;
-                client.IsLoggedIn = true;
-            }
-        }
-
-        private class WorldLoginHandler : ILoginHandler
-        {
-            private readonly World _world;
-            private readonly Client _client;
-
-            public WorldLoginHandler(World world, Client client)
-            {
-                _world = world;
-                _client = client;
-            }
-
-            public bool Login(string name, string password)
-            {
-                return _world.DoLogin(name, password, _client);
-            }
-
-            public bool Create(string name, string password)
-            {
-                return _world.DoCreateUser(name, password, _client);
-            }
+            _shutdown.Run();
         }
     }
 }

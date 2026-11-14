@@ -5,9 +5,8 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using MUD.Core;
 using MUD.Core.Commands;
+using MUD.Core.Components;
 using MUD.Core.GameObjects;
-using MUD.Core.Properties;
-using MUD.Core.Properties.Interfaces;
 using MUD.Core.Repositories.Interfaces;
 using Xunit;
 
@@ -80,24 +79,6 @@ namespace MUD.Tests
             }
         }
 
-        private class CountingProperty : ExtendedProperty, IHeartbeat
-        {
-            public int Ticks;
-
-            public void DoHeartbeat() { Ticks++; }
-
-            public override void InitializeProperty() { }
-
-            public override void RemoveProperty() { }
-        }
-
-        private class PlainProperty : ExtendedProperty
-        {
-            public override void InitializeProperty() { }
-
-            public override void RemoveProperty() { }
-        }
-
         private static void RunHeartbeat(World world)
         {
             var method = typeof(World).GetMethod("doHeartbeat", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -140,18 +121,21 @@ namespace MUD.Tests
             Assert.Null(ex);
         }
 
-        // Item 2: only IHeartbeat properties tick; plain properties are ignored.
+        // Item 2: only heartbeat behavior entries tick; entries for other hooks and unresolved entries are ignored.
         [Fact]
-        public void LivingHeartbeatTicksOnlyIHeartbeatProperties()
+        public void LivingHeartbeatRunsOnlyResolvedHeartbeatEntries()
         {
             var living = new RecordingLiving();
-            var heartbeat = new CountingProperty();
-            living.ExtendedProperties.Add(new PlainProperty());
-            living.ExtendedProperties.Add(heartbeat);
+            var registry = InProcessBehaviorRegistry.Shared;
+            int ticks = 0;
+            registry.RegisterHeartbeat("test", "CountingHeartbeat", (target, entry) => ticks++);
+            living.Behaviors.Add(new BehaviorRef(BehaviorHooks.ItemDrop, "test", "CountingHeartbeat"));
+            living.Behaviors.Add(new BehaviorRef(BehaviorHooks.Heartbeat, "test", "NothingRegisteredForThis"));
+            living.Behaviors.Add(new BehaviorRef(BehaviorHooks.Heartbeat, "test", "CountingHeartbeat"));
 
             living.DoHeartbeat();
 
-            Assert.Equal(1, heartbeat.Ticks);
+            Assert.Equal(1, ticks);
         }
 
         // Item 3: a recipient that leaves the room while receiving must not break TellRoom.

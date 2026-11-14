@@ -39,6 +39,9 @@ namespace MUD.Core.Import
         public List<FeatureDefinition> Features { get; set; } = new List<FeatureDefinition>();
 
         public List<SearchPropertyDefinition> Properties { get; set; } = new List<SearchPropertyDefinition>();
+
+        // Behavior entries from the 'behaviors:' list (owner decisions D5, D53). Features carry none (D14).
+        public List<MUD.Core.Components.BehaviorRef> Behaviors { get; set; } = new List<MUD.Core.Components.BehaviorRef>();
     }
 
     public class ExitDefinition
@@ -69,11 +72,9 @@ namespace MUD.Core.Import
         public List<string> Adjectives { get; set; } = new List<string>();
 
         public List<string> Plurals { get; set; } = new List<string>();
-
-        public List<SearchPropertyDefinition> Properties { get; set; } = new List<SearchPropertyDefinition>();
     }
 
-    // The only room-file behavior today: "search" -> BasicSearchProperty.
+    // The only room-file behavior today: "search" -> an entry of the room's search component.
     public class SearchPropertyDefinition
     {
         public string Id { get; set; }
