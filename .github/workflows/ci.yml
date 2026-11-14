@@ -32,18 +32,5 @@ jobs:
             exit 1
           fi
 
-      # hermes has no test project yet. Skip tests only until one exists
-      # (a project referencing Microsoft.NET.Test.Sdk); remove this guard once tests merge.
-      - name: Detect test projects
-        id: tests
-        run: |
-          if grep -rlq "Microsoft.NET.Test.Sdk" --include=*.csproj .; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No test project found; skipping dotnet test."
-          fi
-
       - name: Test
-        if: steps.tests.outputs.found == 'true'
         run: dotnet test MUD.sln --no-build
