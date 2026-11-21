@@ -342,7 +342,7 @@ namespace MUD.Tests
                 Assert.Equal(1, harness.OnGameThread(() => first.Dune3.Features.Count(f => f.ShortDescription == DesertModule.StormFeatureText)));
 
                 harness.AdvanceClock(TimeSpan.FromSeconds(100));
-                await WaitForWorldAsync(harness, () => !HasStorm(harness, first.Dune3), "the storm ends on schedule");
+                await WaitForWorldAsync(harness, () => !HasStorm(harness, first.Dune3) && ann.MessagesSoFar().Contains("The sandstorm dies away."), "the storm ends on schedule and ann is told");
                 Assert.Contains("The sandstorm dies away.", ann.MessagesSoFar());
             }
         }
