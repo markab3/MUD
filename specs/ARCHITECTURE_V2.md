@@ -496,8 +496,8 @@ decision; never log or display them.
   collision-safe (never silently overwrite). Behavior binding lives only in entity behavior lists. Consequence to resolve: the host currently imports on every start
   (`WorldSettings.ImportOnStartup` defaults to true, `MUD.Core/WorldSettings.cs:15`, `MUD.Main/appsettings.json:10`, `World.ImportContent`
   at `MUD.Core/World.cs:614`); that is a recurring sync and conflicts with D39 (G17).
-- **No seed-admin, no core-admin CLI (D32).** `scripts/seed-admin.sh` was a one-off bootstrap and is not a maintained tool;
-  the design adds no replacement. First-run seeding by core on an empty database is possible later and is deferred. Because core is the only DB writer,
+- **No core-admin CLI (D32).** `scripts/seed-admin.sh` is kept as an out-of-band bootstrap (owner decision: update, do not delete;
+  it writes the `roles` document, D45); the design adds no replacement. First-run seeding by core on an empty database is possible later and is deferred. Because core is the only DB writer,
   any other tool that writes Mongo is outside the design.
 - **Backups: deferred (D33).**
 - Consistency between core and module: core is authoritative; a module's view is a snapshot that may be stale; core
