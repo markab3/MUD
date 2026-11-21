@@ -28,8 +28,8 @@ units; a module with the `required` flag (neither module sets it).
    `{ "startRooms": ["desert.dune_1"], "spawnIntervalSeconds": 20, "stormDurationSeconds": 60, "stepSeconds": 5, "maxSteps": 12, "blindSeconds": 20 }`
    (short numbers so that the run is quick; the module defaults are 1800 s, 240 s, 10 s, 12 steps, 30 s).
 4. Start an empty database, create two accounts, and give the builder the `roles` component
-   (`{ creator: true, admin: true }`). See finding F1: `scripts/seed-admin.sh` still writes the old properties, so the roles were set
-   with one `updateOne` in the mongo shell.
+   (`{ creator: true, admin: true }`). (Finding F1: at the time of the run `scripts/seed-admin.sh` still wrote the old properties, so the roles were set
+   with one `updateOne` in the mongo shell; the script now writes `roles`.)
 5. Start core with `MUD_MONGO_URI` and `MUD_RUN_DIRECTORY` set. Core prints that both modules started, connected with the granted
    capabilities, reconciled (`0 storm(s)`, `0 spent trap(s)`), and are Ready.
 
@@ -114,7 +114,7 @@ Defects found in code outside this card's scope are filed as backlog cards and n
 
 | Id | What | Where | Action |
 |---|---|---|---|
-| F1 | `scripts/seed-admin.sh` writes the Creator and Admin `ExtendedProperties`, which core no longer reads (D45 moved them to the `roles` component). A seeded admin is a plain player until `roles` is set by hand. | `scripts/seed-admin.sh` | Backlog card. |
+| F1 | `scripts/seed-admin.sh` writes the Creator and Admin `ExtendedProperties`, which core no longer reads (D45 moved them to the `roles` component). A seeded admin is a plain player until `roles` is set by hand. | `scripts/seed-admin.sh` | Fixed: the script now writes `roles`. |
 | F2 | `terraform link <room> <exit> <return exit>` checks the return room for an existing exit named like the FORWARD exit (`x.Name == newName`), not like the return exit. Linking `east`/`west` is refused with `already has an east exit` whenever the other room has an east exit, even though it was `west` that was wanted. The builder script therefore links each cross-area exit from its own side with no return name. | `MUD.Core/Commands/Creator/TerraformCommand.cs`, return-exit branch | Backlog card. |
 | F3 | An area import refuses an exit to a room that does not exist yet, so two areas that lead into each other cannot both be imported with their joining exits; the joins need `terraform link` afterwards. This is the import collision/validate-plan-apply item the decisions file lists as open. | `AreaImporter` | Recorded; open item, not closed here. |
 | F4 | When the offline player's blindness ended, the module's `component.remove` was refused (`target entity not found`), because core can only address entities it has loaded. The state document forgot the player, so `desert.sand_blind` stayed in the player's saved document for good. Harmless to play (nothing reads it) but a stale component. The orphan sweep that would catch it needs `QueryEntities` (F6). | desert module and core's emit path | Recorded; question R2 in CORE_API section 10. |

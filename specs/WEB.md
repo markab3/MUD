@@ -222,9 +222,9 @@ login works for telnet and the web. Defaults: name `maurlorn`, password `moocow`
 - Other overrides: `MUD_SEED_DATABASE` (default `testmud`), `MUD_SEED_START_ROOM` (default
   `WorldSettings:StartRoomKey` from `MUD.Main/appsettings.json`; only used for a new character).
 - Idempotent. If no player with that `NameKey` exists, a full `Player` document is inserted (string `_id`,
-  `PlayerName`, `NameKey` = lowercase name, `Password`, `Race` human, `CurrentLocationId`, `ExtendedProperties`
-  with `CreatorProperty` and `AdminProperty` and their `_t` discriminators). If it exists, only the password
-  and any missing Creator/Admin property are ensured; nothing else is reset.
+  `PlayerName`, `NameKey` = lowercase name, `Password`, `Race` human, `CurrentLocationId`, the embedded
+  `roles` document `{ creator: true, admin: true, currentDirectory: null }`, D45). If it exists, only the password
+  and `roles.creator` / `roles.admin` are ensured (`$set`); nothing else is reset.
 - It ensures the unique index `NameKey_unique` on `player` (same definition as the game's
   `CreateUniqueStringIndex`: unique, partial on string `NameKey`).
 - MongoDB is schemaless: the `player` collection and that index are all the website needs. No other

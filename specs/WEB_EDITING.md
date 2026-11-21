@@ -91,8 +91,8 @@ exception messages, and from the model bound to any edit form. A test asserts th
 
 ## 5. Roles
 
-Roles are `CreatorProperty` / `AdminProperty` entries (with `_t` discriminators) in a player's
-`ExtendedProperties` (see MUD.Web/Services/Account.cs and `seed-admin.sh`). Authority is taken
+Roles are the embedded `roles` document `{ creator, admin, currentDirectory }` on a player (D45;
+see MUD.Web/Services/Account.cs and `seed-admin.sh`). Authority is taken
 from the signed-in editor's CURRENT stored role at the time of each write, not the cookie role
 (the cookie role is fixed at login for 8h, WEB.md); a revoked admin must lose power immediately.
 
