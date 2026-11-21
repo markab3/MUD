@@ -114,9 +114,9 @@ namespace MUD.Core.Commands
                         {
                             commandIssuer.ReceiveMessage(string.Format("The room with id of {0} already has an exit that leads back here.", newDestination));
                         }
-                        else if (roomToLink.Exits != null && roomToLink.Exits.FirstOrDefault(x => x.Name == newName) != null)
+                        else if (roomToLink.Exits != null && roomToLink.Exits.FirstOrDefault(x => x.Name == returnName) != null)
                         {
-                            commandIssuer.ReceiveMessage(string.Format("The room with id {0} already has {1} {2} exit.", roomToLink.Id, newName.GetArticle(), newName));
+                            commandIssuer.ReceiveMessage(string.Format("The room with id {0} already has {1} {2} exit.", roomToLink.Id, returnName.GetArticle(), returnName));
                         }
                         else
                         {
