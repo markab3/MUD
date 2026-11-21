@@ -443,7 +443,7 @@ namespace MUD.Core.GameObjects
 
             if (Roles.Admin)
             {
-                matchedCommand = _world.CreatorCommands.GetCommandFromInput(input);
+                matchedCommand = _world.AdminCommands.GetCommandFromInput(input);
                 if (matchedCommand != null) { return matchedCommand; }
             }
 

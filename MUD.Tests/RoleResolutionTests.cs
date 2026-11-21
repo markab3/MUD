@@ -6,9 +6,8 @@ using Xunit;
 
 namespace MUD.Tests
 {
-    // Pins how Living.ResolveCommand uses roles, including the Admin quirk (ARCHITECTURE_V2 section 11 item 1): the
-    // Admin branch consults the creator commands, and the admin commands are never consulted by ResolveCommand.
-    // The owner decides separately whether that is right; these tests pin today's behavior.
+    // Pins how Living.ResolveCommand uses roles. Per the owner decision on ARCHITECTURE_V2 section 11 item 1, the
+    // Admin branch consults the admin commands (it previously consulted the creator commands by mistake).
     public class RoleResolutionTests
     {
         private class StubCommand : ICommand
@@ -67,15 +66,29 @@ namespace MUD.Tests
         }
 
         [Fact]
-        public void Admin_ResolvesTheCreatorCommands_AndNeverTheAdminCommands()
+        public void Admin_ResolvesTheAdminCommands()
         {
             foreach (var living in new[] { MakeLiving(false, true), MakeLiving(true, true) })
             {
-                Assert.Same(CreatorOnly, living.ResolveCommand("dig"));
-                Assert.Same(CreatorShadow, living.ResolveCommand("look"));
+                Assert.Same(AdminOnly, living.ResolveCommand("shutdownworld"));
                 Assert.Same(DefaultOnly, living.ResolveCommand("wave"));
-                Assert.Null(living.ResolveCommand("shutdownworld"));
             }
+        }
+
+        [Fact]
+        public void AdminWithoutCreator_DoesNotResolveCreatorCommands()
+        {
+            var living = MakeLiving(false, true);
+            Assert.Null(living.ResolveCommand("dig"));
+            Assert.Same(DefaultShadowed, living.ResolveCommand("look"));
+        }
+
+        [Fact]
+        public void AdminWithCreator_StillResolvesCreatorCommands()
+        {
+            var living = MakeLiving(true, true);
+            Assert.Same(CreatorOnly, living.ResolveCommand("dig"));
+            Assert.Same(CreatorShadow, living.ResolveCommand("look"));
         }
     }
 }
