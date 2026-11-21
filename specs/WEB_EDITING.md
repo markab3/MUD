@@ -67,7 +67,7 @@ Web-editable:
 `ShortDescription` (spoken of as "Short"), `LongDescription` ("Long"), `Area`, `X`, `Y`, `Z`,
 `Exits` (list of `{Name, DestinationId}`).
 
-Never web-editable (state or bookkeeping): `_id`, `Items`, `Features`/`ExtendedProperties`
+Never web-editable (state or bookkeeping): `_id`, `Items`, `Features`
 (not on the card's list; deferred, Q3), `Handles`/`Adjectives`/`Plurals` (deferred, Q3), runtime
 property state, `Rev`/audit fields (written only by the web write path), `source`/`source_hash`
 (importer bookkeeping, ROOM_FILES.md section 9). `Occupants` and `RoomCommandSource` are not
@@ -82,8 +82,8 @@ Web-editable: `ShortDescription`, `LongDescription`, `Race`, `Gender`, `Class`,
 `CurrentLocationId`, and roles (section 5).
 
 Never web-editable: `Password`, `NameKey`, `PlayerName` (changing it breaks `NameKey`; Q5),
-`Inventory`, `WornItems`, `HeldItems`, `_id`, `SelectedTerm`, any other `ExtendedProperties`
-element (only the Creator/Admin elements are touched, and only per section 5).
+`Inventory`, `WornItems`, `HeldItems`, `_id`, `SelectedTerm`, any field other than
+`roles` (only the `roles` document is touched, and only per section 5).
 
 `Password` additionally: excluded from every projection the web reads for editing (use an
 explicit inclusion projection, not "everything except"), from audit records, from logs, from
@@ -103,9 +103,8 @@ Rules, enforced server-side in the web service layer:
 - An Admin may edit anyone, including other Admins. Revoking the LAST Admin is refused (otherwise
   the system has no one who can grant roles; recovery is `seed-admin.sh`).
 - Self-edit: an editor may not change their own roles (prevents lock-out and self-escalation).
-- Roles are written as a field-level update of `ExtendedProperties` using array operators on the
-  discriminator (`$pull` / `$push` of the single role element), not by rewriting the whole array,
-  so other properties on the player are untouched. Applied to a live player per section 6.3.
+- Roles are written as a field-level `$set` of the `roles.creator` and `roles.admin` fields,
+  so other fields on the player are untouched. Applied to a live player per section 6.3.
 - Admin implies Creator for authorisation (WEB.md). Granting Admin does not need a separate Creator
   element; revoking Creator from an Admin is not meaningful and is refused (Q6).
 
@@ -147,7 +146,7 @@ For a changed online player, on the game thread, apply only the allow-listed fie
 document: `ShortDescription`, `LongDescription`, `Race`, `Gender`, `Class`, roles, and
 `CurrentLocationId` (below). Nothing else is read from the web write, so a stale `Inventory` in
 the document can never matter: the game still owns it. Role changes take effect on the live
-player's `ExtendedProperties` Creator/Admin elements (replace those elements; other properties are
+player's `roles` component (replace its creator/admin flags; other fields are
 untouched) and the player is told ("Your status has changed.").
 
 Location change: `CurrentLocationId` is applied by performing a normal move on the game thread
@@ -245,8 +244,7 @@ Rooms:
 Players:
 - `Player.Save()` becomes an `UpdateFields` of game-owned fields only: `Inventory`/`WornItems`/
   `HeldItems`, `SelectedTerm`, `Password` (only when the owner of the account changes it in-game,
-  existing `password` command), connection/last-seen type fields, `ExtendedProperties` other than
-  the role elements, and `CurrentLocationId` ONLY when it is game-driven. The latter is
+  existing `password` command), connection/last-seen type fields, and `CurrentLocationId` ONLY when it is game-driven. The latter is
   contradictory with web ownership of the same field; see Q12 (recommended: both may write it; the
   game's write is conditional on the stored `Rev` equalling the game's `knownRev`, so a web move
   that the game has not yet applied is never overwritten; if it differs, skip the location field
@@ -320,7 +318,7 @@ or `MUD.Data` is the candidate; Q15). Specifically for web saves:
 
 Q1  Approve the recommended default (section 3) or choose alternative 2/3 (section 11)?
 Q2  Is a poll delay of a few seconds acceptable for web edits to reach the game, and what interval?
-Q3  Should Features, Handles/Adjectives/Plurals and ExtendedProperties config of rooms ever be
+Q3  Should Features, Handles/Adjectives/Plurals and behavior/component config of rooms ever be
     web-editable? Not on the allow-list; need owner list and their element-merge rules.
 Q4  Does the web create/delete rooms and players, or only edit existing ones (the Creator page is
     a stub today)? Deletion rules (occupied rooms, online players)?
@@ -410,7 +408,7 @@ Unit (no Mongo; fakes for `IRepository`/stores, as `MUD.Tests` and `MUD.Web.Test
   value is unchanged.
 - Applier: game-thread apply of room definition keeps `Items`, occupants; rebuilds exits; player
   location change performs a move with announcements; nonexistent destination leaves the player in
-  place and writes nothing; role change updates live `ExtendedProperties` only for role elements.
+  place and writes nothing; role change updates the live player's `roles` only.
 - Poller: fake store with advancing `Rev` yields one event per change; unchanged `Rev` yields none;
   threading test asserts the applier runs on the game thread (reuses the game-loop test harness).
 - Characterization tests, written BEFORE migration steps 3-4, pin current `Player.Save`/`Room.Save`
@@ -448,7 +446,7 @@ Design
 - Q17: no replica set planned.
 
 Rooms
-- Q3: Features, Handles/Adjectives/Plurals and ExtendedProperties are not web-editable.
+- Q3: Features, Handles/Adjectives/Plurals and behavior/component config are not web-editable.
 - Q4: the web can create and delete rooms. The default room (StartRoomKey) can never be deleted.
 - Deleting a room: before moving anything, verify the destination exists; if not, refuse the delete and move nothing. Everything inside (players, NPCs, floor items) moves to a RANDOM adjacent room (an exit whose destination exists and is not the deleted room); with none, to the default room. The destination is told: "A sudden draft of magical wind deposits <entity list> in the room!" Exits in remaining rooms that point at the deleted room are removed and recorded in the audit. An online player in a deleted room is moved the same way.
 - Updating a room: the room is told "Something feels different..."

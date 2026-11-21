@@ -610,8 +610,8 @@ D28 listed the channels say, tell, room, combat, system. `Living.ReceiveMessage(
 Recommendation: untagged = `system`; say/tell/`TellRoom` = `say`/`tell`/`room`; ask the owner whether `chat` gets its own tag (an addition to the D28 list, so the owner's call).
 
 **G30. How the web reads roles between phase 2 and phase 6.** **[DECIDED, D45: owner accepted the recommendation; see OPEN_QUESTIONS_V2.md]**
-The website derives roles from the `_t` discriminators in `ExtendedProperties` (`MUD.Web/Services/MongoAccountStore.cs:59-60`, `MongoPlayerEditStore.cs:64`). Phase 2 replaces `ExtendedProperties` with a `Roles` component, and D1 forbids migration code and dual-read, but the web keeps reading Mongo directly until phase 6.
-Options: (A) the phase 2 card that introduces `Roles` also changes the two web stores to read the new field (small, same card); (B) core writes a mirror `ExtendedProperties` document until phase 6 (a dual-write, against the spirit of D1); (C) reorder so web precedes phase 2 (contradicts D37).
+(Historical, resolved: the website used to derive roles from the `_t` discriminators in the since-removed `ExtendedProperties` list; roles are now the `Roles` component, and the web reads them through core.) Phase 2 replaced `ExtendedProperties` with a `Roles` component, and D1 forbids migration code and dual-read, but the web keeps reading Mongo directly until phase 6.
+Options: (A) the phase 2 card that introduces `Roles` also changes the two web stores to read the new field (small, same card); (B) core writes a mirror legacy roles document until phase 6 (a dual-write, against the spirit of D1); (C) reorder so web precedes phase 2 (contradicts D37).
 Recommendation: A; D1 means no old data exists, so only the web read path changes.
 
 **G31. Where the session registry and `session_id` format live.** **[DECIDED, D46: owner accepted the recommendation; see OPEN_QUESTIONS_V2.md]**

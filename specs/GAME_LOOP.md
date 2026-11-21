@@ -53,7 +53,7 @@ spec is the only difference). File references below are to that tree.
   `Connection.Disconnect()`; on failure it clears `_isQuitting` and leaves the player in
   the world. `ClientDisconnectedHandler` calls `Quit()` on the socket thread.
 - `Player.DoHeartbeat()` calls `Save()` when `DateTime.Now.Subtract(_lastSave).TotalMinutes >= 10`.
-  `Living.DoHeartbeat` iterates `ExtendedProperties.OfType<IHeartbeat>()`.
+  `Living.DoHeartbeat` delivers the living's heartbeat behavior entries through the event dispatcher.
 - Write-through persistence (specs/RUNTIME_STATE.md): `GetCommand`/`DropCommand` call
   `Player.Save(true)` and `Room.SaveState()` from the command, synchronously. `Room.SaveState`
   calls `IRepository.UpdateFields` (field-level `$set` of `Items`); `Room.Save()` is a whole-document

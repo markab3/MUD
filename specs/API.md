@@ -169,7 +169,7 @@ public interface ITerminalHandler
 ## 5. Entity extension points (MUD.Core)
 
 - **GameObject** (abstract): `ShortDescription`, `LongDescription`,
-  `Plurals`, `Adjectives`, `Handles`, `ExtendedProperties`;
+  `Plurals`, `Adjectives`, `Handles`;
   `Examine()`, `IsMatchForString`, `IsPluralMatchForString`.
 - **Living**: `Gender`, `Race`, `Class`, `KnownCommands`, `CurrentLocationId`,
   `Inventory`/`WornItems`/`HeldItems`, `IsBusy`;
@@ -181,10 +181,10 @@ public interface ITerminalHandler
 - **Room** adds: `Items`, `Features`, `Exits`, `Occupants` (runtime),
   `RoomCommandSource` (directions built as `AnonymousCommand`s),
   `TellRoom`, `EnterRoom`/`ExitRoom`, `Examine(examiner)`.
-- **Capability interfaces** for `ExtendedProperty` objects:
-  `IHeartbeat` (ticked in `Living.DoHeartbeat`), `ISearchable`,
-  `IExaminable`, `IUpdatable`. Properties are `Entity` subclasses —
-  persisted and polymorphic; attach via creator `apply`.
+- **Components and behaviors** (MUD.Core/Components) replace the removed
+  `ExtendedProperty` list (P2-4): core components `Roles`, `Search` and
+  `status.bleeding`, plus `BehaviorRef` entries. Heartbeats are delivered by
+  the event dispatcher from `Living.DoHeartbeat`.
 
 ## 6. World (MUD.Core/World) — orchestrator API
 
