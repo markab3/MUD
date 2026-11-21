@@ -6,6 +6,7 @@
 > Section 8 (`class:` room subclass) is superseded by the plain room kind plus behavior entries. Import must be collision-safe (never silently overwrite). The rest of this file is unchanged and still describes the format and today's code.
 > Still accurate (describe the file format): sections 3 (identity), 4.1 to 4.4 (area header, room, exits, features), 5 (definition versus state), 10 (area, X, Y, Z) and 11 (text normalization). Section 2 describes the code at its base commit and is historical. Since card P2-5 `WorldSettings:ImportOnStartup` defaults to `false`; see CONFIGURATION.md, "Importing area files".
 > Since card P2-4 the `search` property is stored as the room's core `search` component (`search.entries[]`: `id`, `target`, `refreshMilliseconds`, `reward`, `nextRewardAt`), not in `ExtendedProperties`, which no longer exists. The YAML `properties:` form of 4.5 is unchanged for rooms; features no longer accept `properties:`. The cooldown (`nextRewardAt`) is stored, so it survives a restart (section 7.4).
+> `ExtendedProperty` and `GameObject.ExtendedProperties` were deleted in P2-4. Every remaining mention of them below (sections 2, 5, 6 and 7) is historical description of the pre-P2-4 code and design, not current behavior; read "property" there as a component or behavior entry (ARCHITECTURE_V2.md section 5).
 
 Status: DRAFT specification. Docs only; nothing here is implemented.
 Task: t_2c9f6235. Branch: roomspec (based on `hermes`).

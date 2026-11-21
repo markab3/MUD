@@ -129,7 +129,7 @@ same terminal pipeline.
 MUD.Data.Entity                    (abstract; string Id ↔ ObjectId)
 └── GameObject (abstract)          ShortDescription, LongDescription,
     │                              Plurals, Adjectives, Handles,
-    │                              ExtendedProperties, Examine()
+    │                              Examine()
     ├── Living                   Race/Class/Gender, KnownCommands,
     │   │                          Inventory/WornItems/HeldItems,
     │   │                          CurrentLocationId, MatchObjects,
@@ -162,17 +162,15 @@ Rooms are resolved lazily from `CurrentLocationId` via `World.GetRoom` →
   interface (`IPlayerRepository`, `IRoomRepository`) for DI.
 - `MUD.Data.Database` is a dead shell class (commented-out body).
 
-## 8. Extensibility: ExtendedProperties
+## 8. Extensibility: components and behaviors
 
-- `ExtendedProperty : Entity` — behaviors attached to objects, persisted in
-  Mongo like any entity.
-- Capability interfaces: `IHeartbeat` (ticked by `Living.DoHeartbeat`),
-  `ISearchable`, `IExaminable`, `IUpdatable`.
-- Existing: `BleedingProperty` (living), `AdminProperty` / `CreatorProperty`
-  (player privilege flags — presence gates creator commands),
-  `BasicSearchProperty` (room).
-- Attached in-game via creator `apply` command; content modules may define
-  their own property classes and have them DI-scanned.
+- `ExtendedProperty` and `GameObject.ExtendedProperties` were removed in P2-4;
+  see ARCHITECTURE_V2.md for the component model.
+- Core components (MUD.Core/Components): `Roles` (creator/admin/currentDirectory,
+  gates creator and admin commands), `Search` (room search entries) and
+  `status.bleeding`.
+- Behaviors are `BehaviorRef` entries resolved through the component and
+  behavior registries; heartbeats are delivered by the event dispatcher.
 
 ## 9. Output formatting (MUD.Core/Formatting)
 
