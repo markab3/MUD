@@ -40,6 +40,31 @@ else
             <div><button type="submit" formaction="@(RoomEditModel.RoomUrl(Model.Key))?handler=AddExit" formnovalidate>Add exit</button></div>
             <div><label><input asp-for="ConfirmDangling" type="checkbox" /> Save exits to rooms that do not exist</label></div>
         </fieldset>
+        <fieldset>
+            <legend>Features (things in the room that players can look at)</legend>
+            <p><small>Handles, adjectives and plurals: separate words with commas or spaces, for example <code>fountain, basin</code>.
+            A feature keeps any behavior or component set up with the in-game creator commands while its short description stays the same;
+            renaming or removing a feature drops that behavior. The order here is the stored order.</small></p>
+            @for (var i = 0; i < Model.Features.Count; i++)
+            {
+                <fieldset>
+                    <legend>Feature @(i + 1)</legend>
+                    <div><label>Short <input asp-for="Features[i].Short" maxlength="100" /></label></div>
+                    <div><label>Long <textarea asp-for="Features[i].Long" maxlength="4000" rows="4"></textarea></label></div>
+                    <div><label>Room line <input asp-for="Features[i].RoomLine" maxlength="4000" /></label> (optional)</div>
+                    <div><label>Detail <textarea asp-for="Features[i].Detail" maxlength="4000" rows="3"></textarea></label> (optional)</div>
+                    <div><label>Handles <input asp-for="Features[i].Handles" /></label> (comma or space separated)</div>
+                    <div><label>Adjectives <input asp-for="Features[i].Adjectives" /></label> (comma or space separated)</div>
+                    <div><label>Plurals <input asp-for="Features[i].Plurals" /></label> (comma or space separated)</div>
+                    <div>
+                        <button type="submit" formaction="@(RoomEditModel.RoomUrl(Model.Key))?handler=MoveFeatureUp&amp;index=@i" formnovalidate>Move up</button>
+                        <button type="submit" formaction="@(RoomEditModel.RoomUrl(Model.Key))?handler=MoveFeatureDown&amp;index=@i" formnovalidate>Move down</button>
+                        <button type="submit" formaction="@(RoomEditModel.RoomUrl(Model.Key))?handler=RemoveFeature&amp;index=@i" formnovalidate>Remove</button>
+                    </div>
+                </fieldset>
+            }
+            <div><button type="submit" formaction="@(RoomEditModel.RoomUrl(Model.Key))?handler=AddFeature" formnovalidate>Add feature</button></div>
+        </fieldset>
         <button type="submit" formaction="@(RoomEditModel.RoomUrl(Model.Key))?handler=Save">Save room</button>
     </form>
 

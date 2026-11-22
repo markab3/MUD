@@ -140,6 +140,12 @@ public class FakeAdminClient : IAdminClient
             if (request.HasZ) { current.Z = request.Z; }
             current.Exits.Clear();
             current.Exits.AddRange(request.Exits);
+            // What core does: Features change only when the caller says it sent them (features_present).
+            if (request.FeaturesPresent)
+            {
+                current.Features.Clear();
+                current.Features.AddRange(request.Features);
+            }
             Rooms[request.Key] = current;
         }
         else if (Rooms.TryGetValue(request.Key, out var unchanged))

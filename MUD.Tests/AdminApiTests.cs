@@ -1041,6 +1041,219 @@ namespace MUD.Tests
             Assert.Equal(1, f.Api.ListAudit(new ListAuditRequest { Token = adam, EntityId = "t.hall", PageSize = 1 }).Items.Count);
         }
 
+        // ---- room features (card: Admin API room features)
+
+        private static RoomFeature Feat(string shortText, string longText = "a long text", string roomLine = "", string detail = "", params string[] handles)
+        {
+            var f = new RoomFeature { Short = shortText, Long = longText, RoomLine = roomLine, Detail = detail };
+            f.Handles.AddRange(handles);
+            return f;
+        }
+
+        private static RoomEditRequest WithFeatures(Fixture f, string token, params RoomFeature[] features)
+        {
+            Room hall = f.Rooms.Cache["t.hall"];
+            RoomEditRequest request = Fixture.Edit(token, "t.hall", hall.ShortDescription, hall.LongDescription, "t", hall.Exits[0].Name, "t.start");
+            request.FeaturesPresent = true;
+            request.Features.AddRange(features);
+            return request;
+        }
+
+        private static Feature LiveFeature(string shortText, string roomLine = null, params string[] handles)
+        {
+            return new Feature { Id = "t.hall#" + shortText.ToLowerInvariant(), ShortDescription = shortText, LongDescription = "long " + shortText, RoomLine = roomLine, Handles = handles.ToList() };
+        }
+
+        [Fact]
+        public void FeaturesCanBeAddedEditedRemovedAndReordered()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            string token = f.Login("cris");
+            Room hall = f.Rooms.Cache["t.hall"];
+
+            // add (empty room_line and detail are stored as null)
+            RoomEditReply added = f.Api.UpdateRoom(WithFeatures(f, token, Feat("a table", "A table.", "", "", "table"), Feat("a statue", "A statue.", "A statue stands here.", "Cold stone.", "statue")));
+            Assert.Equal(AdminResult.Ok, added.Result);
+            Assert.Equal(new[] { "a table", "a statue" }, hall.Features.Select(x => x.ShortDescription).ToArray());
+            Assert.Null(hall.Features[0].RoomLine);
+            Assert.Null(hall.Features[0].DetailDescription);
+            Assert.Equal("A statue stands here.", hall.Features[1].RoomLine);
+            Assert.Equal(new[] { "table" }, hall.Features[0].Handles.ToArray());
+            Assert.Equal(new[] { "a table", "a statue" }, added.Room.Features.Select(x => x.Short).ToArray());
+            Assert.Equal(2, f.Rooms.Stored["t.hall"]["Features"].AsBsonArray.Count);
+            Assert.True(f.Rooms.Stored["t.hall"]["Features"][0]["RoomLine"].IsBsonNull);
+
+            // edit (matched case-insensitively by short, so the live object is kept)
+            Feature tableObject = hall.Features[0];
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateRoom(WithFeatures(f, token, Feat("A TABLE", "A big table.", "", "", "table", "desk"), Feat("a statue", "A statue.", "A statue stands here.", "Cold stone.", "statue"))).Result);
+            Assert.Same(tableObject, hall.Features[0]);
+            Assert.Equal("A big table.", hall.Features[0].LongDescription);
+            Assert.Equal(new[] { "table", "desk" }, hall.Features[0].Handles.ToArray());
+
+            // reorder
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateRoom(WithFeatures(f, token, Feat("a statue", "A statue.", "A statue stands here.", "Cold stone.", "statue"), Feat("A TABLE", "A big table.", "", "", "table", "desk"))).Result);
+            Assert.Equal(new[] { "a statue", "A TABLE" }, hall.Features.Select(x => x.ShortDescription).ToArray());
+            Assert.Equal("a statue", f.Rooms.Stored["t.hall"]["Features"][0]["ShortDescription"].AsString);
+
+            // remove one, then all (present with an empty list)
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateRoom(WithFeatures(f, token, Feat("a statue", "A statue.", "A statue stands here.", "Cold stone.", "statue"))).Result);
+            Assert.Single(hall.Features);
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateRoom(WithFeatures(f, token)).Result);
+            Assert.Empty(hall.Features);
+            Assert.Empty(f.Rooms.Stored["t.hall"]["Features"].AsBsonArray);
+        }
+
+        [Fact]
+        public void AFeatureEditNeverTouchesItemsOrOccupantsAndAuditsOldAndNew()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            Person pat = f.AddPlayer("Pat");
+            Room hall = f.Rooms.Cache["t.hall"];
+            hall.Occupants.Add(pat);
+            hall.Items.Add(new InventoryItem());
+            string token = f.Login("cris");
+
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateRoom(WithFeatures(f, token, Feat("a table", "A table.", "", "", "table"))).Result);
+            Assert.Single(hall.Occupants);
+            Assert.Single(hall.Items);
+            Assert.Contains("Something feels different...", pat.Messages);
+
+            AuditRecord row = f.Audit.Rows.Single();
+            Assert.Equal("Features", row.Field);
+            Assert.Equal("room", row.Entity);
+            Assert.Equal("t.hall", row.EntityId);
+            Assert.True(row.Old.IsBsonArray && row.Old.AsBsonArray.Count == 0);
+            Assert.Equal("a table", row.New[0]["Short"].AsString);
+            Assert.True(f.Audit.Outcomes[row.Id]);
+
+            // a second edit records the old list too
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateRoom(WithFeatures(f, token, Feat("a table", "A new table.", "", "", "table"))).Result);
+            AuditRecord second = f.Audit.Rows.Last();
+            Assert.Equal("A table.", second.Old[0]["Long"].AsString);
+            Assert.Equal("A new table.", second.New[0]["Long"].AsString);
+        }
+
+        [Fact]
+        public void ANoOpFeatureListIsNoChange()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            string token = f.Login("cris");
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateRoom(WithFeatures(f, token, Feat("a table", "A table.", "", "", "table"))).Result);
+            int rows = f.Audit.Rows.Count;
+            Assert.Equal(AdminResult.NoChange, f.Api.UpdateRoom(WithFeatures(f, token, Feat("a table", "A table.", "", "", "table"))).Result);
+            Assert.Equal(rows, f.Audit.Rows.Count);
+        }
+
+        [Fact]
+        public void AnOlderCallerThatSendsNoFeaturesLeavesThemUnchanged()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            Room hall = f.Rooms.Cache["t.hall"];
+            hall.Features.Add(LiveFeature("a table", "A table here.", "table"));
+            f.Rooms.Stored["t.hall"] = hall.ToBsonDocument();
+            string token = f.Login("cris");
+
+            RoomEditRequest request = Fixture.Edit(token, "t.hall", "a grand hall", hall.LongDescription, "t", hall.Exits[0].Name, "t.start");
+            Assert.False(request.FeaturesPresent);
+            RoomEditReply reply = f.Api.UpdateRoom(request);
+            Assert.Equal(AdminResult.Ok, reply.Result);
+            Assert.Equal("a table", hall.Features.Single().ShortDescription);
+            Assert.Single(f.Rooms.Stored["t.hall"]["Features"].AsBsonArray);
+            Assert.DoesNotContain(f.Audit.Rows, r => r.Field == "Features");
+            Assert.Equal("a table", reply.Room.Features.Single().Short);
+        }
+
+        [Fact]
+        public void FeatureBehaviorAndComponentConfigSurvivesAnEditByShort()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            Room hall = f.Rooms.Cache["t.hall"];
+            Feature storm = LiveFeature("a wall of sand", "Sand swirls.", "sand");
+            storm.SetComponent("desert.storm", new BsonDocument("endsAt", 99));
+            hall.Features.Add(storm);
+            f.Rooms.Stored["t.hall"] = hall.ToBsonDocument();
+            string token = f.Login("cris");
+
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateRoom(WithFeatures(f, token, Feat("A Table", "A table.", "", "", "table"), Feat("a wall of sand", "Sand, edited.", "Sand swirls.", "", "sand", "wall"))).Result);
+            Assert.Same(storm, hall.Features[1]);
+            Assert.Equal(99, hall.Features[1].Components["desert"]["storm"]["endsAt"].AsInt32);
+            Assert.Equal("Sand, edited.", hall.Features[1].LongDescription);
+            BsonDocument stored = f.Rooms.Stored["t.hall"]["Features"][1].AsBsonDocument;
+            Assert.Equal(99, stored["components"]["desert"]["storm"]["endsAt"].AsInt32);
+            Assert.Equal("Sand, edited.", stored["LongDescription"].AsString);
+            Assert.Equal("t.hall#a wall of sand", stored["_id"].ToString());
+        }
+
+        [Fact]
+        public void InvalidFeaturesAreRefusedWithFieldErrorsAndChangeNothing()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            string token = f.Login("cris");
+            Room hall = f.Rooms.Cache["t.hall"];
+
+            var cases = new Dictionary<string, RoomFeature[]>
+            {
+                ["Features[0].Short"] = new[] { Feat("", "long") },
+                ["Features[0].Long"] = new[] { Feat("a table", "  ") },
+                ["Features[0].RoomLine"] = new[] { Feat("a table", "long", new string('x', 4001)) },
+                ["Features[0].Detail"] = new[] { Feat("a table", "long", "", "bad\u0001text") },
+                ["Features[0].Handles"] = new[] { Feat("a table", "long", "", "", "") },
+                ["Features"] = new[] { Feat("a table"), Feat("A TABLE") }
+            };
+            foreach (var pair in cases)
+            {
+                RoomEditReply reply = f.Api.UpdateRoom(WithFeatures(f, token, pair.Value));
+                Assert.Equal(AdminResult.Invalid, reply.Result);
+                Assert.Contains(reply.Errors, e => e.Field == pair.Key);
+            }
+            RoomFeature tooLong = Feat(new string('s', 101));
+            Assert.Equal(AdminResult.Invalid, f.Api.UpdateRoom(WithFeatures(f, token, tooLong)).Result);
+            Assert.Empty(hall.Features);
+            Assert.Empty(f.Audit.Rows);
+        }
+
+        [Fact]
+        public void FeatureTextIsNormalisedAndTrailingWhitespaceIsDropped()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            string token = f.Login("cris");
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateRoom(WithFeatures(f, token, Feat("a table  ", "Line one.  \r\nLine two.  \r\n", "   ", "", "table"))).Result);
+            Feature table = f.Rooms.Cache["t.hall"].Features.Single();
+            Assert.Equal("a table", table.ShortDescription);
+            Assert.Equal("Line one.\nLine two.", table.LongDescription);
+            Assert.Null(table.RoomLine);
+        }
+
+        [Fact]
+        public void GetRoomAndListRoomsCarryTheFeatures()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            f.Rooms.Cache["t.hall"].Features.Add(LiveFeature("a table", "Here.", "table"));
+            f.Rooms.Stored["t.hall"] = f.Rooms.Cache["t.hall"].ToBsonDocument();
+            string token = f.Login("cris");
+            Assert.Equal("a table", f.Api.GetRoom(new GetRoomRequest { Token = token, Key = "t.hall" }).Room.Features.Single().Short);
+            Assert.Equal("Here.", f.Api.GetRoom(new GetRoomRequest { Token = token, Key = "t.hall" }).Room.Features.Single().RoomLine);
+            Assert.Equal("table", f.Api.ListRooms(new TokenRequest { Token = token }).Rooms.Single(r => r.Key == "t.hall").Features.Single().Handles.Single());
+        }
+
+        [Fact]
+        public void ACallerWithoutTheCreatorRoleCannotEditFeatures()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Pat");
+            string token = f.Login("pat");
+            Assert.Equal(AdminFailure.Forbidden, Refused(() => f.Api.UpdateRoom(WithFeatures(f, token, Feat("a table")))).Failure);
+            Assert.Empty(f.Rooms.Cache["t.hall"].Features);
+        }
+
         // ------------------------------------------------------------------ modules
 
         private static Fixture ModuleFixture(out string anonymous, out string player, out string creator, out string admin)

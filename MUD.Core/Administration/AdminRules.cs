@@ -101,6 +101,73 @@ namespace MUD.Core.Administration
         }
     }
 
+    /// <summary>
+    /// Validation of a room's replacement Feature list. Verdicts come from MUD.Data.RoomRules (the importer's rules: short and long
+    /// required, no duplicate short in a room compared case-insensitively, room_line and detail optional with empty stored as null,
+    /// text normalised per ROOM_FILES.md section 11). The importer has no handle requirement, so none is made here.
+    /// </summary>
+    public static class AdminFeatureValidator
+    {
+        /// <summary>Guard on request size; the importer has no such limit.</summary>
+        public const int MaxFeatures = 64;
+        public const int MaxWordsPerList = 32;
+
+        public sealed class Result
+        {
+            public List<RoomFeature> Features = new List<RoomFeature>();
+            public List<FieldError> Errors = new List<FieldError>();
+        }
+
+        public static Result Validate(IEnumerable<RoomFeature> features)
+        {
+            var result = new Result();
+            List<RoomFeature> all = (features ?? new RoomFeature[0]).ToList();
+            if (all.Count > MaxFeatures) { result.Errors.Add(AdminPlayerValidator.Error("Features", "At most " + MaxFeatures + " features are supported.")); return result; }
+            for (int i = 0; i < all.Count; i++)
+            {
+                RoomFeature raw = all[i] ?? new RoomFeature();
+                string prefix = "Features[" + i + "].";
+                var feature = new RoomFeature
+                {
+                    Short = RoomRules.NormalizeText(raw.Short ?? string.Empty),
+                    Long = RoomRules.NormalizeText(raw.Long ?? string.Empty),
+                    RoomLine = RoomRules.NormalizeText(raw.RoomLine ?? string.Empty),
+                    Detail = RoomRules.NormalizeText(raw.Detail ?? string.Empty)
+                };
+                Report(result, prefix + "Short", RoomRules.CheckFeatureShort(feature.Short));
+                Report(result, prefix + "Long", RoomRules.CheckFeatureLong(feature.Long));
+                Report(result, prefix + "RoomLine", RoomRules.CheckFeatureOptionalText("Room line", feature.RoomLine));
+                Report(result, prefix + "Detail", RoomRules.CheckFeatureOptionalText("Detail", feature.Detail));
+                Words(result, prefix + "Handles", "Handle", raw.Handles, feature.Handles);
+                Words(result, prefix + "Adjectives", "Adjective", raw.Adjectives, feature.Adjectives);
+                Words(result, prefix + "Plurals", "Plural", raw.Plurals, feature.Plurals);
+                result.Features.Add(feature);
+            }
+            if (RoomRules.DuplicateFeatureShorts(result.Features.Select(f => f.Short)).Count > 0)
+            {
+                result.Errors.Add(AdminPlayerValidator.Error("Features", "Two features use the same short description."));
+            }
+            return result;
+        }
+
+        private static void Words(Result result, string field, string label, IEnumerable<string> raw, Google.Protobuf.Collections.RepeatedField<string> into)
+        {
+            List<string> all = raw.ToList();
+            if (all.Count > MaxWordsPerList) { result.Errors.Add(AdminPlayerValidator.Error(field, "At most " + MaxWordsPerList + " entries are supported.")); return; }
+            foreach (string word in all)
+            {
+                string trimmed = (word ?? string.Empty).Trim();
+                Report(result, field, RoomRules.CheckFeatureWord(label, trimmed));
+                into.Add(trimmed);
+            }
+        }
+
+        private static void Report(Result result, string field, string problem)
+        {
+            if (problem != null) { result.Errors.Add(AdminPlayerValidator.Error(field, AdminPlayerValidator.Capitalize(problem))); }
+        }
+    }
+
     /// <summary>The one place core validates a room edit. Every verdict comes from MUD.Data.RoomRules, the same rules the importer applies.</summary>
     public static class AdminRoomValidator
     {
