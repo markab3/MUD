@@ -233,6 +233,14 @@ namespace MUD.Core.Administration
             if (live == null) { return RoomReply(AdminResult.NotFound); }
 
             AdminRoomValidator.Result checkedRoom = AdminRoomValidator.Validate(key, request.ShortDescription, request.LongDescription, request.Area, request.Exits, RoomExists);
+            // Features are touched only when the caller says it sent them (features_present); an older caller leaves them alone.
+            List<RoomFeature> newFeatures = null;
+            if (request.FeaturesPresent)
+            {
+                AdminFeatureValidator.Result checkedFeatures = AdminFeatureValidator.Validate(request.Features);
+                checkedRoom.Errors.AddRange(checkedFeatures.Errors);
+                newFeatures = checkedFeatures.Features;
+            }
             if (checkedRoom.Errors.Count > 0) { return RoomReply(AdminResult.Invalid, RoomFrom(live), checkedRoom.Errors); }
             FieldError dangling = DanglingError(checkedRoom, request.ConfirmDangling);
             if (dangling != null) { return RoomReply(AdminResult.Invalid, RoomFrom(live), new[] { dangling }); }
@@ -249,6 +257,18 @@ namespace MUD.Core.Administration
             BsonArray oldExits = ExitsToBson(live.Exits.Select(e => new RoomExit { Name = e.Name, To = e.DestinationId }));
             BsonArray newExits = ExitsToBson(checkedRoom.Exits);
             if (!oldExits.Equals(newExits)) { set["Exits"] = newExits; rows.Add(new AuditChange("Exits", oldExits, newExits)); }
+            bool featuresChanged = false;
+            if (newFeatures != null)
+            {
+                BsonArray oldFeatures = FeaturesToBson((live.Features ?? new List<Feature>()).Where(f => f != null).Select(FeatureToDetail));
+                BsonArray newFeaturesBson = FeaturesToBson(newFeatures);
+                if (!oldFeatures.Equals(newFeaturesBson))
+                {
+                    featuresChanged = true;
+                    set["Features"] = MergedFeatureDocuments(live, newFeatures);
+                    rows.Add(new AuditChange("Features", oldFeatures, newFeaturesBson));
+                }
+            }
             if (rows.Count == 0) { return RoomReply(AdminResult.NoChange, RoomFrom(live)); }
 
             List<AuditRecord> entries = BuildEntries(actor, "room", key, key, rows);
@@ -265,6 +285,7 @@ namespace MUD.Core.Administration
                 live.Z = z;
                 live.Exits = checkedRoom.Exits.Select(e => new Exit { Name = e.Name, DestinationId = e.To }).ToList();
                 live.RebuildExitCommands();
+                if (featuresChanged) { ApplyFeatures(live, newFeatures); }
             });
             Finish(entries, saved);
             if (!saved) { return RoomReply(AdminResult.Failed, RoomFrom(live)); }
@@ -869,6 +890,85 @@ namespace MUD.Core.Administration
             return true;
         }
 
+        // ------------------------------------------------------------------ room features
+
+        // A live Feature as the web sees it: only the fields the web can represent. Never includes behaviors or components.
+        private static RoomFeature FeatureToDetail(Feature feature)
+        {
+            var detail = new RoomFeature
+            {
+                Short = feature.ShortDescription ?? string.Empty,
+                Long = feature.LongDescription ?? string.Empty,
+                RoomLine = feature.RoomLine ?? string.Empty,
+                Detail = feature.DetailDescription ?? string.Empty
+            };
+            detail.Handles.AddRange((feature.Handles ?? new List<string>()).Where(w => w != null));
+            detail.Adjectives.AddRange((feature.Adjectives ?? new List<string>()).Where(w => w != null));
+            detail.Plurals.AddRange((feature.Plurals ?? new List<string>()).Where(w => w != null));
+            return detail;
+        }
+
+        public static BsonArray FeaturesToBson(IEnumerable<RoomFeature> features)
+        {
+            return new BsonArray(features.Select(f => new BsonDocument
+            {
+                { "Short", f.Short },
+                { "Long", f.Long },
+                { "RoomLine", string.IsNullOrEmpty(f.RoomLine) ? (BsonValue)BsonNull.Value : f.RoomLine },
+                { "Detail", string.IsNullOrEmpty(f.Detail) ? (BsonValue)BsonNull.Value : f.Detail },
+                { "Handles", new BsonArray(f.Handles) },
+                { "Adjectives", new BsonArray(f.Adjectives) },
+                { "Plurals", new BsonArray(f.Plurals) }
+            }));
+        }
+
+        private static Feature MatchingFeature(Room room, string shortText)
+        {
+            return (room.Features ?? new List<Feature>()).FirstOrDefault(f => f != null && string.Equals(f.ShortDescription, shortText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // The stored Features array after the edit. A feature that matches a stored one by short keeps everything the web cannot
+        // represent (id, behaviors, components): only the text and word fields are overwritten in a copy of its stored form.
+        private static BsonArray MergedFeatureDocuments(Room room, List<RoomFeature> wanted)
+        {
+            var merged = new BsonArray();
+            foreach (RoomFeature feature in wanted)
+            {
+                Feature existing = MatchingFeature(room, feature.Short);
+                BsonDocument doc = existing != null ? existing.ToBsonDocument() : new Feature { Id = room.Id + "#" + feature.Short.ToLowerInvariant() }.ToBsonDocument();
+                doc["ShortDescription"] = feature.Short;
+                doc["LongDescription"] = feature.Long;
+                doc["RoomLine"] = string.IsNullOrEmpty(feature.RoomLine) ? (BsonValue)BsonNull.Value : feature.RoomLine;
+                doc["DetailDescription"] = string.IsNullOrEmpty(feature.Detail) ? (BsonValue)BsonNull.Value : feature.Detail;
+                doc["Handles"] = new BsonArray(feature.Handles);
+                doc["Adjectives"] = new BsonArray(feature.Adjectives);
+                doc["Plurals"] = new BsonArray(feature.Plurals);
+                merged.Add(doc);
+            }
+            return merged;
+        }
+
+        // The live room gets the same result as MergedFeatureDocuments: matched Feature objects are kept (so their behaviors and
+        // components stay) and have their text and word fields set; new ones are added; the list order is the requested order.
+        // Items and occupants are never touched.
+        private static void ApplyFeatures(Room room, List<RoomFeature> wanted)
+        {
+            var result = new List<Feature>();
+            foreach (RoomFeature feature in wanted)
+            {
+                Feature live = MatchingFeature(room, feature.Short) ?? new Feature { Id = room.Id + "#" + feature.Short.ToLowerInvariant() };
+                live.ShortDescription = feature.Short;
+                live.LongDescription = feature.Long;
+                live.RoomLine = string.IsNullOrEmpty(feature.RoomLine) ? null : feature.RoomLine;
+                live.DetailDescription = string.IsNullOrEmpty(feature.Detail) ? null : feature.Detail;
+                live.Handles = feature.Handles.ToList();
+                live.Adjectives = feature.Adjectives.ToList();
+                live.Plurals = feature.Plurals.ToList();
+                result.Add(live);
+            }
+            room.Features = result;
+        }
+
         private static FieldError DanglingError(AdminRoomValidator.Result checkedRoom, bool confirmed)
         {
             if (checkedRoom.Dangling.Count == 0 || confirmed) { return null; }
@@ -1019,6 +1119,10 @@ namespace MUD.Core.Administration
             {
                 if (exit != null && exit.Name != null && exit.DestinationId != null) { detail.Exits.Add(new RoomExit { Name = exit.Name, To = exit.DestinationId }); }
             }
+            foreach (Feature feature in room.Features ?? new List<Feature>())
+            {
+                if (feature != null) { detail.Features.Add(FeatureToDetail(feature)); }
+            }
             return detail;
         }
 
@@ -1046,6 +1150,26 @@ namespace MUD.Core.Administration
                     string name = Text(element.AsBsonDocument, "Name");
                     string to = Text(element.AsBsonDocument, "DestinationId");
                     if (name != null && to != null) { detail.Exits.Add(new RoomExit { Name = name, To = to }); }
+                }
+            }
+            BsonValue features;
+            if (document.TryGetValue("Features", out features) && features.IsBsonArray)
+            {
+                foreach (BsonValue element in features.AsBsonArray)
+                {
+                    if (!element.IsBsonDocument) { continue; }
+                    BsonDocument f = element.AsBsonDocument;
+                    var feature = new RoomFeature
+                    {
+                        Short = Text(f, "ShortDescription") ?? string.Empty,
+                        Long = Text(f, "LongDescription") ?? string.Empty,
+                        RoomLine = Text(f, "RoomLine") ?? string.Empty,
+                        Detail = Text(f, "DetailDescription") ?? string.Empty
+                    };
+                    feature.Handles.AddRange(Words(f, "Handles"));
+                    feature.Adjectives.AddRange(Words(f, "Adjectives"));
+                    feature.Plurals.AddRange(Words(f, "Plurals"));
+                    detail.Features.Add(feature);
                 }
             }
             return detail;
@@ -1096,6 +1220,13 @@ namespace MUD.Core.Administration
         {
             BsonValue value;
             return document.TryGetValue(name, out value) && !value.IsBsonNull ? value.ToString() : null;
+        }
+
+        private static IEnumerable<string> Words(BsonDocument document, string name)
+        {
+            BsonValue value;
+            if (!document.TryGetValue(name, out value) || !value.IsBsonArray) { return new string[0]; }
+            return value.AsBsonArray.Where(v => v.IsString).Select(v => v.AsString).ToList();
         }
 
         private static int? Number(BsonDocument document, string name)

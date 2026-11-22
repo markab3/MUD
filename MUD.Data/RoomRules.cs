@@ -15,6 +15,10 @@ namespace MUD.Data
         public const int MaxDirection = 32;
         public const int MaxLocalKey = 64;
         public const int MaxKey = 128;
+        // Feature guards for web requests. The importer requires only short and long (and no duplicate short in a room);
+        // it has no handle requirement and no word pattern, so the web asks no more than that either (ROOM_FILES.md 4.4).
+        public const int MaxFeatureText = 4000;
+        public const int MaxFeatureWord = 64;
 
         public static readonly Regex LocalKeyPattern = new Regex("^[a-z0-9_]+$");
         public static readonly Regex PrefixPattern = new Regex("^[a-z0-9_]+(\\.[a-z0-9_]+)*$");
@@ -75,6 +79,47 @@ namespace MUD.Data
             if (value.Length > MaxLong) { return "long description must be at most " + MaxLong + " characters."; }
             if (value.Any(c => char.IsControl(c) && c != '\n' && c != '\t')) { return "long description must not contain control characters."; }
             return null;
+        }
+
+        // Feature short and long follow the room rules. Take normalized text.
+        public static string CheckFeatureShort(string value)
+        {
+            if (string.IsNullOrEmpty(value)) { return "feature short description is required."; }
+            if (value.Length > MaxShort) { return "feature short description must be at most " + MaxShort + " characters."; }
+            if (value.Any(char.IsControl)) { return "feature short description must be a single line without control characters."; }
+            return null;
+        }
+
+        public static string CheckFeatureLong(string value)
+        {
+            if (string.IsNullOrEmpty(value)) { return "feature long description is required."; }
+            if (value.Length > MaxLong) { return "feature long description must be at most " + MaxLong + " characters."; }
+            if (value.Any(c => char.IsControl(c) && c != '\n' && c != '\t')) { return "feature long description must not contain control characters."; }
+            return null;
+        }
+
+        // room_line and detail are optional (empty is stored as null); when present they follow the long text rules.
+        public static string CheckFeatureOptionalText(string label, string value)
+        {
+            if (string.IsNullOrEmpty(value)) { return null; }
+            if (value.Length > MaxFeatureText) { return label + " must be at most " + MaxFeatureText + " characters."; }
+            if (value.Any(c => char.IsControl(c) && c != '\n' && c != '\t')) { return label + " must not contain control characters."; }
+            return null;
+        }
+
+        // A handle, adjective or plural. The importer takes any string; the web refuses only values that could not work.
+        public static string CheckFeatureWord(string label, string word)
+        {
+            if (string.IsNullOrEmpty(word)) { return label + " must not be empty."; }
+            if (word.Length > MaxFeatureWord) { return label + " must be at most " + MaxFeatureWord + " characters."; }
+            if (word.Any(char.IsControl)) { return label + " must not contain control characters."; }
+            return null;
+        }
+
+        // Feature shorts that occur more than once in one room, compared case-insensitively (lowercased in the result).
+        public static List<string> DuplicateFeatureShorts(IEnumerable<string> shorts)
+        {
+            return shorts.GroupBy(s => (s ?? "").ToLowerInvariant()).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
         }
 
         public static string CheckDirection(string direction)

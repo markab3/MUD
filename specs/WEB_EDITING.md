@@ -67,8 +67,10 @@ Web-editable:
 `ShortDescription` (spoken of as "Short"), `LongDescription` ("Long"), `Area`, `X`, `Y`, `Z`,
 `Exits` (list of `{Name, DestinationId}`).
 
-Never web-editable (state or bookkeeping): `_id`, `Items`, `Features`
-(not on the card's list; deferred, Q3), `Handles`/`Adjectives`/`Plurals` (deferred, Q3), runtime
+Web-editable since the Q3 owner decision (see section 15 and `specs/ADMIN_API.md`, "Room features"): the room's `Features`
+list (add, edit, remove, reorder).
+
+Never web-editable (state or bookkeeping): `_id`, `Items`, the room's own `Handles`/`Adjectives`/`Plurals` (deferred, Q3), runtime
 property state, `Rev`/audit fields (written only by the web write path), `source`/`source_hash`
 (importer bookkeeping, ROOM_FILES.md section 9). `Occupants` and `RoomCommandSource` are not
 persisted.
@@ -319,7 +321,7 @@ or `MUD.Data` is the candidate; Q15). Specifically for web saves:
 Q1  Approve the recommended default (section 3) or choose alternative 2/3 (section 11)?
 Q2  Is a poll delay of a few seconds acceptable for web edits to reach the game, and what interval?
 Q3  Should Features, Handles/Adjectives/Plurals and behavior/component config of rooms ever be
-    web-editable? Not on the allow-list; need owner list and their element-merge rules.
+    web-editable? ANSWERED by the owner: Features are (add, edit, remove, reorder); the rest still is not (section 15, Q3).
 Q4  Does the web create/delete rooms and players, or only edit existing ones (the Creator page is
     a stub today)? Deletion rules (occupied rooms, online players)?
 Q5  Can PlayerName be changed (would change NameKey and the unique index)? Spec says no.
@@ -446,7 +448,9 @@ Design
 - Q17: no replica set planned.
 
 Rooms
-- Q3: Features, Handles/Adjectives/Plurals and behavior/component config are not web-editable.
+- Q3 (changed by the owner): a room's Features ARE web-editable: a creator can add, edit, remove and reorder them on the room edit page,
+  through the Admin API `UpdateRoom` (`specs/ADMIN_API.md`, "Room features"). Still not web-editable: the room's own Handles/Adjectives/Plurals
+  and behavior/component config; a Feature's behavior or component data is preserved untouched when its text is edited.
 - Q4: the web can create and delete rooms. The default room (StartRoomKey) can never be deleted.
 - Deleting a room: before moving anything, verify the destination exists; if not, refuse the delete and move nothing. Everything inside (players, NPCs, floor items) moves to a RANDOM adjacent room (an exit whose destination exists and is not the deleted room); with none, to the default room. The destination is told: "A sudden draft of magical wind deposits <entity list> in the room!" Exits in remaining rooms that point at the deleted room are removed and recorded in the audit. An online player in a deleted room is moved the same way.
 - Updating a room: the room is told "Something feels different..."
