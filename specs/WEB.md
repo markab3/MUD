@@ -74,9 +74,14 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   `MoveRoom` call. Core inserts the room under the new key, deletes the old one, repoints exits in other rooms and players'
   stored locations, keeps occupants inside, and audits a `Key` change. Refused for the default room and for a key that
   already exists.
-- Features (backend done, `specs/ADMIN_API.md` "Room features"; the page UI is a following card): the room edit page will let a creator add,
-  edit, remove and reorder the room's Features and send the whole list with `features_present` set. `RoomDetail.features` already carries
-  them. Until the page is changed it does not send the list, so saving a room leaves its Features as they are.
+- Features: a Features fieldset below Exits (card "Website: features editor"). Per feature: short, long (textarea), room line, detail
+  (textarea), handles, adjectives, plurals (each one text field, words separated by commas or spaces, stated on the page), and Move up,
+  Move down and Remove buttons; Add feature adds an empty row. These are form round trips (handlers `AddFeature`, `RemoveFeature`,
+  `MoveFeatureUp`, `MoveFeatureDown`, no write, no JavaScript); at most 64 rows. The same Save sends the whole list in the same `UpdateRoom`
+  call with `features_present` true (an empty list removes all Features). Core's field errors (`Features[i].*`, duplicate short) are shown
+  in the page's error summary, prefixed "Feature N:" (1-based). Behavior and component config is not in the contract: core keeps it for a
+  feature whose short is unchanged (`specs/ADMIN_API.md`), so the page shows one general note that renaming or removing a feature drops it
+  (it cannot mark individual rows, because `RoomFeature` does not say which have behavior).
 - Last write wins (D30): there is no revision, no hidden `Rev` field and no conflict page. Two edits in a row both
   apply; the audit rows hold the previous value of every changed field.
 - Core's answers map to fixed page messages: `OK` (saved), `NO_CHANGE`, `INVALID` (core's field errors are shown and the

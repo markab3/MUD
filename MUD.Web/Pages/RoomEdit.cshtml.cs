@@ -21,6 +21,8 @@ public class RoomEditModel : PageModel
 
     // Web-only guard on form size; core applies the same limit (AdminRoomValidator.MaxExits).
     public const int MaxFormExits = 32;
+    // Same limit as core (AdminFeatureValidator.MaxFeatures).
+    public const int MaxFormFeatures = 64;
 
     private readonly IAdminClient _core;
 
@@ -42,6 +44,7 @@ public class RoomEditModel : PageModel
     [BindProperty] public int? Z { get; set; }
     [BindProperty] public bool ConfirmDangling { get; set; }
     [BindProperty] public List<ExitInput> Exits { get; set; } = new();
+    [BindProperty] public List<FeatureInput> Features { get; set; } = new();
 
     public string? Error { get; private set; }
     public string? Notice { get; private set; }
@@ -68,6 +71,7 @@ public class RoomEditModel : PageModel
     {
         Key = key;
         TrimExits();
+        TrimFeatures();
         try
         {
             var request = new RoomEditRequest
@@ -82,6 +86,9 @@ public class RoomEditModel : PageModel
             if (Y.HasValue) { request.Y = Y.Value; }
             if (Z.HasValue) { request.Z = Z.Value; }
             request.Exits.AddRange(Exits.Select(ToExit));
+            // The whole list in page order: core replaces the Features and keeps the behavior config of those matched by short.
+            request.FeaturesPresent = true;
+            request.Features.AddRange(Features.Select(ToFeature));
 
             var reply = await _core.UpdateRoomAsync(Token, request, HttpContext.RequestAborted);
             switch (reply.Result)
@@ -97,7 +104,7 @@ public class RoomEditModel : PageModel
                     ModelState.Clear();
                     return Page();
                 case AdminResult.Invalid:
-                    foreach (var e in reply.Errors) { ModelState.AddModelError(string.Empty, e.Message); }
+                    foreach (var e in reply.Errors) { ModelState.AddModelError(string.Empty, FeatureErrorText(e)); }
                     return Page();
                 case AdminResult.NotFound:
                     return NotFoundPage();
@@ -134,6 +141,50 @@ public class RoomEditModel : PageModel
         var gone = await CheckRoomExists(key);
         if (gone != null) { return gone; }
         if (index >= 0 && index < Exits.Count) { Exits.RemoveAt(index); }
+        ModelState.Clear();
+        return Page();
+    }
+
+    // Adds an empty feature row (no save).
+    public async Task<IActionResult> OnPostAddFeatureAsync(string key)
+    {
+        Key = key;
+        var gone = await CheckRoomExists(key);
+        if (gone != null) { return gone; }
+        TrimFeatures();
+        if (Features.Count < MaxFormFeatures) { Features.Add(new FeatureInput()); }
+        ModelState.Clear();
+        return Page();
+    }
+
+    // Removes one feature row from the form (no save).
+    public async Task<IActionResult> OnPostRemoveFeatureAsync(string key, int index)
+    {
+        Key = key;
+        var gone = await CheckRoomExists(key);
+        if (gone != null) { return gone; }
+        TrimFeatures();
+        if (index >= 0 && index < Features.Count) { Features.RemoveAt(index); }
+        ModelState.Clear();
+        return Page();
+    }
+
+    public Task<IActionResult> OnPostMoveFeatureUpAsync(string key, int index) => MoveFeature(key, index, -1);
+
+    public Task<IActionResult> OnPostMoveFeatureDownAsync(string key, int index) => MoveFeature(key, index, 1);
+
+    // Swaps a feature row with its neighbour in the form (no save).
+    private async Task<IActionResult> MoveFeature(string key, int index, int step)
+    {
+        Key = key;
+        var gone = await CheckRoomExists(key);
+        if (gone != null) { return gone; }
+        TrimFeatures();
+        var target = index + step;
+        if (index >= 0 && index < Features.Count && target >= 0 && target < Features.Count)
+        {
+            (Features[index], Features[target]) = (Features[target], Features[index]);
+        }
         ModelState.Clear();
         return Page();
     }
@@ -278,6 +329,39 @@ public class RoomEditModel : PageModel
 
     private static RoomExit ToExit(ExitInput e) => new() { Name = (e.Dir ?? string.Empty).Trim(), To = (e.To ?? string.Empty).Trim() };
 
+    private static RoomFeature ToFeature(FeatureInput f)
+    {
+        var feature = new RoomFeature
+        {
+            Short = (f.Short ?? string.Empty).Trim(),
+            Long = (f.Long ?? string.Empty).Trim(),
+            RoomLine = (f.RoomLine ?? string.Empty).Trim(),
+            Detail = (f.Detail ?? string.Empty).Trim(),
+        };
+        feature.Handles.AddRange(SplitWords(f.Handles));
+        feature.Adjectives.AddRange(SplitWords(f.Adjectives));
+        feature.Plurals.AddRange(SplitWords(f.Plurals));
+        return feature;
+    }
+
+    // Words are separated by commas and/or white space; empty pieces are dropped.
+    public static IEnumerable<string> SplitWords(string? text) =>
+        (text ?? string.Empty).Split(new[] { ',', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+    // Core names a feature error "Features[i].Field"; say which feature (1-based, as on the page). The text stays core's fixed sentence.
+    private static string FeatureErrorText(FieldError e)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(e.Field ?? string.Empty, @"^Features\[(\d+)\]\.");
+        return m.Success && int.TryParse(m.Groups[1].Value, out var i) ? "Feature " + (i + 1) + ": " + e.Message : e.Message;
+    }
+
+    private void TrimFeatures()
+    {
+        Features ??= new List<FeatureInput>();
+        if (Features.Count > MaxFormFeatures) { Features = Features.Take(MaxFormFeatures).ToList(); }
+        Features = Features.Where(f => f != null).ToList();
+    }
+
     private void TrimExits()
     {
         Exits ??= new List<ExitInput>();
@@ -299,5 +383,22 @@ public class RoomEditModel : PageModel
         Z = room.HasZ ? room.Z : null;
         ConfirmDangling = false;
         Exits = room.Exits.Select(e => new ExitInput { Dir = e.Name, To = e.To }).ToList();
+        Features = room.Features.Select(f => new FeatureInput
+        {
+            Short = f.Short, Long = f.Long, RoomLine = f.RoomLine, Detail = f.Detail,
+            Handles = string.Join(", ", f.Handles), Adjectives = string.Join(", ", f.Adjectives), Plurals = string.Join(", ", f.Plurals),
+        }).ToList();
     }
+}
+
+/// <summary>One feature row of the room edit form. Each word list is one text field: words separated by commas or spaces.</summary>
+public class FeatureInput
+{
+    public string? Short { get; set; }
+    public string? Long { get; set; }
+    public string? RoomLine { get; set; }
+    public string? Detail { get; set; }
+    public string? Handles { get; set; }
+    public string? Adjectives { get; set; }
+    public string? Plurals { get; set; }
 }
