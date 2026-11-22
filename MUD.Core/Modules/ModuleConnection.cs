@@ -50,6 +50,13 @@ namespace MUD.Core.Modules
 
         public bool IsSubscribed { get; internal set; }
 
+        /// <summary>
+        /// True for the new instance of an overlapping restart until it takes over (MODULES 5.3a): it can call core, but it is not
+        /// the module's routing entry, so it receives no deliveries and its timers do not fire yet.
+        /// </summary>
+        public bool IsPending { get { return _isPending; } internal set { _isPending = value; } }
+        private volatile bool _isPending;
+
         /// <summary>True when the grants file allowed this capability for the connection's manifest (D65: exact string, for example "state" or "emit:entity.move").</summary>
         public bool HasCapability(string capability)
         {

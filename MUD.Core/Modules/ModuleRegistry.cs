@@ -23,6 +23,8 @@ namespace MUD.Core.Modules
         private readonly Dictionary<string, ModuleConnection> _byModuleName = new Dictionary<string, ModuleConnection>(StringComparer.Ordinal);
         // The newest token sequence accepted per module, so a token is good for one connection only.
         private readonly Dictionary<string, long> _lastAcceptedSequence = new Dictionary<string, long>(StringComparer.Ordinal);
+        // Modules whose supervisor started an overlapping restart: the next Hello of the module becomes a pending connection (MODULES 5.3a).
+        private readonly HashSet<string> _handoversExpected = new HashSet<string>(StringComparer.Ordinal);
 
         public ModuleRegistry(ModuleTokenRegistry tokens, ModuleGrants grants, uint coreContractVersion, ModuleHostOptions options = null, Action<string> log = null)
         {
@@ -75,6 +77,40 @@ namespace MUD.Core.Modules
                 ModuleConnection connection;
                 return _byModuleName.TryGetValue(moduleName, out connection) ? connection : null;
             }
+        }
+
+        /// <summary>
+        /// The supervisor is starting a new instance while the old one keeps running (MODULES 5.3a). The next accepted Hello of this module
+        /// becomes a pending connection: the old connection stays the routing entry and is not closed.
+        /// </summary>
+        public void ExpectHandover(string moduleName)
+        {
+            lock (_lock) { _handoversExpected.Add(moduleName); }
+        }
+
+        /// <summary>The overlapping restart is over (done or abandoned). Safe to call more than once.</summary>
+        public void EndHandover(string moduleName)
+        {
+            lock (_lock) { _handoversExpected.Remove(moduleName); }
+        }
+
+        /// <summary>
+        /// Makes a pending connection the module's routing entry in one step. The old connection is returned and stays open (it can still answer
+        /// what it is working on); it gets no new deliveries. False when the connection is closed or not known.
+        /// </summary>
+        public bool Promote(ModuleConnection pending, out ModuleConnection previous)
+        {
+            previous = null;
+            if (pending == null) { return false; }
+            lock (_lock)
+            {
+                ModuleConnection known;
+                if (pending.IsClosed || !_byConnectionId.TryGetValue(pending.ConnectionId, out known) || !ReferenceEquals(known, pending)) { return false; }
+                _byModuleName.TryGetValue(pending.ModuleName, out previous);
+                _byModuleName[pending.ModuleName] = pending;
+                pending.IsPending = false;
+            }
+            return true;
         }
 
         /// <summary>The first call of a module. Never throws for a bad request: the reply says why it was refused.</summary>
@@ -157,8 +193,17 @@ namespace MUD.Core.Modules
                 connection = new ModuleConnection(Guid.NewGuid().ToString("N"), moduleName, request.ModuleVersion ?? "", sequence,
                     manifest, granted, rejected, _options.OutboundQueueCapacity);
                 _byConnectionId[connection.ConnectionId] = connection;
-                _byModuleName[moduleName] = connection;
-                if (replaced != null) { _byConnectionId.Remove(replaced.ConnectionId); }
+                if (replaced != null && !replaced.IsClosed && _handoversExpected.Remove(moduleName))
+                {
+                    // Overlapping restart (MODULES 5.3a): the old connection keeps routing until the supervisor promotes this one.
+                    connection.IsPending = true;
+                    replaced = null;
+                }
+                else
+                {
+                    _byModuleName[moduleName] = connection;
+                    if (replaced != null) { _byConnectionId.Remove(replaced.ConnectionId); }
+                }
             }
 
             // A newer spawn of the same module replaces the older connection (restart overlap, CORE_API 7.3).
@@ -173,7 +218,7 @@ namespace MUD.Core.Modules
             {
                 _log("WARNING: module '" + moduleName + "' starts with a partial grant. Not granted: " + string.Join(", ", rejected) + ".");
             }
-            _log("Module '" + moduleName + "' (version " + connection.ModuleVersion + ") connected as " + connection.ConnectionId + "; granted: "
+            _log("Module '" + moduleName + "' (version " + connection.ModuleVersion + ") connected as " + connection.ConnectionId + (connection.IsPending ? " (pending: the running instance keeps serving until it is Ready)" : "") + "; granted: "
                 + (granted.Count == 0 ? "nothing" : string.Join(", ", granted)) + ".");
 
             reply.Ok = true;

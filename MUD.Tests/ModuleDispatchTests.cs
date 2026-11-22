@@ -728,6 +728,38 @@ namespace MUD.Tests
         }
 
         [Fact]
+        public async Task DuringAnOverlappingRestartATimerFiresOnOneInstanceOnly()
+        {
+            StartHost("timer.schedule");
+            Connected oldInstance = await ConnectAsync("timer.schedule");
+            _registry.ExpectHandover(ModuleName);
+            Connected newInstance = await ConnectAsync("timer.schedule");   // pending: the old one still routes
+            Assert.True(newInstance.Connection.IsPending);
+            Assert.Same(oldInstance.Connection, _registry.FindByModule(ModuleName));
+
+            foreach (Connected instance in new[] { oldInstance, newInstance })
+            {
+                Assert.True((await instance.Client.ScheduleTimerAsync(new TimerRequest { ConnectionId = instance.ConnectionId, TimerId = "t", AtUnixMs = UnixMilliseconds(_clock.Now.AddSeconds(1)) })).Ok);
+            }
+            _clock.Advance(TimeSpan.FromSeconds(2));
+            _game.Run(() => _dispatcher.Tick());
+            Assert.Equal("timer.fired", (await NextAsync(oldInstance)).Name);   // the routing instance gets its timer
+            Assert.Equal(0, newInstance.Connection.PendingDeliveries);          // the pending one does not
+            Assert.Equal(1, _dispatcher.TimerCount(newInstance.Connection));    // and keeps it
+
+            ModuleConnection previous;
+            Assert.True(_registry.Promote(newInstance.Connection, out previous));
+            Assert.Same(oldInstance.Connection, previous);
+            Assert.Same(newInstance.Connection, _registry.FindByModule(ModuleName));
+            Assert.True((await oldInstance.Client.ScheduleTimerAsync(new TimerRequest { ConnectionId = oldInstance.ConnectionId, TimerId = "late", AtUnixMs = UnixMilliseconds(_clock.Now.AddSeconds(1)) })).Ok);
+            _clock.Advance(TimeSpan.FromSeconds(2));
+            _game.Run(() => _dispatcher.Tick());
+            Assert.Equal("timer.fired", (await NextAsync(newInstance)).Name);   // now the new instance gets its timer
+            Assert.Equal(0, oldInstance.Connection.PendingDeliveries);          // the old one never gets another
+            Assert.Equal(0, _dispatcher.TimerCount(oldInstance.Connection));    // its timer was dropped, not kept
+        }
+
+        [Fact]
         public async Task ATimerSetForThePastFiresAfterTheMinimumDelay()
         {
             StartHost("timer.schedule");

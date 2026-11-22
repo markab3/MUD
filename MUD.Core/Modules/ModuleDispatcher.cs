@@ -466,6 +466,9 @@ namespace MUD.Core.Modules
                 foreach (KeyValuePair<string, Dictionary<string, TimerEntry>> held in _timers)
                 {
                     if (held.Value.Count == 0) { continue; }
+                    ModuleConnection connection = _registry.Find(held.Key);
+                    // The new instance of an overlapping restart keeps its timers but they do not fire until it takes over (MODULES 5.3a).
+                    if (connection != null && connection.IsPending) { continue; }
                     List<string> fired = null;
                     foreach (KeyValuePair<string, TimerEntry> pair in held.Value)
                     {
@@ -474,12 +477,13 @@ namespace MUD.Core.Modules
                         fired.Add(pair.Key);
                     }
                     if (fired == null) { continue; }
-                    ModuleConnection connection = _registry.Find(held.Key);
+                    // A connection that is no longer the module's routing entry (the old instance after a handover) gets no timer.fired.
+                    bool active = connection != null && ReferenceEquals(_registry.FindByModule(connection.ModuleName), connection);
                     foreach (string id in fired)
                     {
                         TimerEntry entry = held.Value[id];
                         held.Value.Remove(id);
-                        if (connection == null) { continue; }
+                        if (!active) { continue; }
                         if (due == null) { due = new List<KeyValuePair<ModuleConnection, TimerEntry>>(); }
                         due.Add(new KeyValuePair<ModuleConnection, TimerEntry>(connection, entry));
                     }

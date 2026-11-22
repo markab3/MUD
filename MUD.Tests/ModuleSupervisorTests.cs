@@ -624,6 +624,355 @@ namespace MUD.Tests
             Assert.Equal(1, File.ReadAllLines(tokenFile).Length); // not started again
         }
 
+        // ---- overlapping restart (MODULES 5.3a) ----
+
+        private sealed class Instance
+        {
+            public ModuleHost.ModuleHostClient Client;
+            public HelloReply Reply;
+            public AsyncServerStreamingCall<CoreEvent> Stream;
+            public string ConnectionId { get { return Reply.ConnectionId; } }
+        }
+
+        /// <summary>A supervisor on a real run directory and socket; the test plays the module's side of the handshake.</summary>
+        private ModuleSupervisor NewHostedSupervisor(ModuleSupervisorOptions options, out ModuleRegistry registry, out RunDirectory runDirectory)
+        {
+            runDirectory = RunDirectory.Acquire(Path.Combine(_directory, "run"), _log.Add);
+            _cleanup.Add(runDirectory);
+            ModuleSupervisor unused = NewSupervisor(options, out registry);
+            var supervisor = new ModuleSupervisor(registry, options, runDirectory.ModulesSocketPath, _log.Add);
+            _cleanup.Add(supervisor);
+            var runner = new ModuleHostRunner(runDirectory, registry, action => { Task.Run(action); return true; }, _log.Add);
+            _cleanup.Add(runner);
+            runner.Start();
+            return supervisor;
+        }
+
+        /// <summary>A module script that records its process id and token (one line per start) and then sleeps as the same process.</summary>
+        private string WriteRecordingModule(string name, string beforeSleep = "")
+        {
+            return WriteModule(name, Describe(name),
+                beforeSleep + "echo $$ >> \"" + Path.Combine(_directory, name + ".pids") + "\"\necho \"$MUD_MODULE_TOKEN\" >> \"" + Path.Combine(_directory, name + ".tokens") + "\"\nexec sleep 60");
+        }
+
+        private string[] Lines(string name, string extension)
+        {
+            string path = Path.Combine(_directory, name + extension);
+            try { return File.Exists(path) ? File.ReadAllLines(path) : new string[0]; } catch (IOException) { return new string[0]; }
+        }
+
+        private static bool IsRunning(int processId)
+        {
+            try { using (Process process = Process.GetProcessById(processId)) { return !process.HasExited; } }
+            catch (ArgumentException) { return false; }
+        }
+
+        private static async Task<Instance> HelloAsync(string socketPath, string name, string token, uint contractVersion = 0)
+        {
+            var client = new ModuleHost.ModuleHostClient(ChannelFor(socketPath));
+            HelloReply reply = await client.HelloAsync(new HelloRequest { Module = name, Token = token, ContractVersion = contractVersion == 0 ? ContractVersion.Current : contractVersion, ModuleVersion = "1.0", Manifest = new Manifest { Name = name } });
+            return new Instance { Client = client, Reply = reply };
+        }
+
+        private async Task SubscribeAsync(ModuleRegistry registry, Instance instance)
+        {
+            instance.Stream = instance.Client.Subscribe(new SubscribeRequest { ConnectionId = instance.ConnectionId });
+            _cleanup.Add(instance.Stream);
+            Assert.True(WaitFor(() => registry.Find(instance.ConnectionId).IsSubscribed));
+            await Task.CompletedTask;
+        }
+
+        private async Task<Instance> ConnectReadyAsync(ModuleRegistry registry, ModuleSupervisor supervisor, RunDirectory runDirectory, string name, int startNumber)
+        {
+            Assert.True(WaitFor(() => Lines(name, ".tokens").Length >= startNumber));
+            Instance instance = await HelloAsync(runDirectory.ModulesSocketPath, name, Lines(name, ".tokens")[startNumber - 1]);
+            Assert.True(instance.Reply.Ok, instance.Reply.Refusal);
+            await SubscribeAsync(registry, instance);
+            Assert.True((await instance.Client.ReadyAsync(new ReadyRequest { ConnectionId = instance.ConnectionId })).Ok);
+            return instance;
+        }
+
+        [Fact]
+        public async Task ARestartOfAReadyModuleStartsTheNewInstanceFirstAndRoutesToItOnlyOnceItIsReady()
+        {
+            WriteRecordingModule("swap");
+            ModuleRegistry registry; RunDirectory runDirectory;
+            ModuleSupervisor supervisor = NewHostedSupervisor(FastOptions(), out registry, out runDirectory);
+            supervisor.Start();
+            Instance first = await ConnectReadyAsync(registry, supervisor, runDirectory, "swap", 1);
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swap").State == ModuleState.Ready));
+            int oldProcess = int.Parse(Lines("swap", ".pids")[0]);
+            ModuleConnection oldConnection = registry.Find(first.ConnectionId);
+
+            supervisor.RequestRestart("swap");
+            Assert.True(WaitFor(() => Lines("swap", ".tokens").Length == 2));
+            string[] tokens = Lines("swap", ".tokens");
+            Assert.NotEqual(tokens[0], tokens[1]);                       // a new token for the new instance
+            int newProcess = int.Parse(Lines("swap", ".pids")[1]);
+            Assert.NotEqual(oldProcess, newProcess);
+            Assert.True(IsRunning(oldProcess));                          // D68 did not end the instance being replaced
+            Assert.Equal(ModuleState.Ready, StatusOf(supervisor, "swap").State);
+
+            // The new instance says Hello: it is pending, the old connection is still the routing entry and still open.
+            Instance second = await HelloAsync(runDirectory.ModulesSocketPath, "swap", tokens[1]);
+            Assert.True(second.Reply.Ok, second.Reply.Refusal);
+            Assert.True(registry.Find(second.ConnectionId).IsPending);
+            Assert.Same(oldConnection, registry.FindByModule("swap"));
+            Assert.False(oldConnection.IsClosed);
+            await SubscribeAsync(registry, second);
+            Assert.Same(oldConnection, registry.FindByModule("swap"));   // subscribed but not Ready: still no switch
+            Thread.Sleep(150);
+            Assert.True(IsRunning(oldProcess));
+            Assert.Equal(oldProcess, StatusOf(supervisor, "swap").ProcessId);
+
+            // Ready: from now on routing finds the new connection. Sample FindByModule the whole time: there is never a moment with none.
+            bool gap = false;
+            using (var stop = new CancellationTokenSource())
+            {
+                Task sampler = Task.Run(() => { while (!stop.IsCancellationRequested) { if (registry.FindByModule("swap") == null) { gap = true; } } });
+                Assert.True((await second.Client.ReadyAsync(new ReadyRequest { ConnectionId = second.ConnectionId })).Ok);
+                Assert.True(WaitFor(() => StatusOf(supervisor, "swap").ProcessId == newProcess));
+                Assert.True(WaitFor(() => !IsRunning(oldProcess)));
+                stop.Cancel();
+                await sampler;
+            }
+            Assert.False(gap);
+            Assert.Equal(second.ConnectionId, registry.FindByModule("swap").ConnectionId);
+            Assert.False(registry.FindByModule("swap").IsPending);
+            Assert.True(WaitFor(() => oldConnection.IsClosed));           // the old instance was ended, then its connection closed
+            Assert.True(IsRunning(newProcess));
+            ModuleStatus status = StatusOf(supervisor, "swap");
+            Assert.Equal(ModuleState.Ready, status.State);
+            Assert.Equal(0, status.CrashesInWindow);                      // a restart is not a crash
+            Assert.Equal(1, Lines("swap", ".pids").Length - 1);           // exactly one start for the restart
+            Thread.Sleep(300);
+            Assert.Equal(2, Lines("swap", ".pids").Length);               // and no restart loop afterwards
+        }
+
+        [Fact]
+        public async Task IfTheNewInstanceExitsTheOldOneKeepsRunningAndTheFailureIsReported()
+        {
+            string counter = Path.Combine(_directory, "swapfail.count");
+            WriteRecordingModule("swapfail", "echo x >> \"" + counter + "\"\nif [ $(wc -l < \"" + counter + "\") -ge 2 ]; then echo $$ >> \"" + Path.Combine(_directory, "swapfail.pids") + "\"; exit 4; fi\n");
+            ModuleRegistry registry; RunDirectory runDirectory;
+            ModuleSupervisor supervisor = NewHostedSupervisor(FastOptions(), out registry, out runDirectory);
+            supervisor.Start();
+            Instance first = await ConnectReadyAsync(registry, supervisor, runDirectory, "swapfail", 1);
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapfail").State == ModuleState.Ready));
+            int oldProcess = int.Parse(Lines("swapfail", ".pids")[0]);
+            ModuleConnection oldConnection = registry.Find(first.ConnectionId);
+
+            supervisor.RequestRestart("swapfail");
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapfail").Detail.StartsWith("restart failed")));
+            ModuleStatus status = StatusOf(supervisor, "swapfail");
+            Assert.Contains("exit code 4", status.Detail);
+            Assert.Equal(ModuleState.Ready, status.State);
+            Assert.Equal(oldProcess, status.ProcessId);
+            Assert.Equal(0, status.CrashesInWindow);
+            Assert.True(IsRunning(oldProcess));
+            Assert.False(oldConnection.IsClosed);
+            Assert.Same(oldConnection, registry.FindByModule("swapfail"));
+            Assert.True(WaitFor(() => LogText().Contains("restart failed")));
+            Thread.Sleep(300);
+            Assert.Equal(2, Lines("swapfail", ".pids").Length);           // not retried
+            Assert.Equal(ModuleState.Ready, StatusOf(supervisor, "swapfail").State);
+        }
+
+        [Fact]
+        public async Task IfTheNewInstanceIsRefusedTheOldOneKeepsRunningAndTheNewProcessIsEnded()
+        {
+            WriteRecordingModule("swapref");
+            ModuleRegistry registry; RunDirectory runDirectory;
+            ModuleSupervisor supervisor = NewHostedSupervisor(FastOptions(), out registry, out runDirectory);
+            supervisor.Start();
+            Instance first = await ConnectReadyAsync(registry, supervisor, runDirectory, "swapref", 1);
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapref").State == ModuleState.Ready));
+            int oldProcess = int.Parse(Lines("swapref", ".pids")[0]);
+
+            supervisor.RequestRestart("swapref");
+            Assert.True(WaitFor(() => Lines("swapref", ".tokens").Length == 2));
+            int newProcess = int.Parse(Lines("swapref", ".pids")[1]);
+            Instance second = await HelloAsync(runDirectory.ModulesSocketPath, "swapref", Lines("swapref", ".tokens")[1], contractVersion: 99);
+            Assert.False(second.Reply.Ok);
+
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapref").Detail.StartsWith("restart failed")));
+            Assert.Contains("core refused the new instance", StatusOf(supervisor, "swapref").Detail);
+            Assert.True(WaitFor(() => !IsRunning(newProcess)));          // no leaked process
+            Assert.True(IsRunning(oldProcess));
+            Assert.Equal(first.ConnectionId, registry.FindByModule("swapref").ConnectionId);
+            Assert.Equal(ModuleState.Ready, StatusOf(supervisor, "swapref").State);
+        }
+
+        [Fact]
+        public async Task IfTheNewInstanceIsNotReadyInTimeTheOldOneKeepsRunningAndTheNewProcessIsEnded()
+        {
+            WriteRecordingModule("swapslow");
+            ModuleSupervisorOptions options = FastOptions();
+            options.StartupTimeout = TimeSpan.FromSeconds(2);
+            ModuleRegistry registry; RunDirectory runDirectory;
+            ModuleSupervisor supervisor = NewHostedSupervisor(options, out registry, out runDirectory);
+            supervisor.Start();
+            Instance first = await ConnectReadyAsync(registry, supervisor, runDirectory, "swapslow", 1);
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapslow").State == ModuleState.Ready));
+            int oldProcess = int.Parse(Lines("swapslow", ".pids")[0]);
+
+            supervisor.RequestRestart("swapslow");
+            Assert.True(WaitFor(() => Lines("swapslow", ".pids").Length == 2));
+            int newProcess = int.Parse(Lines("swapslow", ".pids")[1]);
+            // The new instance connects but never calls Ready.
+            Instance second = await HelloAsync(runDirectory.ModulesSocketPath, "swapslow", Lines("swapslow", ".tokens")[1]);
+            Assert.True(second.Reply.Ok);
+            await SubscribeAsync(registry, second);
+
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapslow").Detail.StartsWith("restart failed")));
+            Assert.Contains("start-up timeout", StatusOf(supervisor, "swapslow").Detail);
+            Assert.True(WaitFor(() => !IsRunning(newProcess)));
+            Assert.True(WaitFor(() => registry.Find(second.ConnectionId) == null));   // its connection is dropped too
+            Assert.True(IsRunning(oldProcess));
+            Assert.Equal(first.ConnectionId, registry.FindByModule("swapslow").ConnectionId);
+            Assert.Equal(ModuleState.Ready, StatusOf(supervisor, "swapslow").State);
+            Assert.Equal(0, StatusOf(supervisor, "swapslow").CrashesInWindow);
+        }
+
+        [Fact]
+        public async Task IfTheRunningInstanceEndsDuringTheOverlapTheOverlapIsDroppedAndCrashHandlingTakesOver()
+        {
+            WriteRecordingModule("swapdie");
+            ModuleRegistry registry; RunDirectory runDirectory;
+            ModuleSupervisor supervisor = NewHostedSupervisor(FastOptions(), out registry, out runDirectory);
+            supervisor.Start();
+            await ConnectReadyAsync(registry, supervisor, runDirectory, "swapdie", 1);
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapdie").State == ModuleState.Ready));
+            int oldProcess = int.Parse(Lines("swapdie", ".pids")[0]);
+
+            supervisor.RequestRestart("swapdie");
+            Assert.True(WaitFor(() => Lines("swapdie", ".pids").Length == 2));
+            int newProcess = int.Parse(Lines("swapdie", ".pids")[1]);
+            ModuleProcessSupport_Kill(oldProcess);
+
+            Assert.True(WaitFor(() => !IsRunning(newProcess)));          // the abandoned overlap ended the new process
+            Assert.True(WaitFor(() => LogText().Contains("the running instance ended during the restart")));
+            Assert.True(WaitFor(() => Lines("swapdie", ".pids").Length >= 3));   // backoff restart of the module, as for any crash
+        }
+
+        private static void ModuleProcessSupport_Kill(int processId)
+        {
+            using (Process process = Process.GetProcessById(processId)) { process.Kill(); process.WaitForExit(5000); }
+        }
+
+        [Fact]
+        public async Task AnAdminStopDuringTheOverlapCancelsItAndStopsTheModule()
+        {
+            WriteRecordingModule("swapstop");
+            ModuleRegistry registry; RunDirectory runDirectory;
+            ModuleSupervisor supervisor = NewHostedSupervisor(FastOptions(), out registry, out runDirectory);
+            supervisor.Start();
+            await ConnectReadyAsync(registry, supervisor, runDirectory, "swapstop", 1);
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapstop").State == ModuleState.Ready));
+            int oldProcess = int.Parse(Lines("swapstop", ".pids")[0]);
+
+            supervisor.RequestRestart("swapstop");
+            Assert.True(WaitFor(() => Lines("swapstop", ".pids").Length == 2));
+            int newProcess = int.Parse(Lines("swapstop", ".pids")[1]);
+            supervisor.RequestStop("swapstop");
+
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapstop").State == ModuleState.Stopped));
+            Assert.True(WaitFor(() => !IsRunning(oldProcess) && !IsRunning(newProcess)));
+            Thread.Sleep(300);
+            Assert.Equal(2, Lines("swapstop", ".pids").Length);           // not restarted
+            Assert.Equal(ModuleState.Stopped, StatusOf(supervisor, "swapstop").State);
+        }
+
+        [Fact]
+        public async Task StoppingTheSupervisorDuringTheOverlapEndsBothProcesses()
+        {
+            WriteRecordingModule("swapcore");
+            ModuleRegistry registry; RunDirectory runDirectory;
+            ModuleSupervisor supervisor = NewHostedSupervisor(FastOptions(), out registry, out runDirectory);
+            supervisor.Start();
+            await ConnectReadyAsync(registry, supervisor, runDirectory, "swapcore", 1);
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapcore").State == ModuleState.Ready));
+            int oldProcess = int.Parse(Lines("swapcore", ".pids")[0]);
+            supervisor.RequestRestart("swapcore");
+            Assert.True(WaitFor(() => Lines("swapcore", ".pids").Length == 2));
+            int newProcess = int.Parse(Lines("swapcore", ".pids")[1]);
+
+            supervisor.Stop();
+            Assert.True(WaitFor(() => !IsRunning(oldProcess) && !IsRunning(newProcess), 5));
+        }
+
+        [Fact]
+        public async Task ASecondRestartDuringTheOverlapIsIgnored()
+        {
+            WriteRecordingModule("swaptwice");
+            ModuleRegistry registry; RunDirectory runDirectory;
+            ModuleSupervisor supervisor = NewHostedSupervisor(FastOptions(), out registry, out runDirectory);
+            supervisor.Start();
+            await ConnectReadyAsync(registry, supervisor, runDirectory, "swaptwice", 1);
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swaptwice").State == ModuleState.Ready));
+            supervisor.RequestRestart("swaptwice");
+            supervisor.RequestRestart("swaptwice");
+            Assert.True(WaitFor(() => LogText().Contains("is already being restarted")));
+            Thread.Sleep(200);
+            Assert.Equal(2, Lines("swaptwice", ".pids").Length);
+        }
+
+        [Fact]
+        public void ARestartOfAStoppedModuleIsAPlainStart()
+        {
+            WriteRecordingModule("swapoff");
+            ModuleRegistry registry;
+            ModuleSupervisor supervisor = NewSupervisor(FastOptions(), out registry);
+            supervisor.Start();
+            Assert.True(WaitFor(() => Lines("swapoff", ".pids").Length == 1));
+            supervisor.RequestStop("swapoff");
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapoff").State == ModuleState.Stopped));
+            int stopped = int.Parse(Lines("swapoff", ".pids")[0]);
+            Assert.True(WaitFor(() => !IsRunning(stopped)));
+
+            supervisor.RequestRestart("swapoff");
+            Assert.True(WaitFor(() => Lines("swapoff", ".pids").Length == 2));
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapoff").ProcessId == int.Parse(Lines("swapoff", ".pids")[1])));
+            Assert.DoesNotContain("restart: new instance", LogText());   // no overlap was started
+        }
+
+        [Fact]
+        public void ARestartOfAModuleThatIsNotYetReadyReplacesItWithoutAnOverlap()
+        {
+            WriteRecordingModule("swapearly");
+            ModuleRegistry registry;
+            ModuleSupervisor supervisor = NewSupervisor(FastOptions(), out registry);
+            supervisor.Start();
+            Assert.True(WaitFor(() => Lines("swapearly", ".pids").Length == 1));
+            int first = int.Parse(Lines("swapearly", ".pids")[0]);       // Starting: it never connected
+            supervisor.RequestRestart("swapearly");
+            Assert.True(WaitFor(() => Lines("swapearly", ".pids").Length == 2));
+            Assert.True(WaitFor(() => !IsRunning(first)));
+            Assert.DoesNotContain("restart: new instance", LogText());
+        }
+
+        [Fact]
+        public void ARestartOfAModuleWithACrashBackoffPendingStartsItAtOnceAndClearsTheCrashHistory()
+        {
+            string runs = Path.Combine(_directory, "swapbackoff.runs");
+            WriteModule("swapbackoff", Describe("swapbackoff"), "echo x >> \"" + runs + "\"\nexit 3");
+            ModuleSupervisorOptions options = FastOptions();
+            options.RestartBackoff = new[] { TimeSpan.FromSeconds(30) };  // the module would wait 30 s
+            options.CrashLoopMaxCrashes = 5;
+            ModuleRegistry registry;
+            ModuleSupervisor supervisor = NewSupervisor(options, out registry);
+            supervisor.Start();
+            Assert.True(WaitFor(() => StatusOf(supervisor, "swapbackoff") != null && StatusOf(supervisor, "swapbackoff").State == ModuleState.Backoff));
+            Assert.Equal(1, File.ReadAllLines(runs).Length);
+            Assert.Equal(1, StatusOf(supervisor, "swapbackoff").CrashesInWindow);
+
+            supervisor.RequestRestart("swapbackoff");
+            Assert.True(WaitFor(() => File.ReadAllLines(runs).Length == 2, 5));   // started now, not in 30 s
+            // It crashes again at once, so it is back in Backoff with exactly one crash: the history was cleared by the restart.
+            Assert.True(WaitFor(() => { ModuleStatus s = StatusOf(supervisor, "swapbackoff"); return s.State == ModuleState.Backoff && s.CrashesInWindow == 1; }));
+            Assert.Equal(2, File.ReadAllLines(runs).Length);
+        }
+
         // ---- settings ----
 
         [Fact]
