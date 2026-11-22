@@ -15,6 +15,7 @@ public class RoomEditModel : PageModel
     public const string NotFoundError = "That room no longer exists.";
     public const string FailedError = "The room could not be saved. Please try again later.";
     public const string AuditFailedError = "The change could not be recorded, so nothing was saved. Please try again later.";
+    public const string MoveExistsError = "A room with that key already exists.";
     public const string ForbiddenError = "You are not allowed to edit rooms.";
     public const string UnavailableError = "The game is not reachable right now. Please try again later.";
 
@@ -56,6 +57,7 @@ public class RoomEditModel : PageModel
             var room = await _core.GetRoomAsync(Token, key, HttpContext.RequestAborted);
             if (room == null) { return NotFoundPage(); }
             Load(room);
+            if (TempData?["Notice"] is string carried) { Notice = carried; }
             return Page();
         }
         catch (CoreUnavailableException) { return UnavailablePage(); }
@@ -134,6 +136,63 @@ public class RoomEditModel : PageModel
         if (index >= 0 && index < Exits.Count) { Exits.RemoveAt(index); }
         ModelState.Clear();
         return Page();
+    }
+
+    [BindProperty] public string? NewArea { get; set; }
+    [BindProperty] public string? NewLocalKey { get; set; }
+
+    // Existing area prefixes for the move form's autocomplete; none when core cannot answer.
+    public async Task<IReadOnlyList<string>> GetAreasAsync()
+    {
+        try
+        {
+            var rooms = await _core.ListRoomsAsync(Token, HttpContext.RequestAborted);
+            return rooms.Select(r => r.Area).Where(a => !string.IsNullOrWhiteSpace(a)).Distinct(StringComparer.Ordinal).OrderBy(a => a, StringComparer.Ordinal).ToList();
+        }
+        catch (CoreUnavailableException) { return Array.Empty<string>(); }
+        catch (CoreRefusedException) { return Array.Empty<string>(); }
+    }
+
+    // Gives the room a new key (area prefix and/or local key). Players inside, contents and exits that led here follow it.
+    public async Task<IActionResult> OnPostMoveAsync(string key)
+    {
+        Key = key;
+        try
+        {
+            var reply = await _core.MoveRoomAsync(Token, key, (NewArea ?? string.Empty).Trim(), (NewLocalKey ?? string.Empty).Trim(), HttpContext.RequestAborted);
+            switch (reply.Result)
+            {
+                case AdminResult.Ok:
+                    TempData["Notice"] = string.IsNullOrEmpty(reply.Message) ? "Room moved." : reply.Message;
+                    return Redirect(RoomUrl(reply.Room?.Key ?? key));
+                case AdminResult.NoChange:
+                    Notice = "Nothing was changed.";
+                    break;
+                case AdminResult.Invalid:
+                    foreach (var e in reply.Errors) { ModelState.AddModelError(string.Empty, e.Message); }
+                    break;
+                case AdminResult.AlreadyExists:
+                    Error = MoveExistsError;
+                    break;
+                case AdminResult.Refused:
+                    Error = string.IsNullOrEmpty(reply.Message) ? FailedError : reply.Message;
+                    break;
+                case AdminResult.NotFound:
+                    return NotFoundPage();
+                case AdminResult.AuditFailed:
+                    Error = AuditFailedError;
+                    break;
+                case AdminResult.Forbidden:
+                    Error = ForbiddenError;
+                    break;
+                default:
+                    Error = FailedError;
+                    break;
+            }
+            return await ReloadAfterError(key);
+        }
+        catch (CoreUnavailableException) { return UnavailablePage(); }
+        catch (CoreRefusedException) { return ForbiddenPage(); }
     }
 
     public async Task<IActionResult> OnPostDeleteAsync(string key)
@@ -228,6 +287,10 @@ public class RoomEditModel : PageModel
 
     private void Load(RoomDetail room)
     {
+        var dot = room.Key.IndexOf('.');
+        NewArea ??= dot > 0 ? room.Key.Substring(0, dot) : room.Area;
+        NewLocalKey ??= dot > 0 ? room.Key.Substring(dot + 1) : room.Key;
+
         Short = room.ShortDescription;
         Long = room.LongDescription;
         Area = room.Area;

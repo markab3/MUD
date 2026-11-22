@@ -70,6 +70,10 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   live room, writes one audit row per changed field (audit first) and applies the change to the live room on the game
   thread. The reply carries the room as it is now, which the page shows. The web holds no `Rev`, no allow-list and no
   Mongo access for rooms.
+- Move: a second form on the page gives the room a new key (`<area prefix>.<local key>`, area autocompletes) through the Admin
+  `MoveRoom` call. Core inserts the room under the new key, deletes the old one, repoints exits in other rooms and players'
+  stored locations, keeps occupants inside, and audits a `Key` change. Refused for the default room and for a key that
+  already exists.
 - Last write wins (D30): there is no revision, no hidden `Rev` field and no conflict page. Two edits in a row both
   apply; the audit rows hold the previous value of every changed field.
 - Core's answers map to fixed page messages: `OK` (saved), `NO_CHANGE`, `INVALID` (core's field errors are shown and the

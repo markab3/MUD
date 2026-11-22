@@ -38,6 +38,8 @@ namespace MUD.Core.Administration
 
         public override Task<RoomEditReply> DeleteRoom(DeleteRoomRequest request, ServerCallContext context) { return Run(() => _api.DeleteRoom(request)); }
 
+        public override Task<RoomEditReply> MoveRoom(MoveRoomRequest request, ServerCallContext context) { return Run(() => _api.MoveRoom(request)); }
+
         public override Task<ListPlayersReply> ListPlayers(ListPlayersRequest request, ServerCallContext context) { return Run(() => _api.ListPlayers(request)); }
 
         public override Task<GetPlayerReply> GetPlayer(GetPlayerRequest request, ServerCallContext context) { return Run(() => _api.GetPlayer(request)); }

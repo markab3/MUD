@@ -356,6 +356,137 @@ namespace MUD.Core.Administration
             return saved ? RoomReply(AdminResult.Ok, RoomFrom(room)) : RoomReply(AdminResult.Failed);
         }
 
+        public const string DefaultRoomCannotBeMovedMessage = "The default room can never be moved.";
+        public const string MoveExitsLeftBehindMessage = "The room was moved, but some exits that led to it could not be updated. Edit those rooms to point at the new key.";
+
+        public RoomEditReply MoveRoom(MoveRoomRequest request)
+        {
+            return Mutate(request.Token, AdminRole.Creator, actor =>
+            {
+                try { return RelocateRoom(actor, request); }
+                catch (Exception ex) when (ex is not OutOfMemoryException) { return RoomFailed("move", request.Key, ex); }
+            });
+        }
+
+        // A move is "new key, same room": the room is copied under the new key, the old one is deleted, and everything that named the old key
+        // (exits in other rooms, players' stored locations) is repointed. Players standing in it stay in it.
+        private RoomEditReply RelocateRoom(Actor actor, MoveRoomRequest request)
+        {
+            string key = request.Key ?? string.Empty;
+            string area = (request.NewArea ?? string.Empty).Trim();
+            string local = (request.NewLocalKey ?? string.Empty).Trim();
+            var errors = new List<FieldError>();
+            string areaProblem = RoomRules.CheckAreaPrefix(area);
+            if (areaProblem != null) { errors.Add(new FieldError { Field = "NewArea", Message = char.ToUpperInvariant(areaProblem[0]) + areaProblem.Substring(1) }); }
+            string localProblem = RoomRules.CheckLocalKey(local);
+            if (localProblem != null) { errors.Add(new FieldError { Field = "NewLocalKey", Message = char.ToUpperInvariant(localProblem[0]) + localProblem.Substring(1) }); }
+            if (errors.Count == 0 && (area + "." + local).Length > RoomRules.MaxKey) { errors.Add(new FieldError { Field = "NewLocalKey", Message = "The room key must be at most " + RoomRules.MaxKey + " characters." }); }
+
+            Room old = string.IsNullOrWhiteSpace(key) ? null : _rooms.Get(key);
+            if (old == null) { return RoomReply(AdminResult.NotFound); }
+            if (errors.Count > 0) { return RoomReply(AdminResult.Invalid, RoomFrom(old), errors); }
+            string startKey = _host.StartRoomKey;
+            if (startKey == null) { return RoomReply(AdminResult.Refused, RoomFrom(old), null, DefaultRoomNotConfiguredMessage); }
+            if (string.Equals(key, startKey, StringComparison.Ordinal)) { return RoomReply(AdminResult.Refused, RoomFrom(old), null, DefaultRoomCannotBeMovedMessage); }
+            string newKey = area + "." + local;
+            if (string.Equals(newKey, key, StringComparison.Ordinal)) { return RoomReply(AdminResult.NoChange, RoomFrom(old)); }
+            if (RoomExists(newKey)) { return RoomReply(AdminResult.AlreadyExists, RoomFrom(old)); }
+
+            List<Room> referencing = _queries.RoomIdsWithExitTo(key).Where(id => id != key).Select(id => _rooms.Get(id)).Where(r => r != null).ToList();
+            Func<IEnumerable<Exit>, List<Exit>> repoint = exits => exits.Select(e => new Exit { Name = e.Name, DestinationId = e.DestinationId == key ? newKey : e.DestinationId }).ToList();
+            Func<IEnumerable<Exit>, BsonArray> asBson = exits => ExitsToBson(exits.Select(e => new RoomExit { Name = e.Name, To = e.DestinationId }));
+
+            var entries = new List<AuditRecord>();
+            entries.AddRange(BuildEntries(actor, "room", key, key, new List<AuditChange>
+            {
+                new AuditChange("Key", key, newKey),
+                new AuditChange("Area", old.Area ?? string.Empty, area),
+            }));
+            var movedExits = repoint(old.Exits);
+            if (old.Exits.Any(e => e.DestinationId == key))
+            {
+                entries.AddRange(BuildEntries(actor, "room", key, key, new List<AuditChange> { new AuditChange("Exits", asBson(old.Exits), asBson(movedExits)) }));
+            }
+            var newExitsByRoom = new Dictionary<string, List<Exit>>(StringComparer.Ordinal);
+            foreach (Room other in referencing)
+            {
+                List<Exit> updated = repoint(other.Exits);
+                newExitsByRoom[other.Id] = updated;
+                entries.AddRange(BuildEntries(actor, "room", other.Id, other.Id, new List<AuditChange> { new AuditChange("Exits", asBson(other.Exits), asBson(updated)) }));
+            }
+            if (!TryAudit(entries)) { return RoomReply(AdminResult.AuditFailed, RoomFrom(old)); }
+
+            var moved = new Room(_rooms)
+            {
+                Id = newKey,
+                ShortDescription = old.ShortDescription,
+                LongDescription = old.LongDescription,
+                Plurals = old.Plurals,
+                Adjectives = old.Adjectives,
+                Handles = old.Handles,
+                Components = old.Components,
+                Behaviors = old.Behaviors,
+                Search = old.Search,
+                Area = area,
+                X = old.X,
+                Y = old.Y,
+                Z = old.Z,
+                Items = old.Items,
+                Features = old.Features,
+                Exits = movedExits,
+            };
+            try { _rooms.Insert(moved); }
+            catch (DuplicateKeyException)
+            {
+                Finish(entries, false);
+                return RoomReply(AdminResult.AlreadyExists, RoomFrom(old));
+            }
+            if (!_rooms.Delete(old))
+            {
+                // Nothing has moved yet: take the copy back out and leave the room as it was.
+                _rooms.Delete(moved);
+                ISnapshotRepository undo = _rooms as ISnapshotRepository;
+                if (undo != null) { undo.Evict(newKey); }
+                Finish(entries, false);
+                return RoomReply(AdminResult.Failed, RoomFrom(old));
+            }
+            ISnapshotRepository snapshots = _rooms as ISnapshotRepository;
+            if (snapshots != null) { snapshots.Evict(key); }
+            MUD.Core.Events.EventDispatcher dispatcher = MUD.Core.Events.EventDispatcher.Current;
+            if (dispatcher != null) { dispatcher.Heartbeats.Untrack(old); dispatcher.Heartbeats.Track(moved); }
+
+            // Everyone inside stays inside, in the new object.
+            List<Living> inside = old.Occupants.ToList();
+            foreach (Living living in inside)
+            {
+                old.ExitRoom(living, null);
+                living.CurrentLocation = moved;
+                living.CurrentLocationId = newKey;
+                moved.Occupants.Add(living);
+            }
+            foreach (Player player in inside.OfType<Player>()) { player.Save(true); }
+            // Players who are not in the world keep their stored location.
+            foreach (Player stored in _players.Search(p => p.CurrentLocationId == key).ToList())
+            {
+                stored.CurrentLocationId = newKey;
+                _players.UpdateFields(stored.Id, new BsonDocument("CurrentLocationId", newKey));
+            }
+
+            // The insert and delete are the commit point. Exits in other rooms are repointed one document at a time (no transactions).
+            var rejected = new List<string>();
+            foreach (Room other in referencing)
+            {
+                List<Exit> updated = newExitsByRoom[other.Id];
+                var set = new BsonDocument { { "Exits", asBson(updated) }, { "WebUpdatedAt", Now() } };
+                bool done = PersistRoomFields(other, set, () => { other.Exits = updated; other.RebuildExitCommands(); });
+                if (!done) { rejected.AddRange(entries.Where(e => e.EntityId == other.Id).Select(e => e.Id)); }
+            }
+            moved.RebuildExitCommands();
+            TrySetOutcome(entries.Select(e => e.Id).Except(rejected).ToList(), true);
+            TrySetOutcome(rejected, false);
+            return rejected.Count == 0 ? RoomReply(AdminResult.Ok, RoomFrom(moved)) : RoomReply(AdminResult.Ok, RoomFrom(moved), null, MoveExitsLeftBehindMessage);
+        }
+
         public RoomEditReply DeleteRoom(DeleteRoomRequest request)
         {
             return Mutate(request.Token, AdminRole.Creator, actor =>

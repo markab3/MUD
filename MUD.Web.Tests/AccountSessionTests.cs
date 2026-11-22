@@ -157,6 +157,22 @@ public class FakeAdminClient : IAdminClient
         return Task.FromResult(EditReply(null));
     }
 
+    public List<(string Key, string Area, string Local)> RoomMoves { get; } = new();
+
+    public Task<RoomEditReply> MoveRoomAsync(string token, string key, string newArea, string newLocalKey, CancellationToken cancellation = default)
+    {
+        CheckRoomCall(token);
+        RoomMoves.Add((key, newArea, newLocalKey));
+        if (RoomEditResult == AdminResult.Ok && Rooms.Remove(key, out var room))
+        {
+            room.Key = newArea + "." + newLocalKey;
+            room.Area = newArea;
+            Rooms[room.Key] = room;
+            return Task.FromResult(EditReply(room));
+        }
+        return Task.FromResult(EditReply(null));
+    }
+
     // Players. The fake keeps the players it is given and answers an edit with the reply a test sets; it records what the web sent.
     public Dictionary<string, PlayerDetail> Players { get; } = new();
     public AdminResult PlayerEditResult { get; set; } = AdminResult.Ok;
