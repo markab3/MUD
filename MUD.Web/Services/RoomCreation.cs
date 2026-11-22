@@ -96,6 +96,9 @@ public interface IRoomCreationService
 {
     /// <summary>Throws CoreUnavailableException when core could not answer.</summary>
     Task<RoomCreationResult> CreateAsync(RoomForm form, string token, CancellationToken cancellation = default);
+
+    /// <summary>Distinct area prefixes of the existing rooms, sorted. Empty when core cannot answer (suggestions only).</summary>
+    Task<IReadOnlyList<string>> ListAreasAsync(string token, CancellationToken cancellation = default);
 }
 
 /// <summary>Real implementation: the local key and area prefix are checked here with MUD.Data.RoomRules, then core validates the
@@ -155,5 +158,17 @@ public class RoomCreationService : IRoomCreationService
             AdminResult.Forbidden => new(RoomCreationStatus.Forbidden),
             _ => new(RoomCreationStatus.Failed),
         };
+    }
+
+    public async Task<IReadOnlyList<string>> ListAreasAsync(string token, CancellationToken cancellation = default)
+    {
+        try
+        {
+            var rooms = await _core.ListRoomsAsync(token, cancellation);
+            return rooms.Select(r => r.Area).Where(a => !string.IsNullOrWhiteSpace(a))
+                .Distinct(StringComparer.Ordinal).OrderBy(a => a, StringComparer.Ordinal).ToList();
+        }
+        catch (CoreUnavailableException) { return Array.Empty<string>(); }
+        catch (CoreRefusedException) { return Array.Empty<string>(); }
     }
 }

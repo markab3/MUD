@@ -20,12 +20,25 @@ public class CreatorModel : PageModel
 
     [BindProperty] public RoomForm Form { get; set; } = NewForm();
     public string? Error { get; private set; }
+    public IReadOnlyList<string> Areas { get; private set; } = Array.Empty<string>();
 
-    public void OnGet() => Form = NewForm();
+    private Task LoadAreasAsync() => LoadAreasCoreAsync();
+
+    private async Task LoadAreasCoreAsync()
+    {
+        Areas = await _rooms.ListAreasAsync(SessionAuthentication.TokenFrom(Request), HttpContext.RequestAborted);
+    }
+
+    public async Task OnGetAsync()
+    {
+        Form = NewForm();
+        await LoadAreasAsync();
+    }
 
     public async Task<IActionResult> OnPostAsync()
     {
         PadExits();
+        await LoadAreasAsync();
         if (!ModelState.IsValid) { return Page(); }
 
         RoomCreationResult result;

@@ -500,7 +500,7 @@ public class CreatorPageTests
     private static void Fill(CreatorModel page)
     {
         page.Form = new RoomForm { Key = "new", Short = "a room", Long = "Long.", Area = "t" };
-        page.OnGet();
+        page.OnGetAsync().GetAwaiter().GetResult();
         page.Form.Key = "new"; page.Form.Short = "a room"; page.Form.Long = "Long."; page.Form.Area = "t";
     }
 
@@ -512,7 +512,27 @@ public class CreatorPageTests
         Fill(page);
         var result = await page.OnPostAsync();
         Assert.Equal("/creator/rooms/t.new", Assert.IsType<RedirectResult>(result).Url);
-        Assert.Equal(new[] { "abc" }, core.RoomTokens);
+        Assert.Equal(new[] { "abc" }, core.RoomTokens.Distinct());
+    }
+
+    [Fact]
+    public async Task Get_OffersDistinctSortedAreaPrefixes()
+    {
+        var core = new FakeAdminClient();
+        core.Rooms["b.one"] = new RoomDetail { Key = "b.one", Area = "b" };
+        core.Rooms["a.one"] = new RoomDetail { Key = "a.one", Area = "a" };
+        core.Rooms["a.two"] = new RoomDetail { Key = "a.two", Area = "a" };
+        var page = Make(core);
+        await page.OnGetAsync();
+        Assert.Equal(new[] { "a", "b" }, page.Areas);
+    }
+
+    [Fact]
+    public async Task Get_CoreUnavailable_StillRendersWithNoSuggestions()
+    {
+        var page = Make(new FakeAdminClient { Unavailable = true });
+        await page.OnGetAsync();
+        Assert.Empty(page.Areas);
     }
 
     [Fact]

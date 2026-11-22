@@ -20,7 +20,7 @@ else
         @Html.AntiForgeryToken()
         <div><label>Short description <input asp-for="Short" maxlength="100" required /></label></div>
         <div><label>Long description <textarea asp-for="Long" maxlength="4000" rows="8" required></textarea></label></div>
-        <div><label>Area prefix <input asp-for="Area" maxlength="128" /></label></div>
+        <div><label>Area prefix <input asp-for="Area" maxlength="128" readonly /></label> (fixed by the room key; rooms cannot be renamed)</div>
         <div>
             <label>X <input asp-for="X" type="number" /></label>
             <label>Y <input asp-for="Y" type="number" /></label>

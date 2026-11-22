@@ -44,7 +44,8 @@ redirected to `/login`; signed-in players get a 403 page at `/access-denied` (no
 
 - The form has fields named after `specs/ROOM_FILES.md`: `Key` (local room key), `Short`, `Long`,
   `Area` (area prefix), optional `X`/`Y`/`Z` (blank = unplaced, stored as null, never 0), up to 4
-  exit rows `Dir` + `To` (target room key) and a "save exits to rooms that do not exist" checkbox.
+  exit rows `Dir` + `To` (target room key) and a "save exits to rooms that do not exist" checkbox. The Area field offers
+  the distinct area prefixes of existing rooms as browser autocomplete suggestions (`ListRooms`; none when core cannot answer).
 - The stored room key is `<Area>.<Key>`. POST validates server side with antiforgery, then calls
   `IRoomCreationService.CreateAsync`. `RoomCreationService` checks the local key and area prefix with
   `MUD.Data.RoomRules`, then sends `CreateRoom` on the Admin service with the session token from the cookie. Core
@@ -57,7 +58,7 @@ redirected to `/login`; signed-in players get a 403 page at `/access-denied` (no
 
 Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by clicking a room on the map.
 
-- Edits `Short`, `Long`, `Area`, `X`, `Y`, `Z` and the exit list. The key is read-only and comes from the route only
+- Edits `Short`, `Long`, `X`, `Y`, `Z` and the exit list. `Area` is shown read-only: it must equal the key's prefix, and keys cannot be renamed. The key is read-only and comes from the route only
   (it is not a bound form field). Blank X/Y/Z is saved as null (unplaced), never 0. Exit rows are added and removed
   with buttons (server round trip, no JavaScript); reverse-exit creation is not included.
 - Validation is `MUD.Data.RoomRules`, shared with the importer (`MUD.Core` consumes it too): key and area patterns,
