@@ -46,6 +46,7 @@ namespace MUD.Core.Modules
         public int CrashesInWindow { get; internal set; }
         public DateTime? NextStartUtc { get; internal set; }
         public string Detail { get; internal set; }
+        public string RefusalReason { get; internal set; }
         public IReadOnlyList<string> BehaviorTypes { get; internal set; }
     }
 
@@ -234,6 +235,7 @@ namespace MUD.Core.Modules
                     CrashesInWindow = r.Crashes.Count(t => now - t <= _options.CrashLoopWindow),
                     NextStartUtc = r.State == ModuleState.Backoff ? r.NextStartUtc : null,
                     Detail = r.Detail,
+                    RefusalReason = r.RefusalReason,
                     BehaviorTypes = r.Description == null ? new string[0] : r.Description.BehaviorTypes
                 }).ToList();
             }

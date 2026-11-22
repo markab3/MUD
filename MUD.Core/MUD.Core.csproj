@@ -15,6 +15,7 @@
     <PackageReference Include="MongoDB.Driver" Version="2.30.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
     <PackageReference Include="Scrutor" Version="3.2.2" />
+    <InternalsVisibleTo Include="MUD.Tests" />
   </ItemGroup>
 
 </Project>

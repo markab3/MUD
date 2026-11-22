@@ -32,9 +32,15 @@ service Admin {
   rpc ListPlayers(ListPlayersRequest) returns (ListPlayersReply);
   rpc GetPlayer(GetPlayerRequest) returns (GetPlayerReply);
   rpc UpdatePlayer(UpdatePlayerRequest) returns (UpdatePlayerReply);
+  // Every module core knows (directory discovery, D67), stopped and never-started ones included.
+  rpc ListModules(TokenRequest) returns (ListModulesReply);
 
   // Admin only.
   rpc ListAudit(ListAuditRequest) returns (ListAuditReply);
+  // Queue a start or a stop of one module on the supervisor. The supervisor acts on its own thread, so OK means the request was
+  // accepted, not that the module has changed state yet; ListModules shows the outcome. Audited first. Restart is not exposed.
+  rpc StartModule(ModuleRequest) returns (ModuleActionReply);
+  rpc StopModule(ModuleRequest) returns (ModuleActionReply);
 }
 
 enum AdminRole {
@@ -299,4 +305,46 @@ message ListAuditReply {
   int32 total = 2;
   int32 page = 3;
   int32 page_size = 4;
+}
+
+// The supervisor's state machine (MODULES section 3). Mirrors MUD.Core.Modules.ModuleState.
+enum ModuleRunState {
+  MODULE_RUN_STATE_UNSPECIFIED = 0;
+  MODULE_RUN_STATE_STOPPED = 1;
+  MODULE_RUN_STATE_STARTING = 2;
+  MODULE_RUN_STATE_CONNECTED = 3;
+  MODULE_RUN_STATE_READY = 4;
+  MODULE_RUN_STATE_BACKOFF = 5;
+  MODULE_RUN_STATE_FAILED = 6;
+  MODULE_RUN_STATE_REFUSED = 7;
+  MODULE_RUN_STATE_STOPPING = 8;
+}
+
+message ModuleInfo {
+  string name = 1;
+  // From the module's --describe output; empty when it could not be described.
+  string version = 2;
+  ModuleRunState state = 3;
+  // Derived: true when the state is CONNECTED or READY.
+  bool running = 4;
+  bool required = 5;
+  // Why the module cannot start, was refused, or last ended (core's own wording); empty when there is none.
+  string last_failure = 6;
+  // The module's folder is gone from the modules directory.
+  bool folder_missing = 7;
+}
+
+message ListModulesReply { repeated ModuleInfo modules = 1; }
+
+message ModuleRequest {
+  string token = 1;
+  string name = 2;
+}
+
+// result: OK (queued), NO_CHANGE (already running or already stopped), NOT_FOUND (no such module), REFUSED (a required module is not
+// stopped from here, the module cannot start, or the supervisor is not running), AUDIT_FAILED. module is the module as it is now.
+message ModuleActionReply {
+  AdminResult result = 1;
+  string message = 2;
+  ModuleInfo module = 3;
 }
