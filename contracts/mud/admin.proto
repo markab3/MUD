@@ -28,6 +28,7 @@ service Admin {
   rpc CreateRoom(RoomEditRequest) returns (RoomEditReply);
   rpc UpdateRoom(RoomEditRequest) returns (RoomEditReply);
   rpc DeleteRoom(DeleteRoomRequest) returns (RoomEditReply);
+  rpc MoveRoom(MoveRoomRequest) returns (RoomEditReply);
   rpc ListPlayers(ListPlayersRequest) returns (ListPlayersReply);
   rpc GetPlayer(GetPlayerRequest) returns (GetPlayerReply);
   rpc UpdatePlayer(UpdatePlayerRequest) returns (UpdatePlayerReply);
@@ -160,7 +161,15 @@ message DeleteRoomRequest {
   string key = 2;
 }
 
-// Reply of CreateRoom, UpdateRoom and DeleteRoom. room is the room as it is now (absent after a delete or when none exists).
+// Gives a room a new key: new_area + "." + new_local_key. Exits that led to it, players standing in it and its contents follow.
+message MoveRoomRequest {
+  string token = 1;
+  string key = 2;
+  string new_area = 3;
+  string new_local_key = 4;
+}
+
+// Reply of CreateRoom, UpdateRoom, DeleteRoom and MoveRoom. room is the room as it is now (absent after a delete or when none exists).
 message RoomEditReply {
   AdminResult result = 1;
   repeated FieldError errors = 2;

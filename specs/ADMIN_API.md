@@ -38,7 +38,7 @@ Messages are fixed sentences. No token, password or stored value is put in a sta
 |---|---|
 | `WebAuthenticate`, `Logout` | none |
 | `GetSession`, `ChangePassword` | any signed-in player |
-| `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `ListPlayers`, `GetPlayer`, `UpdatePlayer` | creator or admin |
+| `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListPlayers`, `GetPlayer`, `UpdatePlayer` | creator or admin |
 | `ListAudit` | admin only |
 
 Not in this card: `GetRoomMap` (the map is laid out by the web from `ListRooms`, as `RoomMapLayout` does today), `GetStats` and `Flush` (sketched in

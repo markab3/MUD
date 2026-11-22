@@ -706,6 +706,84 @@ namespace MUD.Tests
             Assert.Equal(AdminResult.NotFound, f.Api.DeleteRoom(new DeleteRoomRequest { Token = token, Key = "t.nowhere" }).Result);
         }
 
+        // ------------------------------------------------------------------ move
+
+        [Fact]
+        public void MovingARoomRekeysItAndRepointsExitsPlayersAndContents()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            f.AddRoom("t.cellar", "t.hall");
+            f.Rooms.Cache["t.hall"].Exits.Add(new Exit { Name = "down", DestinationId = "t.cellar" });
+            f.Rooms.Stored["t.hall"] = f.Rooms.Cache["t.hall"].ToBsonDocument();
+            Person pat = f.AddPlayer("Pat");
+            Room cellar = f.Rooms.Cache["t.cellar"];
+            cellar.Occupants.Add(pat);
+            pat.CurrentLocation = cellar;
+            pat.CurrentLocationId = "t.cellar";
+            Person away = f.AddPlayer("Away");
+            away.CurrentLocationId = "t.cellar";
+            string token = f.Login("cris");
+
+            RoomEditReply reply = f.Api.MoveRoom(new MoveRoomRequest { Token = token, Key = "t.cellar", NewArea = "u", NewLocalKey = "vault" });
+
+            Assert.Equal(AdminResult.Ok, reply.Result);
+            Assert.Equal("u.vault", reply.Room.Key);
+            Assert.Equal("u", reply.Room.Area);
+            Assert.False(f.Rooms.Stored.ContainsKey("t.cellar"));
+            Assert.True(f.Rooms.Stored.ContainsKey("u.vault"));
+            Assert.Contains(f.Rooms.Cache["t.hall"].Exits, e => e.DestinationId == "u.vault");
+            Assert.DoesNotContain(f.Rooms.Cache["t.hall"].Exits, e => e.DestinationId == "t.cellar");
+            Assert.Equal("u.vault", pat.CurrentLocationId);
+            Assert.Contains(pat, f.Rooms.Cache["u.vault"].Occupants);
+            Assert.Equal("u.vault", away.CurrentLocationId);
+            Assert.Contains(f.Audit.Rows, r => r.EntityId == "t.cellar" && r.Field == "Key" && r.Applied);
+            Assert.All(f.Audit.Rows, r => Assert.True(f.Audit.Outcomes[r.Id]));
+        }
+
+        [Fact]
+        public void MovingOntoAnExistingKeyOrTheDefaultRoomIsRefused()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            string token = f.Login("cris");
+            Assert.Equal(AdminResult.AlreadyExists, f.Api.MoveRoom(new MoveRoomRequest { Token = token, Key = "t.hall", NewArea = "t", NewLocalKey = "start" }).Result);
+            RoomEditReply start = f.Api.MoveRoom(new MoveRoomRequest { Token = token, Key = "t.start", NewArea = "u", NewLocalKey = "x" });
+            Assert.Equal(AdminResult.Refused, start.Result);
+            Assert.Equal(AdminApi.DefaultRoomCannotBeMovedMessage, start.Message);
+            Assert.True(f.Rooms.Stored.ContainsKey("t.start"));
+            Assert.Empty(f.Audit.Rows);
+        }
+
+        [Fact]
+        public void MoveValidatesTheNewKeyAndReportsMissingRoomsAndNoChange()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            string token = f.Login("cris");
+            Assert.Equal(AdminResult.Invalid, f.Api.MoveRoom(new MoveRoomRequest { Token = token, Key = "t.hall", NewArea = "Bad Area", NewLocalKey = "x" }).Result);
+            Assert.Equal(AdminResult.Invalid, f.Api.MoveRoom(new MoveRoomRequest { Token = token, Key = "t.hall", NewArea = "u", NewLocalKey = "a.b" }).Result);
+            Assert.Equal(AdminResult.NotFound, f.Api.MoveRoom(new MoveRoomRequest { Token = token, Key = "t.nowhere", NewArea = "u", NewLocalKey = "x" }).Result);
+            Assert.Equal(AdminResult.NoChange, f.Api.MoveRoom(new MoveRoomRequest { Token = token, Key = "t.hall", NewArea = "t", NewLocalKey = "hall" }).Result);
+            Assert.True(f.Rooms.Stored.ContainsKey("t.hall"));
+            Assert.Empty(f.Audit.Rows);
+        }
+
+        [Fact]
+        public void MoveNeedsACreatorAndAnAuditRow()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            f.AddPlayer("Pat");
+            string player = f.Login("pat");
+            Refused(() => f.Api.MoveRoom(new MoveRoomRequest { Token = player, Key = "t.hall", NewArea = "u", NewLocalKey = "x" }));
+            string token = f.Login("cris");
+            f.Audit.FailInsert = true;
+            Assert.Equal(AdminResult.AuditFailed, f.Api.MoveRoom(new MoveRoomRequest { Token = token, Key = "t.hall", NewArea = "u", NewLocalKey = "x" }).Result);
+            Assert.True(f.Rooms.Stored.ContainsKey("t.hall"));
+            Assert.False(f.Rooms.Stored.ContainsKey("u.x"));
+        }
+
         // ------------------------------------------------------------------ players
 
         private static UpdatePlayerRequest PlayerEdit(string token, string nameKey, string shortText = null, bool? retired = null, AdminRole? role = null, string race = null)

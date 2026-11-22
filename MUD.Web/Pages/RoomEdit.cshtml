@@ -20,7 +20,7 @@ else
         @Html.AntiForgeryToken()
         <div><label>Short description <input asp-for="Short" maxlength="100" required /></label></div>
         <div><label>Long description <textarea asp-for="Long" maxlength="4000" rows="8" required></textarea></label></div>
-        <div><label>Area prefix <input asp-for="Area" maxlength="128" /></label></div>
+        <div><label>Area prefix <input asp-for="Area" maxlength="128" readonly /></label> (fixed by the room key; rooms cannot be renamed)</div>
         <div>
             <label>X <input asp-for="X" type="number" /></label>
             <label>Y <input asp-for="Y" type="number" /></label>
@@ -41,6 +41,22 @@ else
             <div><label><input asp-for="ConfirmDangling" type="checkbox" /> Save exits to rooms that do not exist</label></div>
         </fieldset>
         <button type="submit" formaction="@(RoomEditModel.RoomUrl(Model.Key))?handler=Save">Save room</button>
+    </form>
+
+    <form method="post" action="@(RoomEditModel.RoomUrl(Model.Key))?handler=Move">
+        @Html.AntiForgeryToken()
+        <fieldset>
+            <legend>Move room (change its key)</legend>
+            <div>
+                <label>Area prefix <input asp-for="NewArea" maxlength="128" list="area-list" autocomplete="off" required /></label>
+                <label>Local key <input asp-for="NewLocalKey" maxlength="64" required /></label>
+                <button type="submit">Move room</button>
+            </div>
+            <datalist id="area-list">
+                @foreach (var a in await Model.GetAreasAsync()) { <option value="@a"></option> }
+            </datalist>
+            <small>The new key is <code>area prefix.local key</code>. Exits that lead here, players standing here, and everything inside follow the room. The default room cannot be moved.</small>
+        </fieldset>
     </form>
 
     <form method="post" action="@(RoomEditModel.RoomUrl(Model.Key))?handler=Delete">

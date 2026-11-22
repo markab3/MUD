@@ -44,7 +44,8 @@ redirected to `/login`; signed-in players get a 403 page at `/access-denied` (no
 
 - The form has fields named after `specs/ROOM_FILES.md`: `Key` (local room key), `Short`, `Long`,
   `Area` (area prefix), optional `X`/`Y`/`Z` (blank = unplaced, stored as null, never 0), up to 4
-  exit rows `Dir` + `To` (target room key) and a "save exits to rooms that do not exist" checkbox.
+  exit rows `Dir` + `To` (target room key) and a "save exits to rooms that do not exist" checkbox. The Area field offers
+  the distinct area prefixes of existing rooms as browser autocomplete suggestions (`ListRooms`; none when core cannot answer).
 - The stored room key is `<Area>.<Key>`. POST validates server side with antiforgery, then calls
   `IRoomCreationService.CreateAsync`. `RoomCreationService` checks the local key and area prefix with
   `MUD.Data.RoomRules`, then sends `CreateRoom` on the Admin service with the session token from the cookie. Core
@@ -57,7 +58,7 @@ redirected to `/login`; signed-in players get a 403 page at `/access-denied` (no
 
 Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by clicking a room on the map.
 
-- Edits `Short`, `Long`, `Area`, `X`, `Y`, `Z` and the exit list. The key is read-only and comes from the route only
+- Edits `Short`, `Long`, `X`, `Y`, `Z` and the exit list. `Area` is shown read-only: it must equal the key's prefix, and keys cannot be renamed. The key is read-only and comes from the route only
   (it is not a bound form field). Blank X/Y/Z is saved as null (unplaced), never 0. Exit rows are added and removed
   with buttons (server round trip, no JavaScript); reverse-exit creation is not included.
 - Validation is `MUD.Data.RoomRules`, shared with the importer (`MUD.Core` consumes it too): key and area patterns,
@@ -69,6 +70,10 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   live room, writes one audit row per changed field (audit first) and applies the change to the live room on the game
   thread. The reply carries the room as it is now, which the page shows. The web holds no `Rev`, no allow-list and no
   Mongo access for rooms.
+- Move: a second form on the page gives the room a new key (`<area prefix>.<local key>`, area autocompletes) through the Admin
+  `MoveRoom` call. Core inserts the room under the new key, deletes the old one, repoints exits in other rooms and players'
+  stored locations, keeps occupants inside, and audits a `Key` change. Refused for the default room and for a key that
+  already exists.
 - Last write wins (D30): there is no revision, no hidden `Rev` field and no conflict page. Two edits in a row both
   apply; the audit rows hold the previous value of every changed field.
 - Core's answers map to fixed page messages: `OK` (saved), `NO_CHANGE`, `INVALID` (core's field errors are shown and the

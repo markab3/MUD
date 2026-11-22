@@ -34,6 +34,8 @@ public interface IAdminClient
 
     Task<RoomEditReply> DeleteRoomAsync(string token, string key, CancellationToken cancellation = default);
 
+    Task<RoomEditReply> MoveRoomAsync(string token, string key, string newArea, string newLocalKey, CancellationToken cancellation = default);
+
     // Players (creator or admin). Core applies the rules, audits every changed field and updates the live player; edits are last
     // write wins (D30). Same exceptions as the room calls. The reply never carries a password.
     Task<ListPlayersReply> ListPlayersAsync(string token, string nameFilter, bool descending, int page, int pageSize, CancellationToken cancellation = default);
@@ -191,6 +193,9 @@ public sealed class GrpcAdminClient : IAdminClient
 
     public Task<RoomEditReply> DeleteRoomAsync(string token, string key, CancellationToken cancellation = default) =>
         Call(() => _client.DeleteRoomAsync(new DeleteRoomRequest { Token = token ?? string.Empty, Key = key ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+
+    public Task<RoomEditReply> MoveRoomAsync(string token, string key, string newArea, string newLocalKey, CancellationToken cancellation = default) =>
+        Call(() => _client.MoveRoomAsync(new MoveRoomRequest { Token = token ?? string.Empty, Key = key ?? string.Empty, NewArea = newArea ?? string.Empty, NewLocalKey = newLocalKey ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
 
     public Task<ListPlayersReply> ListPlayersAsync(string token, string nameFilter, bool descending, int page, int pageSize, CancellationToken cancellation = default) =>
         Call(() => _client.ListPlayersAsync(

@@ -168,8 +168,8 @@ public class RoomEditPageTests
     public void Page_FormsHaveAntiforgery()
     {
         var cshtml = File.ReadAllText(FindFile("MUD.Web/Pages/RoomEdit.cshtml"));
-        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(cshtml, "<form method=\"post\"").Count);
-        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(cshtml, "Html.AntiForgeryToken\\(\\)").Count);
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(cshtml, "<form method=\"post\"").Count);
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(cshtml, "Html.AntiForgeryToken\\(\\)").Count);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public class RoomEditPageTests
         Assert.DoesNotContain("Features", bound);
         Assert.DoesNotContain("Password", bound);
         Assert.DoesNotContain("Rev", bound); // D30: no optimistic concurrency
-        Assert.Equal(new[] { "Area", "ConfirmDangling", "Exits", "Long", "Short", "X", "Y", "Z" }, bound.OrderBy(b => b).ToArray());
+        Assert.Equal(new[] { "Area", "ConfirmDangling", "Exits", "Long", "NewArea", "NewLocalKey", "Short", "X", "Y", "Z" }, bound.OrderBy(b => b).ToArray());
     }
 
     [Fact]
@@ -429,6 +429,52 @@ public class RoomEditPageTests
     }
 
     [Fact]
+    public async Task Move_Success_RedirectsToTheRoomUnderItsNewKey()
+    {
+        var (model, core) = Page();
+        model.TempData = new Microsoft.AspNetCore.Mvc.ViewFeatures.TempDataDictionary(model.HttpContext, new NoTempData());
+        model.NewArea = " u "; model.NewLocalKey = "vault";
+        var result = await model.OnPostMoveAsync("t.hall");
+        Assert.Equal("/creator/rooms/u.vault", Assert.IsType<RedirectResult>(result).Url);
+        Assert.Equal(new[] { ("t.hall", "u", "vault") }, core.RoomMoves);
+        Assert.True(core.Rooms.ContainsKey("u.vault"));
+    }
+
+    [Fact]
+    public async Task Move_AlreadyExists_ShowsFixedError_AndKeepsTheRoom()
+    {
+        var (model, core) = Page(new FakeAdminClient { RoomEditResult = AdminResult.AlreadyExists }.AddRoom("t.start").AddRoom("t.hall"));
+        model.NewArea = "t"; model.NewLocalKey = "start";
+        Assert.IsType<PageResult>(await model.OnPostMoveAsync("t.hall"));
+        Assert.Equal(RoomEditModel.MoveExistsError, model.Error);
+        Assert.True(core.Rooms.ContainsKey("t.hall"));
+    }
+
+    [Fact]
+    public async Task Move_Refused_ShowsCoresSentence()
+    {
+        var (model, _) = Page(new FakeAdminClient { RoomEditResult = AdminResult.Refused, RoomEditMessage = "The default room can never be moved." }.AddRoom("t.start"));
+        await model.OnPostMoveAsync("t.start");
+        Assert.Equal("The default room can never be moved.", model.Error);
+    }
+
+    [Fact]
+    public async Task Move_NotFound_Is404()
+    {
+        var (model, _) = Page(new FakeAdminClient { RoomEditResult = AdminResult.NotFound });
+        await model.OnPostMoveAsync("t.gone");
+        Assert.Equal(404, model.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Move_CoreUnavailable_Is503()
+    {
+        var (model, _) = Page(new FakeAdminClient { Unavailable = true });
+        await model.OnPostMoveAsync("t.hall");
+        Assert.Equal(503, model.Response.StatusCode);
+    }
+
+    [Fact]
     public async Task Delete_NotFound_Is404()
     {
         var (model, _) = Page(new FakeAdminClient { RoomEditResult = AdminResult.NotFound });
@@ -500,7 +546,7 @@ public class CreatorPageTests
     private static void Fill(CreatorModel page)
     {
         page.Form = new RoomForm { Key = "new", Short = "a room", Long = "Long.", Area = "t" };
-        page.OnGet();
+        page.OnGetAsync().GetAwaiter().GetResult();
         page.Form.Key = "new"; page.Form.Short = "a room"; page.Form.Long = "Long."; page.Form.Area = "t";
     }
 
@@ -512,7 +558,27 @@ public class CreatorPageTests
         Fill(page);
         var result = await page.OnPostAsync();
         Assert.Equal("/creator/rooms/t.new", Assert.IsType<RedirectResult>(result).Url);
-        Assert.Equal(new[] { "abc" }, core.RoomTokens);
+        Assert.Equal(new[] { "abc" }, core.RoomTokens.Distinct());
+    }
+
+    [Fact]
+    public async Task Get_OffersDistinctSortedAreaPrefixes()
+    {
+        var core = new FakeAdminClient();
+        core.Rooms["b.one"] = new RoomDetail { Key = "b.one", Area = "b" };
+        core.Rooms["a.one"] = new RoomDetail { Key = "a.one", Area = "a" };
+        core.Rooms["a.two"] = new RoomDetail { Key = "a.two", Area = "a" };
+        var page = Make(core);
+        await page.OnGetAsync();
+        Assert.Equal(new[] { "a", "b" }, page.Areas);
+    }
+
+    [Fact]
+    public async Task Get_CoreUnavailable_StillRendersWithNoSuggestions()
+    {
+        var page = Make(new FakeAdminClient { Unavailable = true });
+        await page.OnGetAsync();
+        Assert.Empty(page.Areas);
     }
 
     [Fact]
