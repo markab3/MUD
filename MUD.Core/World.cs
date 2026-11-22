@@ -472,7 +472,9 @@ namespace MUD.Core
                 new MUD.Core.Administration.MongoAuditStore(database),
                 new MUD.Core.Administration.AdminSessions(),
                 Clock,
-                Console.WriteLine);
+                Console.WriteLine,
+                null,
+                new MUD.Core.Administration.SupervisorModuleControl(() => ModuleSupervisor));
         }
 
         // Runs work on the game thread and waits for it, at most ApiCallTimeout. Called on the game thread itself the

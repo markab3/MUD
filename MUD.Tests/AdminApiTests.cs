@@ -5,6 +5,7 @@ using MongoDB.Bson;
 using MUD.Contracts;
 using MUD.Core.Administration;
 using MUD.Core.GameObjects;
+using MUD.Core.Modules;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Data;
 using Xunit;
@@ -103,6 +104,25 @@ namespace MUD.Tests
             }
         }
 
+        // Stands in for the supervisor: it records what was queued and changes nothing by itself.
+        private class FakeModules : IModuleControl
+        {
+            public List<ModuleStatus> Statuses = new List<ModuleStatus>();
+            public List<string> Starts = new List<string>();
+            public List<string> Stops = new List<string>();
+            public bool Running = true;
+
+            public FakeModules Add(string name, ModuleState state, bool required = false, string problem = null, string detail = "", string version = "1.0")
+            {
+                Statuses.Add(new ModuleStatus { Name = name, State = state, Required = required, Problem = problem, Detail = detail, Version = version });
+                return this;
+            }
+
+            public IReadOnlyList<ModuleStatus> GetStatuses() { return Running ? Statuses : null; }
+            public string RequestStart(string name) { if (!Running) { return null; } Starts.Add(name); return "queued"; }
+            public string RequestStop(string name) { if (!Running) { return null; } Stops.Add(name); return "queued"; }
+        }
+
         private class Person : Player
         {
             public List<string> Messages = new List<string>();
@@ -131,12 +151,13 @@ namespace MUD.Tests
             public SyncRoomRepo Rooms = new SyncRoomRepo();
             public AdminSessions Sessions = new AdminSessions();
             public List<string> Log = new List<string>();
+            public FakeModules Modules = new FakeModules();
             public AdminApi Api;
 
             public Fixture()
             {
                 var queries = new FakeQueries { Players = Players, Rooms = Rooms };
-                Api = new AdminApi(Host, Players, Rooms, queries, Audit, Sessions, new FakeClock(), Log.Add, max => 0);
+                Api = new AdminApi(Host, Players, Rooms, queries, Audit, Sessions, new FakeClock(), Log.Add, max => 0, Modules);
                 AddRoom("t.start", "t.hall");
                 AddRoom("t.hall", "t.start");
             }
@@ -1018,6 +1039,202 @@ namespace MUD.Tests
             Assert.Equal("web", players.Items.Single().Source);
             Assert.True(players.Items.Single().Applied);
             Assert.Equal(1, f.Api.ListAudit(new ListAuditRequest { Token = adam, EntityId = "t.hall", PageSize = 1 }).Items.Count);
+        }
+
+        // ------------------------------------------------------------------ modules
+
+        private static Fixture ModuleFixture(out string anonymous, out string player, out string creator, out string admin)
+        {
+            var f = new Fixture();
+            f.AddPlayer("Pat");
+            f.AddPlayer("Cris", creator: true);
+            f.AddPlayer("Adam", admin: true);
+            f.Modules.Add("alpha", ModuleState.Ready)
+                .Add("beta", ModuleState.Stopped)
+                .Add("core-ish", ModuleState.Connected, required: true)
+                .Add("broken", ModuleState.Failed, detail: "the process exited (exit code 1)")
+                .Add("old", ModuleState.Stopped, problem: "contract version mismatch");
+            anonymous = "no-such-token";
+            player = f.Login("pat");
+            creator = f.Login("cris");
+            admin = f.Login("adam");
+            return f;
+        }
+
+        [Fact]
+        public void ListModulesIncludesStoppedAndNeverStartedModulesWithDerivedRunning()
+        {
+            Fixture f = ModuleFixture(out _, out _, out string creator, out _);
+            ListModulesReply reply = f.Api.ListModules(new TokenRequest { Token = creator });
+            Assert.Equal(new[] { "alpha", "beta", "core-ish", "broken", "old" }, reply.Modules.Select(m => m.Name).ToArray());
+            Assert.True(reply.Modules.Single(m => m.Name == "alpha").Running);
+            Assert.True(reply.Modules.Single(m => m.Name == "core-ish").Running);
+            Assert.True(reply.Modules.Single(m => m.Name == "core-ish").Required);
+            ModuleInfo beta = reply.Modules.Single(m => m.Name == "beta");
+            Assert.False(beta.Running);
+            Assert.Equal(ModuleRunState.Stopped, beta.State);
+            Assert.Equal("1.0", beta.Version);
+            ModuleInfo broken = reply.Modules.Single(m => m.Name == "broken");
+            Assert.False(broken.Running);
+            Assert.Equal(ModuleRunState.Failed, broken.State);
+            Assert.Equal("the process exited (exit code 1)", broken.LastFailure);
+            Assert.Equal("contract version mismatch", reply.Modules.Single(m => m.Name == "old").LastFailure);
+        }
+
+        [Fact]
+        public void ListModulesIsEmptyWhenTheSupervisorIsNotRunning()
+        {
+            Fixture f = ModuleFixture(out _, out _, out string creator, out _);
+            f.Modules.Running = false;
+            Assert.Empty(f.Api.ListModules(new TokenRequest { Token = creator }).Modules);
+        }
+
+        [Fact]
+        public void ModuleAuthorizationMatrix()
+        {
+            Fixture f = ModuleFixture(out string anonymous, out string player, out string creator, out string admin);
+            // list: creator or admin
+            Assert.Equal(AdminFailure.Unauthenticated, Refused(() => f.Api.ListModules(new TokenRequest { Token = anonymous })).Failure);
+            Assert.Equal(AdminFailure.Forbidden, Refused(() => f.Api.ListModules(new TokenRequest { Token = player })).Failure);
+            Assert.Equal(5, f.Api.ListModules(new TokenRequest { Token = creator }).Modules.Count);
+            Assert.Equal(5, f.Api.ListModules(new TokenRequest { Token = admin }).Modules.Count);
+            // start and stop: admin only
+            foreach (string token in new[] { anonymous, player, creator })
+            {
+                AdminFailure expected = token == anonymous ? AdminFailure.Unauthenticated : AdminFailure.Forbidden;
+                Assert.Equal(expected, Refused(() => f.Api.StartModule(new ModuleRequest { Token = token, Name = "beta" })).Failure);
+                Assert.Equal(expected, Refused(() => f.Api.StopModule(new ModuleRequest { Token = token, Name = "alpha" })).Failure);
+            }
+            Assert.Empty(f.Modules.Starts);
+            Assert.Empty(f.Modules.Stops);
+            Assert.Empty(f.Audit.Rows);
+            Assert.Equal(AdminResult.Ok, f.Api.StartModule(new ModuleRequest { Token = admin, Name = "beta" }).Result);
+        }
+
+        [Fact]
+        public void ModuleRoleIsReReadPerCall()
+        {
+            Fixture f = ModuleFixture(out _, out _, out _, out string admin);
+            f.Players.Live.Single(p => p.NameKey == "adam").Roles.Admin = false;
+            Assert.Equal(AdminFailure.Forbidden, Refused(() => f.Api.StartModule(new ModuleRequest { Token = admin, Name = "beta" })).Failure);
+            Assert.Empty(f.Modules.Starts);
+        }
+
+        [Fact]
+        public void StartQueuesTheStartOnTheSupervisorAndAudits()
+        {
+            Fixture f = ModuleFixture(out _, out _, out _, out string admin);
+            ModuleActionReply reply = f.Api.StartModule(new ModuleRequest { Token = admin, Name = "beta" });
+            Assert.Equal(AdminResult.Ok, reply.Result);
+            Assert.Equal("beta", reply.Module.Name);
+            Assert.Equal(new[] { "beta" }, f.Modules.Starts);
+            Assert.Empty(f.Modules.Stops);
+            AuditRecord row = f.Audit.Rows.Single();
+            Assert.Equal("module", row.Entity);
+            Assert.Equal("beta", row.EntityId);
+            Assert.Equal("Adam", row.ActorName);
+            Assert.Equal("Action", row.Field);
+            Assert.Equal("start", row.New.AsString);
+            Assert.Equal("web", row.Source);
+            Assert.True(row.Applied);
+        }
+
+        [Fact]
+        public void StartOfAFailedModuleIsAllowed()
+        {
+            Fixture f = ModuleFixture(out _, out _, out _, out string admin);
+            Assert.Equal(AdminResult.Ok, f.Api.StartModule(new ModuleRequest { Token = admin, Name = "broken" }).Result);
+            Assert.Equal(new[] { "broken" }, f.Modules.Starts);
+        }
+
+        [Fact]
+        public void StopQueuesTheStopOnTheSupervisorAndAudits()
+        {
+            Fixture f = ModuleFixture(out _, out _, out _, out string admin);
+            ModuleActionReply reply = f.Api.StopModule(new ModuleRequest { Token = admin, Name = "alpha" });
+            Assert.Equal(AdminResult.Ok, reply.Result);
+            Assert.Equal(new[] { "alpha" }, f.Modules.Stops);
+            AuditRecord row = f.Audit.Rows.Single();
+            Assert.Equal("alpha", row.EntityId);
+            Assert.Equal("stop", row.New.AsString);
+            Assert.Equal("Adam", row.ActorName);
+            Assert.True(row.Applied);
+        }
+
+        [Fact]
+        public void UnknownModuleIsNotFoundAndNothingIsAudited()
+        {
+            Fixture f = ModuleFixture(out _, out _, out _, out string admin);
+            Assert.Equal(AdminResult.NotFound, f.Api.StartModule(new ModuleRequest { Token = admin, Name = "nope" }).Result);
+            Assert.Equal(AdminResult.NotFound, f.Api.StopModule(new ModuleRequest { Token = admin, Name = "" }).Result);
+            Assert.Empty(f.Modules.Starts);
+            Assert.Empty(f.Modules.Stops);
+            Assert.Empty(f.Audit.Rows);
+        }
+
+        [Fact]
+        public void StoppingARequiredModuleIsRefusedButStartingIsNot()
+        {
+            Fixture f = ModuleFixture(out _, out _, out _, out string admin);
+            ModuleActionReply reply = f.Api.StopModule(new ModuleRequest { Token = admin, Name = "core-ish" });
+            Assert.Equal(AdminResult.Refused, reply.Result);
+            Assert.Equal(AdminApi.RequiredModuleMessage, reply.Message);
+            Assert.Empty(f.Modules.Stops);
+            Assert.Empty(f.Audit.Rows);
+        }
+
+        [Fact]
+        public void AlreadyRunningAndAlreadyStoppedAreNoChangeWithAMessage()
+        {
+            Fixture f = ModuleFixture(out _, out _, out _, out string admin);
+            ModuleActionReply running = f.Api.StartModule(new ModuleRequest { Token = admin, Name = "alpha" });
+            Assert.Equal(AdminResult.NoChange, running.Result);
+            Assert.Equal(AdminApi.ModuleAlreadyRunningMessage, running.Message);
+            ModuleActionReply stopped = f.Api.StopModule(new ModuleRequest { Token = admin, Name = "beta" });
+            Assert.Equal(AdminResult.NoChange, stopped.Result);
+            Assert.Equal(AdminApi.ModuleAlreadyStoppedMessage, stopped.Message);
+            Assert.Empty(f.Modules.Starts);
+            Assert.Empty(f.Modules.Stops);
+            Assert.Empty(f.Audit.Rows);
+        }
+
+        [Fact]
+        public void AModuleThatCannotBeStartedIsRefusedWithItsProblem()
+        {
+            Fixture f = ModuleFixture(out _, out _, out _, out string admin);
+            ModuleActionReply reply = f.Api.StartModule(new ModuleRequest { Token = admin, Name = "old" });
+            Assert.Equal(AdminResult.Refused, reply.Result);
+            Assert.Contains("contract version mismatch", reply.Message);
+            Assert.Empty(f.Modules.Starts);
+        }
+
+        [Fact]
+        public void AuditFailureRefusesTheModuleActionAndNothingIsQueued()
+        {
+            Fixture f = ModuleFixture(out _, out _, out _, out string admin);
+            f.Audit.FailInsert = true;
+            Assert.Equal(AdminResult.AuditFailed, f.Api.StartModule(new ModuleRequest { Token = admin, Name = "beta" }).Result);
+            Assert.Equal(AdminResult.AuditFailed, f.Api.StopModule(new ModuleRequest { Token = admin, Name = "alpha" }).Result);
+            Assert.Empty(f.Modules.Starts);
+            Assert.Empty(f.Modules.Stops);
+        }
+
+        [Fact]
+        public void ModuleActionsAreRefusedWhenTheSupervisorIsNotRunning()
+        {
+            Fixture f = ModuleFixture(out _, out _, out _, out string admin);
+            f.Modules.Running = false;
+            Assert.Equal(AdminResult.Refused, f.Api.StartModule(new ModuleRequest { Token = admin, Name = "beta" }).Result);
+            Assert.Empty(f.Audit.Rows);
+        }
+
+        [Fact]
+        public void ModuleActionsAreUnavailableWhenTheGameThreadDoesNotRun()
+        {
+            Fixture f = ModuleFixture(out _, out _, out _, out string admin);
+            f.Host.GameThreadAvailable = false;
+            Assert.Equal(AdminFailure.Unavailable, Refused(() => f.Api.StopModule(new ModuleRequest { Token = admin, Name = "alpha" })).Failure);
+            Assert.Empty(f.Modules.Stops);
         }
     }
 }

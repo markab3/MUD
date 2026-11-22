@@ -34,6 +34,7 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/account/password` | signed in | change-password form (current, new, confirm), antiforgery protected; see below |
 | `/creator/players` | `CreatorOrAdmin` | player list (see "Player pages") |
 | `/creator/players/{nameKey}` | `CreatorOrAdmin` | player edit page (see "Player pages") |
+| `/admin/modules` | list: `CreatorOrAdmin`; start/stop: admin | planned (see "Modules page"); the Admin API behind it exists |
 
 The nav shows `/creator`, `/creator/map` and `/creator/players` links only when the `CreatorOrAdmin` policy passes.
 
@@ -170,6 +171,15 @@ Query string: `?area=<prefix>&z=<level>` (defaults to the first area and level 0
   confirmation is shown.
 - Game side: a player online in the game holds a cached `Player`. `Player.Save` and `chpwd` re-read the stored
   `Password` first and adopt it if it differs, so a later game save never writes back an older password.
+
+## Modules page (`/admin/modules`): API ready, page not built yet
+
+The page is a later card. Its backend is in `specs/ADMIN_API.md` ("Modules"). The web reaches it only through `IAdminClient`:
+`ListModulesAsync(token)` (creator or admin), `StartModuleAsync(token, name)` and `StopModuleAsync(token, name)` (admin only). The page should
+show each module's name, version, state, a running / not running badge from `ModuleInfo.running`, a `required` marker and `last_failure`, and
+offer Start and Stop buttons to admins only (POST, antiforgery). Start and stop only queue the request on core, so the page shows the reply
+message and re-lists; the state may take a moment to change. Core refuses Stop of a `required` module with a message to show.
+`FakeAdminClient` has `AddModule`, `ModuleStarts` and `ModuleStops` for page tests.
 
 ## Auth model
 

@@ -7,6 +7,7 @@ using MongoDB.Bson;
 using MUD.Contracts;
 using MUD.Core.Components;
 using MUD.Core.GameObjects;
+using MUD.Core.Modules;
 using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
 using MUD.Data;
@@ -84,9 +85,10 @@ namespace MUD.Core.Administration
         private readonly IClock _clock;
         private readonly Action<string> _log;
         private readonly Func<int, int> _random;
+        private readonly IModuleControl _modules;
 
         public AdminApi(IAdminHost host, IPlayerRepository players, IRoomRepository rooms, IAdminQueries queries, IAuditStore audit,
-            AdminSessions sessions, IClock clock, Action<string> log, Func<int, int> random = null)
+            AdminSessions sessions, IClock clock, Action<string> log, Func<int, int> random = null, IModuleControl modules = null)
         {
             _host = host ?? throw new ArgumentNullException(nameof(host));
             _players = players ?? throw new ArgumentNullException(nameof(players));
@@ -97,6 +99,7 @@ namespace MUD.Core.Administration
             _clock = clock ?? SystemClock.Instance;
             _log = log ?? (_ => { });
             _random = random ?? (max => new Random().Next(max));
+            _modules = modules;
         }
 
         /// <summary>The session table, for tests and for the host that wants to know how many web users are signed in.</summary>
@@ -761,6 +764,104 @@ namespace MUD.Core.Administration
                 });
             }
             return reply;
+        }
+
+        // ------------------------------------------------------------------ modules
+
+        public const string ModuleNotFoundMessage = "No module with that name is known to core.";
+        public const string ModulesUnavailableMessage = "The module supervisor is not running.";
+        public const string ModuleAlreadyRunningMessage = "The module is already running or starting; nothing was changed.";
+        public const string ModuleAlreadyStoppedMessage = "The module is already stopped; nothing was changed.";
+        public const string ModuleAlreadyStoppingMessage = "The module is already stopping; nothing was changed.";
+        public const string RequiredModuleMessage = "This module is required by the game and is not stopped from the website. Use the in-game `modules stop` command if it really must go.";
+        public const string ModuleStartQueuedMessage = "Start requested. The module changes state shortly; refresh the list to see it.";
+        public const string ModuleStopQueuedMessage = "Stop requested. The module changes state shortly; refresh the list to see it.";
+
+        /// <summary>Every module the supervisor knows (directory discovery, D67), running or not. Creator or admin.</summary>
+        public ListModulesReply ListModules(TokenRequest request)
+        {
+            Authorize(request.Token, AdminRole.Creator);
+            var reply = new ListModulesReply();
+            IReadOnlyList<ModuleStatus> statuses = _modules == null ? null : _modules.GetStatuses();
+            if (statuses != null) { reply.Modules.AddRange(statuses.Select(ModuleInfoFrom)); }
+            return reply;
+        }
+
+        public ModuleActionReply StartModule(ModuleRequest request)
+        {
+            return ControlModule(request, "start");
+        }
+
+        public ModuleActionReply StopModule(ModuleRequest request)
+        {
+            return ControlModule(request, "stop");
+        }
+
+        // Admin only (a stopped module changes the whole game). The role check and the request both run on the game thread; the supervisor
+        // itself only queues the work for its own thread, where the process work happens. Audit first: no row, no request.
+        private ModuleActionReply ControlModule(ModuleRequest request, string action)
+        {
+            string name = request.Name ?? string.Empty;
+            return Mutate(request.Token, AdminRole.Admin, actor =>
+            {
+                if (_modules == null) { return ModuleReply(AdminResult.Refused, ModulesUnavailableMessage, null); }
+                IReadOnlyList<ModuleStatus> all = _modules.GetStatuses();
+                if (all == null) { return ModuleReply(AdminResult.Refused, ModulesUnavailableMessage, null); }
+                ModuleStatus status = all.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.Ordinal));
+                if (status == null) { return ModuleReply(AdminResult.NotFound, ModuleNotFoundMessage, null); }
+
+                bool starting = action == "start";
+                if (starting)
+                {
+                    if (status.State == ModuleState.Starting || status.State == ModuleState.Connected || status.State == ModuleState.Ready) { return ModuleReply(AdminResult.NoChange, ModuleAlreadyRunningMessage, status); }
+                    if (status.State == ModuleState.Stopping) { return ModuleReply(AdminResult.Refused, ModuleAlreadyStoppingMessage, status); }
+                    // The supervisor logs and ignores a start for a module it cannot start (no executable, bad --describe, contract mismatch).
+                    if (!string.IsNullOrEmpty(status.Problem) || status.FolderMissing) { return ModuleReply(AdminResult.Refused, "The module cannot be started: " + (status.Problem ?? "its folder is gone") + ".", status); }
+                }
+                else
+                {
+                    if (status.State == ModuleState.Stopped) { return ModuleReply(AdminResult.NoChange, ModuleAlreadyStoppedMessage, status); }
+                    if (status.State == ModuleState.Stopping) { return ModuleReply(AdminResult.NoChange, ModuleAlreadyStoppingMessage, status); }
+                    // D67 does not say whether a required module may be stopped; the in-game command allows it. Refused here until the owner decides.
+                    if (status.Required) { return ModuleReply(AdminResult.Refused, RequiredModuleMessage, status); }
+                }
+
+                List<AuditRecord> entries = BuildEntries(actor, "module", status.Name, status.Name, new List<AuditChange>
+                {
+                    new AuditChange("Action", BsonNull.Value, action),
+                });
+                if (!TryAudit(entries)) { return ModuleReply(AdminResult.AuditFailed, null, status); }
+
+                string answer = starting ? _modules.RequestStart(status.Name) : _modules.RequestStop(status.Name);
+                bool queued = answer != null;
+                Finish(entries, queued);
+                if (!queued) { return ModuleReply(AdminResult.Refused, ModulesUnavailableMessage, status); }
+                return ModuleReply(AdminResult.Ok, starting ? ModuleStartQueuedMessage : ModuleStopQueuedMessage, status);
+            });
+        }
+
+        private static ModuleActionReply ModuleReply(AdminResult result, string message, ModuleStatus status)
+        {
+            var reply = new ModuleActionReply { Result = result, Message = message ?? string.Empty };
+            if (status != null) { reply.Module = ModuleInfoFrom(status); }
+            return reply;
+        }
+
+        public static ModuleInfo ModuleInfoFrom(ModuleStatus status)
+        {
+            string failure = !string.IsNullOrEmpty(status.Problem) ? status.Problem
+                : status.State == ModuleState.Refused && !string.IsNullOrEmpty(status.RefusalReason) ? "core refused it: " + status.RefusalReason
+                : status.Detail;
+            return new ModuleInfo
+            {
+                Name = status.Name ?? string.Empty,
+                Version = status.Version ?? string.Empty,
+                State = (ModuleRunState)((int)status.State + 1),
+                Running = status.State == ModuleState.Connected || status.State == ModuleState.Ready,
+                Required = status.Required,
+                LastFailure = failure ?? string.Empty,
+                FolderMissing = status.FolderMissing
+            };
         }
 
         // ------------------------------------------------------------------ authorization

@@ -246,6 +246,59 @@ public class FakeAdminClient : IAdminClient
         }
         return Task.FromResult(reply);
     }
+
+    // Modules. The fake keeps the modules it is given; start and stop record the call and answer with the reply a test sets.
+    public Dictionary<string, ModuleInfo> Modules { get; } = new();
+    public bool RefuseModuleCalls { get; set; }
+    public AdminResult ModuleActionResult { get; set; } = AdminResult.Ok;
+    public string ModuleActionMessage { get; set; } = string.Empty;
+    public List<string> ModuleStarts { get; } = new();
+    public List<string> ModuleStops { get; } = new();
+    public List<string> ModuleTokens { get; } = new();
+
+    public FakeAdminClient AddModule(string name, ModuleRunState state = ModuleRunState.Stopped, bool required = false, string version = "1.0", string lastFailure = "")
+    {
+        Modules[name] = new ModuleInfo
+        {
+            Name = name, Version = version, State = state, Required = required, LastFailure = lastFailure,
+            Running = state == ModuleRunState.Connected || state == ModuleRunState.Ready,
+        };
+        return this;
+    }
+
+    private void CheckModuleCall(string token)
+    {
+        if (Unavailable) { throw new CoreUnavailableException(); }
+        ModuleTokens.Add(token);
+        if (RefuseModuleCalls) { throw new CoreRefusedException(RefuseBecauseSessionEnded); }
+    }
+
+    public Task<IReadOnlyList<ModuleInfo>> ListModulesAsync(string token, CancellationToken cancellation = default)
+    {
+        CheckModuleCall(token);
+        return Task.FromResult<IReadOnlyList<ModuleInfo>>(Modules.Values.OrderBy(m => m.Name, StringComparer.Ordinal).ToList());
+    }
+
+    public Task<ModuleActionReply> StartModuleAsync(string token, string name, CancellationToken cancellation = default)
+    {
+        CheckModuleCall(token);
+        ModuleStarts.Add(name);
+        return Task.FromResult(ModuleReply(name));
+    }
+
+    public Task<ModuleActionReply> StopModuleAsync(string token, string name, CancellationToken cancellation = default)
+    {
+        CheckModuleCall(token);
+        ModuleStops.Add(name);
+        return Task.FromResult(ModuleReply(name));
+    }
+
+    private ModuleActionReply ModuleReply(string name)
+    {
+        var reply = new ModuleActionReply { Result = ModuleActionResult, Message = ModuleActionMessage };
+        if (Modules.TryGetValue(name, out var module)) { reply.Module = module; }
+        return reply;
+    }
 }
 
 public class LoginPageTests
