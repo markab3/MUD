@@ -794,9 +794,9 @@ namespace MUD.Core.Administration
         public const string ModuleAlreadyRunningMessage = "The module is already running or starting; nothing was changed.";
         public const string ModuleAlreadyStoppedMessage = "The module is already stopped; nothing was changed.";
         public const string ModuleAlreadyStoppingMessage = "The module is already stopping; nothing was changed.";
-        public const string RequiredModuleMessage = "This module is required by the game and is not stopped from the website. Use the in-game `modules stop` command if it really must go.";
         public const string ModuleStartQueuedMessage = "Start requested. The module changes state shortly; refresh the list to see it.";
         public const string ModuleStopQueuedMessage = "Stop requested. The module changes state shortly; refresh the list to see it.";
+        public const string ModuleRestartQueuedMessage = "Restart requested. The module changes state shortly; refresh the list to see it.";
 
         /// <summary>Every module the supervisor knows (directory discovery, D67), running or not. Creator or admin.</summary>
         public ListModulesReply ListModules(TokenRequest request)
@@ -818,6 +818,11 @@ namespace MUD.Core.Administration
             return ControlModule(request, "stop");
         }
 
+        public ModuleActionReply RestartModule(ModuleRequest request)
+        {
+            return ControlModule(request, "restart");
+        }
+
         // Admin only (a stopped module changes the whole game). The role check and the request both run on the game thread; the supervisor
         // itself only queues the work for its own thread, where the process work happens. Audit first: no row, no request.
         private ModuleActionReply ControlModule(ModuleRequest request, string action)
@@ -832,7 +837,16 @@ namespace MUD.Core.Administration
                 if (status == null) { return ModuleReply(AdminResult.NotFound, ModuleNotFoundMessage, null); }
 
                 bool starting = action == "start";
-                if (starting)
+                bool restarting = action == "restart";
+                // Restart of a stopped module is a start (the supervisor does the same), so it gets the start's checks and is audited as one.
+                if (restarting && status.State == ModuleState.Stopped) { starting = true; action = "start"; restarting = false; }
+                if (restarting)
+                {
+                    if (status.State == ModuleState.Stopping) { return ModuleReply(AdminResult.Refused, ModuleAlreadyStoppingMessage, status); }
+                    // A restart ends in a start when the module is not Ready, so a module that cannot start is refused here too.
+                    if (!string.IsNullOrEmpty(status.Problem) || status.FolderMissing) { return ModuleReply(AdminResult.Refused, "The module cannot be restarted: " + (status.Problem ?? "its folder is gone") + ".", status); }
+                }
+                else if (starting)
                 {
                     if (status.State == ModuleState.Starting || status.State == ModuleState.Connected || status.State == ModuleState.Ready) { return ModuleReply(AdminResult.NoChange, ModuleAlreadyRunningMessage, status); }
                     if (status.State == ModuleState.Stopping) { return ModuleReply(AdminResult.Refused, ModuleAlreadyStoppingMessage, status); }
@@ -843,8 +857,6 @@ namespace MUD.Core.Administration
                 {
                     if (status.State == ModuleState.Stopped) { return ModuleReply(AdminResult.NoChange, ModuleAlreadyStoppedMessage, status); }
                     if (status.State == ModuleState.Stopping) { return ModuleReply(AdminResult.NoChange, ModuleAlreadyStoppingMessage, status); }
-                    // D67 does not say whether a required module may be stopped; the in-game command allows it. Refused here until the owner decides.
-                    if (status.Required) { return ModuleReply(AdminResult.Refused, RequiredModuleMessage, status); }
                 }
 
                 List<AuditRecord> entries = BuildEntries(actor, "module", status.Name, status.Name, new List<AuditChange>
@@ -853,11 +865,11 @@ namespace MUD.Core.Administration
                 });
                 if (!TryAudit(entries)) { return ModuleReply(AdminResult.AuditFailed, null, status); }
 
-                string answer = starting ? _modules.RequestStart(status.Name) : _modules.RequestStop(status.Name);
+                string answer = restarting ? _modules.RequestRestart(status.Name) : starting ? _modules.RequestStart(status.Name) : _modules.RequestStop(status.Name);
                 bool queued = answer != null;
                 Finish(entries, queued);
                 if (!queued) { return ModuleReply(AdminResult.Refused, ModulesUnavailableMessage, status); }
-                return ModuleReply(AdminResult.Ok, starting ? ModuleStartQueuedMessage : ModuleStopQueuedMessage, status);
+                return ModuleReply(AdminResult.Ok, restarting ? ModuleRestartQueuedMessage : starting ? ModuleStartQueuedMessage : ModuleStopQueuedMessage, status);
             });
         }
 

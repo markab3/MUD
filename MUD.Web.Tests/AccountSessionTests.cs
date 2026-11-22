@@ -260,6 +260,7 @@ public class FakeAdminClient : IAdminClient
     public string ModuleActionMessage { get; set; } = string.Empty;
     public List<string> ModuleStarts { get; } = new();
     public List<string> ModuleStops { get; } = new();
+    public List<string> ModuleRestarts { get; } = new();
     public List<string> ModuleTokens { get; } = new();
 
     public FakeAdminClient AddModule(string name, ModuleRunState state = ModuleRunState.Stopped, bool required = false, string version = "1.0", string lastFailure = "")
@@ -296,6 +297,13 @@ public class FakeAdminClient : IAdminClient
     {
         CheckModuleCall(token);
         ModuleStops.Add(name);
+        return Task.FromResult(ModuleReply(name));
+    }
+
+    public Task<ModuleActionReply> RestartModuleAsync(string token, string name, CancellationToken cancellation = default)
+    {
+        CheckModuleCall(token);
+        ModuleRestarts.Add(name);
         return Task.FromResult(ModuleReply(name));
     }
 

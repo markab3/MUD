@@ -18,6 +18,9 @@ namespace MUD.Core.Administration
 
         /// <summary>Queues a stop on the supervisor thread. Null when the supervisor is not running.</summary>
         string RequestStop(string name);
+
+        /// <summary>Queues a restart on the supervisor thread (overlapping for a Ready module, plain stop and start otherwise). Null when the supervisor is not running.</summary>
+        string RequestRestart(string name);
     }
 
     /// <summary>The real thing: the World's supervisor, looked up on each call because it is attached after the Admin service is built.</summary>
@@ -35,5 +38,7 @@ namespace MUD.Core.Administration
         public string RequestStart(string name) { return _supervisor()?.RequestStart(name); }
 
         public string RequestStop(string name) { return _supervisor()?.RequestStop(name); }
+
+        public string RequestRestart(string name) { return _supervisor()?.RequestRestart(name); }
     }
 }

@@ -45,13 +45,17 @@ public interface IAdminClient
 
     Task<UpdatePlayerReply> UpdatePlayerAsync(string token, UpdatePlayerRequest request, CancellationToken cancellation = default);
 
-    // Modules. List is creator or admin; start and stop are admin only. Start and stop only queue the request on core's supervisor
+    // Modules. List is creator or admin; start, stop and restart are admin only. They only queue the request on core's supervisor
     // (the reply says so); the list shows the outcome. Same exceptions as the room calls.
     Task<IReadOnlyList<ModuleInfo>> ListModulesAsync(string token, CancellationToken cancellation = default);
 
     Task<ModuleActionReply> StartModuleAsync(string token, string name, CancellationToken cancellation = default);
 
     Task<ModuleActionReply> StopModuleAsync(string token, string name, CancellationToken cancellation = default);
+
+    // Restart is admin only; core starts the new instance before it ends the old one, and restarting a stopped module starts it.
+    // Every module, required ones included, can be started, stopped and restarted.
+    Task<ModuleActionReply> RestartModuleAsync(string token, string name, CancellationToken cancellation = default);
 }
 
 // Core refused the session token (SessionEnded: unknown, revoked, or its player is retired) or the caller's current role is too low.
@@ -233,6 +237,9 @@ public sealed class GrpcAdminClient : IAdminClient
 
     public Task<ModuleActionReply> StopModuleAsync(string token, string name, CancellationToken cancellation = default) =>
         Call(() => _client.StopModuleAsync(new ModuleRequest { Token = token ?? string.Empty, Name = name ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+
+    public Task<ModuleActionReply> RestartModuleAsync(string token, string name, CancellationToken cancellation = default) =>
+        Call(() => _client.RestartModuleAsync(new ModuleRequest { Token = token ?? string.Empty, Name = name ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
 
     // Unauthenticated and PermissionDenied are core's answers about the caller; any other failure means core could not answer.
     private static async Task<T> Call<T>(Func<Grpc.Core.AsyncUnaryCall<T>> call)

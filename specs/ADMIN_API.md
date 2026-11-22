@@ -39,7 +39,7 @@ Messages are fixed sentences. No token, password or stored value is put in a sta
 | `WebAuthenticate`, `Logout` | none |
 | `GetSession`, `ChangePassword` | any signed-in player |
 | `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListPlayers`, `GetPlayer`, `UpdatePlayer`, `ListModules` | creator or admin |
-| `ListAudit`, `StartModule`, `StopModule` | admin only |
+| `ListAudit`, `StartModule`, `StopModule`, `RestartModule` | admin only |
 
 Not in this card: `GetRoomMap` (the map is laid out by the web from `ListRooms`, as `RoomMapLayout` does today), `GetStats` and `Flush` (sketched in
 CORE_API 7.2, not needed by any page). Each is a later addition if a page turns out to need it.
@@ -96,7 +96,7 @@ through the persistence worker like every other room save; player edits are a fi
 object is set afterwards; the game's own save writes the whole live player, since core is the only writer). Online players in the room or the player edited are told, as the poll told them: "Something feels
 different...", "Something about you feels different...", "Your status has changed.", and the retired message followed by the normal quit path.
 
-## Modules (`ListModules`, `StartModule`, `StopModule`)
+## Modules (`ListModules`, `StartModule`, `StopModule`, `RestartModule`)
 
 Backend of the website Modules page. All logic stays in `ModuleSupervisor` (D67, MODULES section 3); `AdminApi` reaches it through the small
 `IModuleControl` seam (`SupervisorModuleControl` in production, a fake in tests).
@@ -106,16 +106,24 @@ Backend of the website Modules page. All logic stays in `ModuleSupervisor` (D67,
   `state` (STOPPED, STARTING, CONNECTED, READY, BACKOFF, FAILED, REFUSED, STOPPING), `running` (derived: CONNECTED or READY), `required`,
   `last_failure` (the scan problem, else the refusal reason, else the supervisor's last detail) and `folder_missing`. The supervisor has no
   QUARANTINED state; in the code the spec's FAILED/QUARANTINED are FAILED and REFUSED. With no supervisor the list is empty.
-- `StartModule` and `StopModule` (admin only; the role is re-read per call and checked on the game thread together with the call) queue the request
-  on the supervisor with `RequestStart` / `RequestStop`, which do the process work on the supervisor's own thread, never the game thread. `OK`
+- `StartModule`, `StopModule` and `RestartModule` (admin only; the role is re-read per call and checked on the game thread together with the call) queue the request
+  on the supervisor with `RequestStart` / `RequestStop` / `RequestRestart`, which do the process work on the supervisor's own thread, never the game thread. `OK`
   therefore means "queued"; `ListModules` shows the outcome. Start clears FAILED, REFUSED and the crash history, exactly like `modules start`.
 - Results: `OK` queued; `NO_CHANGE` already running or starting (start), already stopped or stopping (stop), with a message; `NOT_FOUND` unknown
-  module; `REFUSED` a module that cannot start (its scan problem is in the message), a start while it is stopping, a stop of a `required` module,
-  or no supervisor; `AUDIT_FAILED`. Nothing is audited for a refusal or a no-change.
-- Audit first: one row per action (`entity` `module`, `entity_id` the module name, field `Action`, new value `start` or `stop`, source `web`, actor
+  module; `REFUSED` a module that cannot start (its scan problem is in the message), a start or restart while it is stopping, or no supervisor
+  (the "unavailable" message); `AUDIT_FAILED`. Nothing is audited for a refusal or a no-change. The messages for the UI are: requested
+  (`OK`), unknown module (`NOT_FOUND`) and unavailable (`REFUSED`, no supervisor).
+- Audit first: one row per action (`entity` `module`, `entity_id` the module name, field `Action`, new value `start`, `stop` or `restart`, source `web`, actor
   from the session), inserted before the request is queued and marked applied once queued. No row, no request.
-- Restart: the supervisor has `RequestRestart` (in-game `modules restart`) but it is not exposed here; the page needs only start and stop.
-  `rescan` is not exposed either.
+- `RestartModule` calls `RequestRestart` (the in-game `modules restart`). A Ready module is replaced by an overlap: the new instance starts
+  first and the old one ends only after the new one is Ready (MODULES 5.3a); a failed restart leaves the old instance running. Restart of
+  a stopped module is a start: it is audited and answered as a start (`start` row, start message). A restart of a module that cannot start
+  (scan problem, folder gone) is refused like a start, and a restart while it is stopping is refused. `rescan` is not exposed.
+- Required modules: every module, required ones included, can be started, stopped and restarted. `ListModules` still returns `required`
+  so the UI can mark them. D21/D70 gate only start-up (`ModuleSupervisor.WaitForRequiredModules`, called once from `Program.cs`): after the
+  game is open nothing watches the required flag, so stopping a required module does not make core exit. The game keeps running without
+  the module and whatever the module provided (its commands, rooms behaviour and timers) is simply absent until it is started again. Core
+  restart is the only place a missing required module is fatal.
 
 ## Not verified here
 
@@ -128,9 +136,6 @@ socket (`MUD.Tests/AdminApiTests.cs`, `AdminServiceHostTests.cs`).
 
 ## Open points for the owner
 
-- Required modules: D67 and MODULES do not say whether an admin may stop a module marked `required` (the in-game `modules stop` allows it).
-  `StopModule` refuses it with a clear message until the owner decides; the in-game command remains the way to do it. Relaxing this is one
-  condition in `AdminApi.ControlModule`.
 - Contract version: `ContractVersion.Current` stays 1. The note on that constant says to raise it with every `.proto` change, but the module
   tests use the literal 1 and `admin.proto` adds a service without touching the module wire. Raising it is a one-line change plus those tests.
 - The poll is gone (card P6-5). A direct database edit made outside core is no longer noticed by a running core: a live room or player keeps

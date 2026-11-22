@@ -183,11 +183,13 @@ Query string: `?area=<prefix>&z=<level>` (defaults to the first area and level 0
 ## Modules page (`/admin/modules`): API ready, page not built yet
 
 The page is a later card. Its backend is in `specs/ADMIN_API.md` ("Modules"). The web reaches it only through `IAdminClient`:
-`ListModulesAsync(token)` (creator or admin), `StartModuleAsync(token, name)` and `StopModuleAsync(token, name)` (admin only). The page should
+`ListModulesAsync(token)` (creator or admin), `StartModuleAsync(token, name)`, `StopModuleAsync(token, name)` and `RestartModuleAsync(token, name)` (admin only). The page should
 show each module's name, version, state, a running / not running badge from `ModuleInfo.running`, a `required` marker and `last_failure`, and
-offer Start and Stop buttons to admins only (POST, antiforgery). Start and stop only queue the request on core, so the page shows the reply
-message and re-lists; the state may take a moment to change. Core refuses Stop of a `required` module with a message to show.
-`FakeAdminClient` has `AddModule`, `ModuleStarts` and `ModuleStops` for page tests.
+offer Start, Stop and Restart buttons to admins only (POST, antiforgery). The buttons act on every module, required ones included (the
+page may add a confirmation for a `required` one; stopping it does not end the game). The calls only queue the request on core, so the page
+shows the reply message and re-lists; the state may take a moment to change. Restart of a stopped module is a start. Reply messages: requested
+(`OK`), unknown module (`NOT_FOUND`), unavailable (`REFUSED`).
+`FakeAdminClient` has `AddModule`, `ModuleStarts`, `ModuleStops` and `ModuleRestarts` for page tests.
 
 ## Auth model
 
