@@ -1,0 +1,59 @@
+@page "/creator/modules"
+@model ModulesModel
+@{ ViewData["Title"] = "Modules"; }
+<h1>Modules</h1>
+@if (Model.Notice != null) { <p role="status">@Model.Notice</p> }
+@if (Model.Error != null) { <p role="alert">@Model.Error</p> }
+<p>Requests are queued on the game; the state may take a moment to change. <a href="/creator/modules">Refresh</a> to see it.</p>
+@if (Model.IsAdmin) { <p>@ModulesModel.RestartHint</p> }
+<table>
+    <thead>
+        <tr>
+            <th>Name</th><th>Version</th><th>Status</th><th>Running</th><th>Required</th><th>Last failure</th>
+            @if (Model.IsAdmin) { <th>Actions</th> }
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var m in Model.Items)
+    {
+        <tr>
+            <td>@m.Name@(m.FolderMissing ? " (folder missing)" : "")</td>
+            <td>@(string.IsNullOrEmpty(m.Version) ? "unknown" : m.Version)</td>
+            <td>@ModulesModel.StateText(m)</td>
+            <td><strong>@(m.Running ? "[+] " : "[-] ")@ModulesModel.RunningText(m)</strong></td>
+            <td>@(m.Required ? "Required" : "Optional")</td>
+            <td>@m.LastFailure</td>
+            @if (Model.IsAdmin)
+            {
+                <td>
+                    @if (m.Running)
+                    {
+                        <form method="post" asp-page-handler="Stop" style="display:inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="name" value="@m.Name" />
+                            <button type="submit">Stop</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <form method="post" asp-page-handler="Start" style="display:inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="name" value="@m.Name" />
+                            <button type="submit">Start</button>
+                        </form>
+                    }
+                    <form method="post" asp-page-handler="Restart" style="display:inline">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="name" value="@m.Name" />
+                        <button type="submit">Restart</button>
+                    </form>
+                </td>
+            }
+        </tr>
+    }
+    @if (Model.Items.Count == 0)
+    {
+        <tr><td colspan="@(Model.IsAdmin ? 7 : 6)">No modules found.</td></tr>
+    }
+    </tbody>
+</table>

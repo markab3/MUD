@@ -34,9 +34,9 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/account/password` | signed in | change-password form (current, new, confirm), antiforgery protected; see below |
 | `/creator/players` | `CreatorOrAdmin` | player list (see "Player pages") |
 | `/creator/players/{nameKey}` | `CreatorOrAdmin` | player edit page (see "Player pages") |
-| `/admin/modules` | list: `CreatorOrAdmin`; start/stop: admin | planned (see "Modules page"); the Admin API behind it exists |
+| `/creator/modules` | list: `CreatorOrAdmin`; start/stop/restart buttons: admin only | module list with state (see "Modules page") |
 
-The nav shows `/creator`, `/creator/map` and `/creator/players` links only when the `CreatorOrAdmin` policy passes.
+The nav shows `/creator`, `/creator/map`, `/creator/players` and `/creator/modules` links only when the `CreatorOrAdmin` policy passes.
 
 ## Creator page (room creation)
 
@@ -180,16 +180,25 @@ Query string: `?area=<prefix>&z=<level>` (defaults to the first area and level 0
 - Game side: a player online in the game holds a cached `Player`. `Player.Save` and `chpwd` re-read the stored
   `Password` first and adopt it if it differs, so a later game save never writes back an older password.
 
-## Modules page (`/admin/modules`): API ready, page not built yet
+## Modules page (`/creator/modules`)
 
-The page is a later card. Its backend is in `specs/ADMIN_API.md` ("Modules"). The web reaches it only through `IAdminClient`:
-`ListModulesAsync(token)` (creator or admin), `StartModuleAsync(token, name)`, `StopModuleAsync(token, name)` and `RestartModuleAsync(token, name)` (admin only). The page should
-show each module's name, version, state, a running / not running badge from `ModuleInfo.running`, a `required` marker and `last_failure`, and
-offer Start, Stop and Restart buttons to admins only (POST, antiforgery). The buttons act on every module, required ones included (the
-page may add a confirmation for a `required` one; stopping it does not end the game). The calls only queue the request on core, so the page
-shows the reply message and re-lists; the state may take a moment to change. Restart of a stopped module is a start. Reply messages: requested
-(`OK`), unknown module (`NOT_FOUND`), unavailable (`REFUSED`).
-`FakeAdminClient` has `AddModule`, `ModuleStarts`, `ModuleStops` and `ModuleRestarts` for page tests.
+Built (`Pages/Modules.cshtml`, `ModulesModel`). Policy `CreatorOrAdmin`, like the player pages (there is no `/admin` area). Its backend is in
+`specs/ADMIN_API.md` ("Modules"); the web reaches it only through `IAdminClient` (`ListModulesAsync`, `StartModuleAsync`, `StopModuleAsync`,
+`RestartModuleAsync`).
+
+- Table columns: name (with "(folder missing)" when core says so), version ("unknown" if empty), status text (the run state in words),
+  Running / Not running (words with a `[+]`/`[-]` prefix, never colour alone), Required / Optional, and core's last-failure text.
+- Admins also get an Actions column: **Stop** when the module is running, **Start** when it is not, and **Restart** always. Required modules
+  get all of them too; the Required column tells the admin which are required. Creators see the list only. The buttons are three
+  POST forms per row (handlers `Start`, `Stop`, `Restart`), each with an antiforgery token and the module name in a hidden field. Core
+  re-checks the role on every call, so a forged POST from a creator is refused (403 page).
+- The calls only queue the request on core's supervisor. A handler stores core's message (or a fixed default) in `TempData["Notice"]` and
+  redirects back to the list; the GET reads it null-safely. Restart's default notice says it starts a new instance before it stops the old
+  one. Result branches: `OK`, `NO_CHANGE`, `NOT_FOUND`, `REFUSED` show the notice (core's wording for a refusal); `FORBIDDEN` and other
+  results show a fixed message.
+- Core unavailable shows the usual "game is not reachable" message with a 503; a refused session shows a 403 message.
+- Manual refresh only (a Refresh link); no auto refresh, no JavaScript, no CDN. All text is Razor-encoded.
+- Tests: `MUD.Web.Tests/ModulesPageTests.cs`, over `FakeAdminClient` (`AddModule`, `ModuleStarts`, `ModuleStops`, `ModuleRestarts`).
 
 ## Auth model
 
