@@ -82,6 +82,19 @@ namespace MUD.Core.Modules
             public string RefusalReason;
             public string Detail = "";
             public bool RestartAfterStop;
+            public Handover Handover;                  // set while an overlapping restart is in progress (MODULES 5.3a)
+        }
+
+        /// <summary>The new instance of an overlapping restart, from its spawn until it takes over or fails (MODULES 5.3a).</summary>
+        private sealed class Handover
+        {
+            public Process Process;
+            public int ProcessId;
+            public DateTime StartedUtc;
+            public string ConnectionId;
+            public bool Ready;
+            public bool ConnectionLost;
+            public string RefusalReason;
         }
 
         private readonly ModuleRegistry _registry;
@@ -202,7 +215,7 @@ namespace MUD.Core.Modules
         {
             string problem = CheckName(name);
             if (problem != null) { return problem; }
-            Enqueue(() => { StopByAdmin(name, true); });
+            Enqueue(() => { RestartByAdmin(name); });
             return "Restart of '" + name + "' requested.";
         }
 
@@ -525,12 +538,179 @@ namespace MUD.Core.Modules
             StartModule(name, true);
         }
 
+        /// <summary>
+        /// `modules restart` (MODULES 5.3a). A Ready module is replaced by an overlap: the new instance starts first and the old one ends only
+        /// after the new one is Ready. In every other state there is no live routing to protect, so it is the plain stop-and-start.
+        /// </summary>
+        private void RestartByAdmin(string name)
+        {
+            Record record;
+            bool overlap;
+            lock (_lock)
+            {
+                if (!_records.TryGetValue(name, out record)) { return; }
+                if (record.Handover != null)
+                {
+                    _log("Module '" + name + "' is already being restarted; the second restart is ignored.");
+                    return;
+                }
+                overlap = record.State == ModuleState.Ready && record.Process != null;
+                if (overlap)
+                {
+                    if (record.Problem != null || record.FolderMissing || record.Description == null)
+                    {
+                        string why = record.Problem ?? "its folder is gone";
+                        record.Detail = "restart failed: " + why;
+                        _log("Module '" + name + "' is not restarted: " + why + ". The running instance is kept.");
+                        return;
+                    }
+                    record.Handover = new Handover { StartedUtc = _utcNow() };
+                    record.Detail = "restart in progress";
+                    _registry.ExpectHandover(name);
+                }
+            }
+            if (overlap) { SpawnHandover(record); }
+            else { StopByAdmin(name, true); }
+        }
+
+        private void SpawnHandover(Record record)
+        {
+            Process process;
+            try { process = Spawn(record, record.ProcessId); }
+            catch (Exception ex)
+            {
+                FailHandover(record, "the new process could not be started: " + ex.Message);
+                return;
+            }
+            lock (_lock)
+            {
+                if (record.Handover == null) { try { process.Kill(true); } catch (Exception) { } return; }
+                record.Handover.Process = process;
+                record.Handover.ProcessId = process.Id;
+            }
+            _log("Module '" + record.Name + "' restart: new instance started as process " + process.Id + "; the running instance (process " + record.ProcessId + ") keeps serving until it is Ready.");
+        }
+
+        /// <summary>
+        /// Runs at the start of every watch pass for a record. If the running instance ended during the overlap, the overlap is abandoned
+        /// (the normal crash handling of this pass takes over); otherwise the new instance is checked.
+        /// </summary>
+        private void WatchHandover(Record record)
+        {
+            Process running;
+            bool oldLost;
+            lock (_lock)
+            {
+                if (record.Handover == null) { return; }
+                running = record.Process;
+                oldLost = record.ConnectionLost || record.RefusalReason != null;
+            }
+            if (running == null || HasExited(running) || oldLost)
+            {
+                FailHandover(record, "the running instance ended during the restart");
+                return;
+            }
+            TickHandover(record, _utcNow());
+        }
+
+        /// <summary>One look at a restart in progress. Runs on the supervisor thread. Returns true when the overlap has ended (done or failed).</summary>
+        private bool TickHandover(Record record, DateTime now)
+        {
+            Handover handover;
+            lock (_lock) { handover = record.Handover; }
+            if (handover == null) { return false; }
+            if (handover.Process == null) { return false; }   // the spawn call has not returned yet
+
+            string failure = null;
+            bool ready;
+            lock (_lock)
+            {
+                ready = handover.Ready;
+                if (handover.RefusalReason != null) { failure = "core refused the new instance: " + handover.RefusalReason; }
+                else if (HasExited(handover.Process)) { failure = "the new process exited (" + ExitDescription(handover.Process) + ")"; }
+                else if (handover.ConnectionLost) { failure = "the new instance lost its connection to core"; }
+                else if (!ready && now - handover.StartedUtc >= _options.StartupTimeout) { failure = "the new instance was not Ready within the start-up timeout of " + Format(_options.StartupTimeout); }
+            }
+            if (failure != null) { FailHandover(record, failure); return true; }
+            if (!ready) { return false; }
+
+            ModuleConnection fresh = _registry.Find(handover.ConnectionId);
+            ModuleConnection previous;
+            if (!_registry.Promote(fresh, out previous))
+            {
+                FailHandover(record, "the new instance's connection was gone when it was to take over");
+                return true;
+            }
+
+            Process oldProcess;
+            int oldProcessId;
+            lock (_lock)
+            {
+                oldProcess = record.Process;
+                oldProcessId = record.ProcessId;
+                record.Process = handover.Process;
+                record.ProcessId = handover.ProcessId;
+                record.ConnectionId = handover.ConnectionId;
+                record.StartedUtc = handover.StartedUtc;
+                record.ConnectionLost = false;
+                record.Detail = "";
+                record.Handover = null;
+            }
+            _registry.EndHandover(record.Name);
+            _log("Module '" + record.Name + "' restart: process " + handover.ProcessId + " is Ready and now receives the module's events; ending the old process " + oldProcessId + ".");
+            EndDetached(record.Name, oldProcess, oldProcessId);
+            if (previous != null) { _registry.Disconnect(previous, "replaced by a restart"); }
+            _log("Module '" + record.Name + "' restarted.");
+            return true;
+        }
+
+        /// <summary>Gives up on a restart in progress: ends the new instance and leaves the running one untouched.</summary>
+        private void FailHandover(Record record, string reason, bool report = true)
+        {
+            Handover handover;
+            lock (_lock)
+            {
+                handover = record.Handover;
+                if (handover == null) { return; }
+                record.Handover = null;
+                if (report) { record.Detail = "restart failed: " + reason; }
+            }
+            _registry.EndHandover(record.Name);
+            // The old instance is already authenticated, so dropping the token entry of the new spawn only closes the door on it.
+            _registry.Tokens.Revoke(record.Name);
+            if (handover.ConnectionId != null) { _registry.Disconnect(_registry.Find(handover.ConnectionId), "restart failed"); }
+            if (handover.Process != null) { EndDetached(record.Name, handover.Process, handover.ProcessId); }
+            _log(report
+                ? "Module '" + record.Name + "' restart failed: " + reason + ". The running instance was not touched."
+                : "Module '" + record.Name + "' restart cancelled.");
+        }
+
+        /// <summary>Ends a process that is no longer the record's: terminate signal, grace, kill. Does not touch the record or the token.</summary>
+        private void EndDetached(string name, Process process, int processId)
+        {
+            if (process == null) { return; }
+            try
+            {
+                if (!ModuleProcessSupport.TerminateProcess(processId, _options.TerminateGrace))
+                {
+                    _log("WARNING: module '" + name + "' (process " + processId + ") is still running after the kill signal.");
+                }
+            }
+            catch (Exception ex) { _log("Could not end module '" + name + "' (process " + processId + "): " + ex.Message); }
+            try { process.WaitForExit(2000); } catch (Exception) { }
+            try { process.Dispose(); } catch (Exception) { }
+        }
+
         private void StopByAdmin(string name, bool restart)
         {
             Record record;
             lock (_lock)
             {
                 if (!_records.TryGetValue(name, out record)) { return; }
+            }
+            FailHandover(record, "cancelled by an admin stop", false);
+            lock (_lock)
+            {
                 if (record.Process == null)
                 {
                     // Nothing runs: a stop only cancels a pending restart; a restart is a plain start.
@@ -571,9 +751,33 @@ namespace MUD.Core.Modules
                 record.Detail = "";
             }
 
+            Process process;
+            try { process = Spawn(record, 0); }
+            catch (Exception ex)
+            {
+                _log("Module '" + name + "' could not be started: " + ex.Message);
+                OnProcessEnded(record, "could not be started: " + ex.Message);
+                return;
+            }
+
+            lock (_lock)
+            {
+                record.Process = process;
+                record.ProcessId = process.Id;
+            }
+            _log("Module '" + name + "' started as process " + process.Id + ".");
+        }
+
+        /// <summary>
+        /// The stale-process check (D68), a new token (D17) and the spawn. <paramref name="keepProcessId"/> is the running instance an
+        /// overlapping restart is replacing: the check leaves it alone (0 for a plain start). Throws when the process cannot be started.
+        /// </summary>
+        private Process Spawn(Record record, int keepProcessId)
+        {
+            string name = record.Name;
             try
             {
-                int stale = StaleModuleProcesses.Terminate(record.ExecutablePath, _options.TerminateGrace, _log);
+                int stale = StaleModuleProcesses.Terminate(record.ExecutablePath, _options.TerminateGrace, _log, keepProcessId);
                 if (stale > 0) { _log("Ended " + stale + " stale process(es) of module '" + name + "' before starting it."); }
             }
             catch (Exception ex)
@@ -596,31 +800,15 @@ namespace MUD.Core.Modules
             startInfo.Environment["MUD_MODULE_TOKEN"] = token;
             startInfo.Environment["MUD_CORE_SOCKET"] = _modulesSocketPath;
 
-            Process process;
-            try
-            {
-                process = Process.Start(startInfo);
-                // Module logs: the child's standard output and error are re-logged by core with a [module:name] prefix, so they
-                // appear in core's own log (the systemd journal). Flagged for the owner in the pull request.
-                process.OutputDataReceived += (s, e) => { if (e.Data != null) { _log("[module:" + name + "] " + e.Data); } };
-                process.ErrorDataReceived += (s, e) => { if (e.Data != null) { _log("[module:" + name + "] " + e.Data); } };
-                process.BeginOutputReadLine();
-                process.BeginErrorReadLine();
-                try { process.StandardInput.Close(); } catch (Exception) { }
-            }
-            catch (Exception ex)
-            {
-                _log("Module '" + name + "' could not be started: " + ex.Message);
-                OnProcessEnded(record, "could not be started: " + ex.Message);
-                return;
-            }
-
-            lock (_lock)
-            {
-                record.Process = process;
-                record.ProcessId = process.Id;
-            }
-            _log("Module '" + name + "' started as process " + process.Id + ".");
+            Process process = Process.Start(startInfo);
+            // Module logs: the child's standard output and error are re-logged by core with a [module:name] prefix, so they
+            // appear in core's own log (the systemd journal). Flagged for the owner in the pull request.
+            process.OutputDataReceived += (s, e) => { if (e.Data != null) { _log("[module:" + name + "] " + e.Data); } };
+            process.ErrorDataReceived += (s, e) => { if (e.Data != null) { _log("[module:" + name + "] " + e.Data); } };
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            try { process.StandardInput.Close(); } catch (Exception) { }
+            return process;
         }
 
         /// <summary>Terminates the record's process (terminate signal, grace, kill) and forgets its token.</summary>
@@ -653,6 +841,7 @@ namespace MUD.Core.Modules
 
         private void StopAllProcesses()
         {
+            foreach (Record pending in _records.Values.Where(r => r.Handover != null).ToList()) { FailHandover(pending, "core is stopping", false); }
             List<Record> running;
             lock (_lock) { running = _records.Values.Where(r => r.Process != null).ToList(); }
             if (running.Count == 0) { return; }
@@ -679,6 +868,7 @@ namespace MUD.Core.Modules
             foreach (Record record in records)
             {
                 if (_stopRequested) { return; }
+                WatchHandover(record);
                 ModuleState state;
                 Process process;
                 bool lost;
@@ -785,6 +975,7 @@ namespace MUD.Core.Modules
             {
                 Record record;
                 if (!_records.TryGetValue(connection.ModuleName, out record)) { return; }
+                if (record.Handover != null && connection.IsPending) { record.Handover.ConnectionId = connection.ConnectionId; return; }
                 if (record.State != ModuleState.Starting) { return; }
                 record.State = ModuleState.Connected;
                 record.ConnectionId = connection.ConnectionId;
@@ -797,6 +988,7 @@ namespace MUD.Core.Modules
             {
                 Record record;
                 if (!_records.TryGetValue(connection.ModuleName, out record)) { return; }
+                if (record.Handover != null && record.Handover.ConnectionId == connection.ConnectionId) { record.Handover.Ready = true; _wake.Set(); return; }
                 if (record.ConnectionId != connection.ConnectionId) { return; }
                 record.State = ModuleState.Ready;
                 record.Detail = "";
@@ -810,6 +1002,7 @@ namespace MUD.Core.Modules
             {
                 Record record;
                 if (!_records.TryGetValue(connection.ModuleName, out record)) { return; }
+                if (record.Handover != null && record.Handover.ConnectionId == connection.ConnectionId) { record.Handover.ConnectionLost = true; _wake.Set(); return; }
                 if (record.ConnectionId != connection.ConnectionId) { return; }
                 if (record.State == ModuleState.Stopping) { return; }
                 record.ConnectionLost = true;
@@ -823,6 +1016,7 @@ namespace MUD.Core.Modules
             {
                 Record record;
                 if (!_records.TryGetValue(moduleName, out record)) { return; }
+                if (record.Handover != null) { record.Handover.RefusalReason = reason; _wake.Set(); return; }
                 if (record.State != ModuleState.Starting) { return; }
                 record.RefusalReason = reason;
             }

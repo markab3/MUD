@@ -80,7 +80,14 @@ namespace MUD.Core.Modules
         /// <summary>Finds and ends stale processes for the module. Returns how many were found. Never throws for a process that vanishes.</summary>
         public static int Terminate(string moduleExecutablePath, TimeSpan grace, Action<string> log)
         {
-            IReadOnlyList<int> stale = Find(moduleExecutablePath, Environment.ProcessId);
+            return Terminate(moduleExecutablePath, grace, log, 0);
+        }
+
+        /// <summary>As above, but leaves <paramref name="keepProcessId"/> alone: the running instance an overlapping restart is about to replace (MODULES 5.3a).</summary>
+        public static int Terminate(string moduleExecutablePath, TimeSpan grace, Action<string> log, int keepProcessId)
+        {
+            var stale = new List<int>();
+            foreach (int found in Find(moduleExecutablePath, Environment.ProcessId)) { if (found != keepProcessId) { stale.Add(found); } }
             foreach (int processId in stale)
             {
                 log("Stale process " + processId + " runs " + moduleExecutablePath + ": asking it to terminate.");
