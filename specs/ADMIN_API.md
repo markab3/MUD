@@ -53,11 +53,41 @@ CORE_API 7.2, not needed by any page). Each is a later addition if a page turns 
 - Exits to a room that does not exist need `confirm_dangling`.
 - The default room (`StartRoomKey`) can never be deleted. A deleted room's contents go to a random usable neighbour, else the default room; if
   neither exists the delete is refused before anything changes. Exits that led to the deleted room are removed from the other rooms.
-- Last write wins (D30): there is no revision number, no conflict result. Two edits in a row both apply; the audit keeps the history.
+- Last write wins (D30): there is no revision number, no conflict result (this holds for room Features too). Two edits in a row both apply; the audit keeps the history.
 - Audit is per changed field and audit first: rows are written with `Applied` false, the edit is applied, and the rows are then marked applied or
   rejected. If the rows cannot be written the edit is refused (`ADMIN_RESULT_AUDIT_FAILED`). Only web and creator edits are audited (D34).
 - Passwords are plaintext by earlier owner decision. They are never logged, audited, listed or returned; player reads use an inclusion projection
   that does not name the password.
+
+## Room features
+
+Owner decision (supersedes `specs/WEB_EDITING.md` Q3): a creator can add, edit, remove and reorder a room's Features. Rules are
+`specs/ROOM_FILES.md` section 4.4 and are enforced by `MUD.Data/RoomRules.cs` (`CheckFeature*`, `DuplicateFeatureShorts`) through
+`AdminFeatureValidator`, the importer's rules.
+
+- Contract (`contracts/mud/admin.proto`): `RoomFeature { short, long, room_line, detail, handles, adjectives, plurals }`. `RoomDetail.features`
+  carries the room's Features in stored order (`GetRoom`, `ListRooms` and every reply). `RoomEditRequest.features` is the FULL replacement list.
+- **`features_present` flag.** A caller that predates the field sends nothing, which proto3 cannot tell from an empty list. So the list is applied
+  only when `RoomEditRequest.features_present` is true; false leaves every Feature exactly as it is (and writes no `Features` audit row). True
+  with an empty list removes all Features. The web always sets it true.
+- Identity is `short`, case-insensitive. Order of the list is the stored order, so reordering is sending the list in the new order. `CreateRoom`
+  ignores the fields (a new room has no Features).
+- Validation (field names in `FieldError`: `Features[i].Short|Long|RoomLine|Detail|Handles|Adjectives|Plurals`, `Features`): text is normalised per
+  ROOM_FILES.md section 11 (trailing whitespace trimmed, LF); short required, one line, 100 characters; long required, 4000; room_line and detail
+  optional, 4000, empty stored as null; two Features with the same short (any case) are refused. The importer has no handle requirement and no
+  pattern for handles, adjectives and plurals, so neither does the web: a Feature may have no handles, and each word only has to be non-empty, at most
+  64 characters and free of control characters. Guards the importer lacks: at most 64 Features per room and 32 words per list.
+- Audit: one `Features` row per edit (entity `room`), old and new value both the whole list as an array of `{Short, Long, RoomLine, Detail,
+  Handles, Adjectives, Plurals}`. Audit first, then persist, then the live room, as for other room fields. An identical list is `NO_CHANGE`.
+- Revision check: there is none (D30, last write wins), so features follow the same rule and there is no Rev conflict result. The audit row
+  holds the previous list.
+- Behavior and component config: a Feature can carry `components` (for example a module's storm Feature) that the web cannot represent. A requested
+  Feature that matches a stored one by short keeps that Feature object and stored document: only short, long, room_line, detail, handles,
+  adjectives and plurals are overwritten, so its id, components and any other field survive. A Feature absent from the list is removed with
+  everything on it; a new short creates a new Feature with id `<room key>#<short lowercased>`, as the importer does. The audit shows only the
+  web-representable fields.
+- Never touched: `Items`, occupants. The live change is applied with the other room fields on the game thread; occupants get the usual
+  "Something feels different..." message.
 
 ## Live objects
 
@@ -67,6 +97,9 @@ object is set afterwards; the game's own save writes the whole live player, sinc
 different...", "Something about you feels different...", "Your status has changed.", and the retired message followed by the normal quit path.
 
 ## Not verified here
+
+Room features: the Mongo write of the `Features` field through the persistence worker was not run against a database; the in-memory fake
+stores the same `$set` document.
 
 MongoDB is not available in the sandbox. The Mongo-backed `MongoAdminQueries` and `MongoAuditStore` were not run against a database, and neither
 was the persistence-worker path of a real room edit. Everything else is tested over in-memory fakes and over the real Kestrel host on a Unix

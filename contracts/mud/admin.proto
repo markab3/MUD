@@ -116,6 +116,18 @@ message RoomExit {
   string to = 2;
 }
 
+// A room Feature as the web can represent it (specs/ROOM_FILES.md 4.4). Identity within a room is `short`, case-insensitive.
+// room_line and detail are optional: empty means unset. Behavior or component data a Feature carries is not part of this message.
+message RoomFeature {
+  string short = 1;
+  string long = 2;
+  string room_line = 3;
+  string detail = 4;
+  repeated string handles = 5;
+  repeated string adjectives = 6;
+  repeated string plurals = 7;
+}
+
 // Definition fields of a room. x, y, z are absent when the room is unplaced (blank is never 0).
 message RoomDetail {
   string key = 1;
@@ -126,6 +138,8 @@ message RoomDetail {
   optional int32 y = 6;
   optional int32 z = 7;
   repeated RoomExit exits = 8;
+  // The room's Features in stored order.
+  repeated RoomFeature features = 9;
 }
 
 message ListRoomsReply { repeated RoomDetail rooms = 1; }
@@ -154,6 +168,11 @@ message RoomEditRequest {
   repeated RoomExit exits = 9;
   // Save exits whose target room does not exist.
   bool confirm_dangling = 10;
+  // The FULL replacement Feature list, in the order wanted. Applied only when features_present is true: a caller that predates
+  // this field leaves it false and the room's Features stay exactly as they are. true with an empty list removes every Feature.
+  // Features are matched to the room's own by short (case-insensitive); see specs/ADMIN_API.md.
+  bool features_present = 11;
+  repeated RoomFeature features = 12;
 }
 
 message DeleteRoomRequest {
