@@ -179,10 +179,9 @@ public class RoomEditPageTests
             .Where(p => p.GetCustomAttributes(typeof(BindPropertyAttribute), true).Any()).Select(p => p.Name).ToHashSet();
         Assert.DoesNotContain("Key", bound);
         Assert.DoesNotContain("Items", bound);
-        Assert.DoesNotContain("Features", bound);
         Assert.DoesNotContain("Password", bound);
         Assert.DoesNotContain("Rev", bound); // D30: no optimistic concurrency
-        Assert.Equal(new[] { "Area", "ConfirmDangling", "Exits", "Long", "NewArea", "NewLocalKey", "Short", "X", "Y", "Z" }, bound.OrderBy(b => b).ToArray());
+        Assert.Equal(new[] { "Area", "ConfirmDangling", "Exits", "Features", "Long", "NewArea", "NewLocalKey", "Short", "X", "Y", "Z" }, bound.OrderBy(b => b).ToArray());
     }
 
     [Fact]
@@ -497,6 +496,185 @@ public class RoomEditPageTests
         var (model, _) = Page(new FakeAdminClient { Unavailable = true });
         await model.OnPostDeleteAsync("t.hall");
         Assert.Equal(503, model.Response.StatusCode);
+    }
+
+    private static FakeAdminClient WithFeatures()
+    {
+        var core = new FakeAdminClient().AddRoom("t.start").AddRoom("t.hall", "t", 1, 1, 0, ("north", "t.start"));
+        var a = new RoomFeature { Short = "fountain", Long = "A <b>stone</b> fountain.", RoomLine = "A fountain gurgles.", Detail = "Carved." };
+        a.Handles.AddRange(new[] { "fountain", "basin" });
+        a.Adjectives.Add("stone");
+        a.Plurals.Add("fountains");
+        var b = new RoomFeature { Short = "bench", Long = "A bench." };
+        core.Rooms["t.hall"].Features.AddRange(new[] { a, b });
+        return core;
+    }
+
+    [Fact]
+    public async Task Get_LoadsFeatures_WithWordListsJoined()
+    {
+        var (model, _) = Page(WithFeatures());
+        await model.OnGetAsync("t.hall");
+        Assert.Equal(new[] { "fountain", "bench" }, model.Features.Select(f => f.Short).ToArray());
+        Assert.Equal("fountain, basin", model.Features[0].Handles);
+        Assert.Equal("stone", model.Features[0].Adjectives);
+        Assert.Equal("fountains", model.Features[0].Plurals);
+        Assert.Equal("A fountain gurgles.", model.Features[0].RoomLine);
+        Assert.Equal("", model.Features[1].Handles);
+    }
+
+    [Fact]
+    public async Task AddFeature_RemoveFeature_ChangeTheFormOnly_NoWrite()
+    {
+        var (model, core) = Page(WithFeatures());
+        await model.OnGetAsync("t.hall");
+        await model.OnPostAddFeatureAsync("t.hall");
+        Assert.Equal(3, model.Features.Count);
+        await model.OnPostRemoveFeatureAsync("t.hall", 0);
+        Assert.Equal(new[] { "bench", null }, model.Features.Select(f => f.Short).ToArray());
+        await model.OnPostRemoveFeatureAsync("t.hall", 9); // out of range: ignored
+        Assert.Equal(2, model.Features.Count);
+        Assert.Empty(core.RoomUpdates);
+    }
+
+    [Fact]
+    public async Task MoveFeature_UpAndDown_SwapNeighbours_AndIgnoreTheEnds()
+    {
+        var (model, core) = Page(WithFeatures());
+        await model.OnGetAsync("t.hall");
+        await model.OnPostMoveFeatureDownAsync("t.hall", 0);
+        Assert.Equal(new[] { "bench", "fountain" }, model.Features.Select(f => f.Short).ToArray());
+        await model.OnPostMoveFeatureDownAsync("t.hall", 1); // last row: nothing
+        await model.OnPostMoveFeatureUpAsync("t.hall", 0);   // first row: nothing
+        Assert.Equal(new[] { "bench", "fountain" }, model.Features.Select(f => f.Short).ToArray());
+        await model.OnPostMoveFeatureUpAsync("t.hall", 1);
+        Assert.Equal(new[] { "fountain", "bench" }, model.Features.Select(f => f.Short).ToArray());
+        Assert.Empty(core.RoomUpdates);
+    }
+
+    [Fact]
+    public async Task FeatureHandlers_ForAMissingRoom_Are404()
+    {
+        var (model, _) = Page(new FakeAdminClient());
+        await model.OnPostAddFeatureAsync("t.gone");
+        Assert.Equal(404, model.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Save_SendsTheFeatureList_InOrder_WithFeaturesPresent_InOneUpdate()
+    {
+        var (model, core) = Page(WithFeatures());
+        model.Short = "x"; model.Long = "y"; model.Area = "t";
+        model.Features = new List<FeatureInput>
+        {
+            new() { Short = " bench ", Long = " A bench. ", Handles = "bench,  seat\tpew", Adjectives = "", Plurals = " , " },
+            new() { Short = "fountain", Long = "Wet.", RoomLine = "", Detail = "d", Handles = "fountain" },
+        };
+        await model.OnPostSaveAsync("t.hall");
+        var sent = Assert.Single(core.RoomUpdates);
+        Assert.True(sent.FeaturesPresent);
+        Assert.Equal(new[] { "bench", "fountain" }, sent.Features.Select(f => f.Short).ToArray());
+        Assert.Equal("A bench.", sent.Features[0].Long);
+        Assert.Equal(new[] { "bench", "seat", "pew" }, sent.Features[0].Handles.ToArray());
+        Assert.Empty(sent.Features[0].Plurals);
+        Assert.Equal("d", sent.Features[1].Detail);
+        Assert.Equal("x", sent.ShortDescription); // other room fields travel in the same call
+    }
+
+    [Fact]
+    public async Task Save_WithNoFeatureRows_SendsAnEmptyList_ThatRemovesThem()
+    {
+        var (model, core) = Page(WithFeatures());
+        await model.OnGetAsync("t.hall");
+        model.Features = new List<FeatureInput>();
+        await model.OnPostSaveAsync("t.hall");
+        Assert.True(Assert.Single(core.RoomUpdates).FeaturesPresent);
+        Assert.Empty(core.Rooms["t.hall"].Features);
+    }
+
+    [Fact]
+    public async Task Save_MoreFeatureRowsThanTheLimit_AreCut()
+    {
+        var (model, core) = Page(new FakeAdminClient().AddRoom("t.hall"));
+        model.Features = Enumerable.Range(0, RoomEditModel.MaxFormFeatures + 5).Select(i => new FeatureInput { Short = "f" + i, Long = "l" }).ToList();
+        await model.OnPostSaveAsync("t.hall");
+        Assert.Equal(RoomEditModel.MaxFormFeatures, Assert.Single(core.RoomUpdates).Features.Count);
+    }
+
+    [Fact]
+    public async Task Save_RoundTrip_ReloadShowsTheEditedFeatures()
+    {
+        var (model, core) = Page(WithFeatures());
+        await model.OnGetAsync("t.hall");
+        model.Features[1].Long = "A long oak bench.";
+        await model.OnPostAddFeatureAsync("t.hall");
+        model.Features[2].Short = "statue"; model.Features[2].Long = "Grey."; model.Features[2].Handles = "statue idol";
+        await model.OnPostMoveFeatureUpAsync("t.hall", 2);
+        await model.OnPostSaveAsync("t.hall");
+        Assert.Equal("Saved. The running game has the change now.", model.Notice);
+        Assert.Equal(new[] { "fountain", "statue", "bench" }, core.Rooms["t.hall"].Features.Select(f => f.Short).ToArray());
+
+        var (again, _) = Page(core);
+        await again.OnGetAsync("t.hall");
+        Assert.Equal(new[] { "fountain", "statue", "bench" }, again.Features.Select(f => f.Short).ToArray());
+        Assert.Equal("statue, idol", again.Features[1].Handles);
+        Assert.Equal("A long oak bench.", again.Features[2].Long);
+    }
+
+    [Fact]
+    public async Task Save_InvalidFeatures_ShowEachCoreErrorWithTheFeatureNumber_AndKeepTheInput()
+    {
+        var core = WithFeatures();
+        core.RoomEditResult = AdminResult.Invalid;
+        core.RoomEditErrors.Add(new FieldError { Field = "Features[1].Long", Message = "Long description is required." });
+        core.RoomEditErrors.Add(new FieldError { Field = "Features", Message = "Two features use the same short description." });
+        core.RoomEditErrors.Add(new FieldError { Field = "Features[0].Handles", Message = "Handle may not contain control characters." });
+        var (model, _) = Page(core);
+        model.Short = "x"; model.Long = "y";
+        model.Features = new List<FeatureInput> { new() { Short = "a", Long = "l", Handles = "bad" }, new() { Short = "a" } };
+        var result = await model.OnPostSaveAsync("t.hall");
+        Assert.IsType<PageResult>(result);
+        var messages = model.ModelState[string.Empty]!.Errors.Select(e => e.ErrorMessage).ToArray();
+        Assert.Equal(new[]
+        {
+            "Feature 2: Long description is required.",
+            "Two features use the same short description.",
+            "Feature 1: Handle may not contain control characters.",
+        }, messages);
+        Assert.Equal(2, model.Features.Count); // the user's rows stay in the form
+        Assert.Equal("a", model.Features[1].Short);
+    }
+
+    [Fact]
+    public async Task Save_WhenRefused_StillShowsTheFixedMessage_AndSendsNothingElse()
+    {
+        var (model, core) = Page(new FakeAdminClient { RefuseRoomCalls = true }.AddRoom("t.hall"));
+        await model.OnPostSaveAsync("t.hall");
+        Assert.Equal(RoomEditModel.ForbiddenError, model.Error);
+    }
+
+    [Fact]
+    public void Page_Source_HasTheFeaturesFieldsetBelowExits_WithFormatNote_AndNoScriptOrCdn()
+    {
+        var cshtml = File.ReadAllText(FindFile("MUD.Web/Pages/RoomEdit.cshtml"));
+        var exits = cshtml.IndexOf("<legend>Exits", StringComparison.Ordinal);
+        var features = cshtml.IndexOf("<legend>Features", StringComparison.Ordinal);
+        Assert.True(exits >= 0 && features > exits);
+        Assert.Contains("separate words with commas or spaces", cshtml);
+        foreach (var h in new[] { "AddFeature", "RemoveFeature", "MoveFeatureUp", "MoveFeatureDown" }) { Assert.Contains("handler=" + h, cshtml); }
+        Assert.Contains("<textarea asp-for=\"Features[i].Long\"", cshtml);
+        Assert.Contains("<textarea asp-for=\"Features[i].Detail\"", cshtml);
+        Assert.DoesNotContain("<script", cshtml);
+        Assert.DoesNotContain("http", cshtml);
+    }
+
+    [Fact]
+    public async Task Get_Rendered_HtmlEncodesFeatureText()
+    {
+        // The Razor view encodes by default and has no Html.Raw (see RoomEditPage_Source_UsesNoRawHtmlOutput); the loaded value stays raw text.
+        var (model, _) = Page(WithFeatures());
+        await model.OnGetAsync("t.hall");
+        Assert.Equal("A <b>stone</b> fountain.", model.Features[0].Long);
     }
 
     private class NoTempData : Microsoft.AspNetCore.Mvc.ViewFeatures.ITempDataProvider
