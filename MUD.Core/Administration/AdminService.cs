@@ -52,6 +52,8 @@ namespace MUD.Core.Administration
 
         public override Task<ModuleActionReply> StopModule(ModuleRequest request, ServerCallContext context) { return Run(() => _api.StopModule(request)); }
 
+        public override Task<ModuleActionReply> RestartModule(ModuleRequest request, ServerCallContext context) { return Run(() => _api.RestartModule(request)); }
+
         public override Task<ListAuditReply> ListAudit(ListAuditRequest request, ServerCallContext context) { return Run(() => _api.ListAudit(request)); }
 
         // The database calls block, so they run on a pool thread and never hold a Kestrel request thread.

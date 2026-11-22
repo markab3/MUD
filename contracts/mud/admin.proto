@@ -37,10 +37,13 @@ service Admin {
 
   // Admin only.
   rpc ListAudit(ListAuditRequest) returns (ListAuditReply);
-  // Queue a start or a stop of one module on the supervisor. The supervisor acts on its own thread, so OK means the request was
-  // accepted, not that the module has changed state yet; ListModules shows the outcome. Audited first. Restart is not exposed.
+  // Queue a start, stop or restart of one module on the supervisor. All modules, required ones included, may be controlled. The
+  // supervisor acts on its own thread, so OK means the request was accepted, not that the module has changed state yet; ListModules
+  // shows the outcome. Audited first. Restart starts the new instance before ending the old one (MODULES 5.3a); restart of a stopped
+  // module is a start.
   rpc StartModule(ModuleRequest) returns (ModuleActionReply);
   rpc StopModule(ModuleRequest) returns (ModuleActionReply);
+  rpc RestartModule(ModuleRequest) returns (ModuleActionReply);
 }
 
 enum AdminRole {
