@@ -14,7 +14,7 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Creator; }
 
-        public string HelpText { get => "Import an area file from the content directory. Only authored definition fields are overwritten; items and other runtime state are kept. A behavior entry in the file whose hook, module and type already exist on the stored room is reported and skipped; add 'replace' to replace it.\r\n\r\nSyntax: import <area> [dry] [replace]"; }
+        public string HelpText { get => "Import an area file from the content directory. Only authored definition fields are overwritten; items and other runtime state are kept. A behavior entry in the file whose hook, module and type already exist on the stored room is reported and skipped; add 'replace' to replace it. Rooms of a generated map (see 'genmap') are regenerated: their description, features, properties and behaviors are replaced by the file's, hand edits included; exits are kept in step with the map and items and occupants are kept.\r\n\r\nSyntax: import <area> [dry] [replace]"; }
 
         public ImportCommand(IRoomRepository roomRepository, WorldSettings settings)
         {

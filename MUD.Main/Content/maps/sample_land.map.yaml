@@ -1,0 +1,31 @@
+# Sample terrain map: grassland, forest, a river and the sea. Needs the terrain library (MongoDB).
+# Use:  genmap sample_land   then   import sample_land   (re-run both as often as you like: every room of the map is regenerated).
+# Room text, features and neighbour phrases ("A river flows just north of here.") come from the library, by terrain.
+# Terrain id = template name; `grass` is the library's grassland terrain. `color` is for the website map view only and
+# never reaches room data. The first grid row is the NORTH edge.
+generator:
+  prefix: sample_land
+  name: "Sample Land"
+  description: "A small stretch of coast: meadow, woods, a river that runs to the sea."
+  seed: "sample-land-1"
+  z: 0
+
+grid:
+  - "~~~~~~~~"
+  - "~..r.FF."
+  - "~.FFr.F."
+  - "~...rr.."
+  - "~...F.r."
+  - "~.....r."
+
+legend:
+  "~": { template: ocean, color: "#2f5fa8" }
+  ".": { template: grass, color: "#7bbf5a" }
+  F: { template: forest, color: "#1f6f3a" }
+  r: { template: river, color: "#3a7bd5" }
+
+templates:
+  ocean: {}
+  grass: {}
+  forest: {}
+  river: {}

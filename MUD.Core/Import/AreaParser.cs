@@ -209,12 +209,46 @@ namespace MUD.Core.Import
                     Adjectives = StringList(featureMap, "adjectives", fctx),
                     Plurals = StringList(featureMap, "plurals", fctx)
                 };
+                ParseFeatureGen(featureMap, feature, fctx);
                 room.Features.Add(feature);
             }
 
             room.Properties = ParseProperties(node, ctx);
             room.Behaviors = ParseBehaviors(node, ctx);
+            room.Gen = ParseRoomGen(node, ctx);
             return room;
+        }
+
+        // Room 'x-gen' (specs/TERRAIN_GENERATORS.md 5.1): map (required), terrain, seed, libVersion. Absent for authored rooms.
+        private GenInfo ParseRoomGen(YamlMappingNode node, string ctx)
+        {
+            var genNode = Get(node, "x-gen");
+            if (genNode == null) { return null; }
+            var genMap = genNode as YamlMappingNode;
+            if (genMap == null) { _errors.Add(ctx + ": x-gen must be a mapping."); return null; }
+            var gctx = ctx + ".x-gen";
+            CheckKeys(genMap, new[] { "map", "terrain", "seed", "libVersion" }, gctx);
+            return new GenInfo
+            {
+                Map = Scalar(genMap, "map", gctx, true),
+                Terrain = Scalar(genMap, "terrain", gctx, false),
+                Seed = Scalar(genMap, "seed", gctx, false),
+                LibVersion = Int(genMap, "libVersion", gctx)
+            };
+        }
+
+        // Feature 'x-gen' (section 5.2): templateId and templateVersion, both required when the key is present.
+        private void ParseFeatureGen(YamlMappingNode featureMap, FeatureDefinition feature, string fctx)
+        {
+            var genNode = Get(featureMap, "x-gen");
+            if (genNode == null) { return; }
+            var genMap = genNode as YamlMappingNode;
+            if (genMap == null) { _errors.Add(fctx + ": x-gen must be a mapping."); return; }
+            var gctx = fctx + ".x-gen";
+            CheckKeys(genMap, new[] { "templateId", "templateVersion" }, gctx);
+            feature.TemplateId = Scalar(genMap, "templateId", gctx, true);
+            feature.TemplateVersion = Int(genMap, "templateVersion", gctx);
+            if (feature.TemplateVersion == null && Get(genMap, "templateVersion") == null) { _errors.Add(gctx + ": templateVersion is required."); }
         }
 
         // The 'behaviors:' list of a room: hook, module, type, and optional priority, config (a mapping) and

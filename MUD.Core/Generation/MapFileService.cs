@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using MUD.Core.Generation.Terrains;
 using MUD.Core.Import;
 
 namespace MUD.Core.Generation
@@ -14,10 +16,19 @@ namespace MUD.Core.Generation
         public const string MapSubdirectory = "maps";
 
         private readonly string _contentDirectory;
+        private readonly Func<ILibrary> _libraryProvider;
 
         public MapFileService(string contentDirectory)
         {
             _contentDirectory = contentDirectory;
+        }
+
+        // libraryProvider is called once per run and must return a current snapshot of the terrain library, or null when
+        // there is none (then nothing is generated: a library-less run would write rooms without provenance, which a
+        // later re-import could not recognise as generated). It may throw when the database is unreachable.
+        public MapFileService(string contentDirectory, Func<ILibrary> libraryProvider) : this(contentDirectory)
+        {
+            _libraryProvider = libraryProvider;
         }
 
         public bool IsConfigured { get { return !string.IsNullOrWhiteSpace(_contentDirectory); } }
@@ -35,7 +46,27 @@ namespace MUD.Core.Generation
             var mapPath = Path.Combine(_contentDirectory, MapSubdirectory, mapName + ".map.yaml");
             if (!File.Exists(mapPath)) { lines.Add("No such map file: " + mapPath); return lines; }
 
-            var result = MapGenerator.Generate(File.ReadAllText(mapPath, Encoding.UTF8));
+            GenerateResult result;
+            if (_libraryProvider == null)
+            {
+                result = MapGenerator.Generate(File.ReadAllText(mapPath, Encoding.UTF8));
+            }
+            else
+            {
+                ILibrary library;
+                try { library = _libraryProvider(); }
+                catch (Exception ex) when (!(ex is OutOfMemoryException))
+                {
+                    lines.Add(mapName + ": the terrain library could not be read (" + ex.GetType().Name + "), nothing written.");
+                    return lines;
+                }
+                if (library == null)
+                {
+                    lines.Add(mapName + ": the terrain library is not available, nothing written.");
+                    return lines;
+                }
+                result = MapGenerator.Generate(File.ReadAllText(mapPath, Encoding.UTF8), mapName, library);
+            }
             if (!result.Success)
             {
                 lines.Add(mapName + ": map has errors, nothing written.");
@@ -43,6 +74,7 @@ namespace MUD.Core.Generation
                 return lines;
             }
 
+            foreach (var warning in result.Warnings) { lines.Add("  warning: " + warning); }
             var outPath = Path.Combine(_contentDirectory, result.Prefix + ".yaml");
             if (dryRun)
             {

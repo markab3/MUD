@@ -429,7 +429,9 @@ namespace MUD.Core.Generation
                 t.Handles = StringList(body, "handles", ctx);
                 t.Adjectives = StringList(body, "adjectives", ctx);
                 t.Plurals = StringList(body, "plurals", ctx);
-                if (t.Walkable && (t.Short.Count == 0 || t.Long.Count == 0))
+                // With a library the text may come from it (specs/TERRAIN_GENERATORS.md 8.2); a cell that still ends up with
+                // none is reported per room in BuildRoom ("gives no short description").
+                if (_library == null && t.Walkable && (t.Short.Count == 0 || t.Long.Count == 0))
                 {
                     _errors.Add(ctx + ": a walkable template needs 'short' and 'long' (or every cell must override them).");
                 }

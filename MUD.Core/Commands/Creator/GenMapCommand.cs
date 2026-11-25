@@ -13,11 +13,24 @@ namespace MUD.Core.Commands
 
         public CommandCategories CommandCategory { get => CommandCategories.Creator; }
 
-        public string HelpText { get => "Generate an area file from an ASCII map. Reads <content directory>/maps/<map>.map.yaml and writes <content directory>/<prefix>.yaml, which 'import' then loads. Regenerating the same map gives identical output.\r\n\r\nSyntax: genmap <map> [dry]"; }
+        public string HelpText { get => "Generate an area file from an ASCII map. Reads <content directory>/maps/<map>.map.yaml and writes <content directory>/<prefix>.yaml, which 'import' then loads. Rooms are built from the terrain library (MongoDB) and carry generator provenance; the same map, seed and library give identical output. Then 'import <prefix>' regenerates every room of the map (see 'import').\r\n\r\nSyntax: genmap <map> [dry]"; }
 
-        public GenMapCommand(WorldSettings settings)
+        // Reads the terrain library (MongoDB) fresh on every run, so edits made through the admin API are used at once.
+        // The library store is created on first use: a database that is down only fails genmap, not startup.
+        public GenMapCommand(WorldSettings settings, MongoDB.Driver.IMongoDatabase database)
         {
-            _service = new MapFileService(settings.ContentDirectory);
+            MUD.Core.Generation.Terrains.StoreLibrary library = null;
+            _service = new MapFileService(settings.ContentDirectory, () =>
+            {
+                if (library == null)
+                {
+                    var store = new MUD.Core.Generation.Terrains.MongoLibraryStore(database);
+                    if (!store.GetVersion().HasValue) { return null; }
+                    library = new MUD.Core.Generation.Terrains.StoreLibrary(store);
+                }
+                library.Refresh();
+                return library;
+            });
         }
 
         public object[] ParseCommand(Living commandIssuer, string input)
