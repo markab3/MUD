@@ -29,12 +29,24 @@ namespace MUD.Core.Commands
         protected abstract string Verb { get; }
 
         protected GenerationCommandBase(IRoomRepository rooms, WorldSettings settings, IMongoDatabase database)
+            : this(rooms, settings, new MongoAuditStore(database), MongoLibrary(database))
+        {
+        }
+
+        // Test seam: the audit store and library source are supplied instead of built from a database.
+        // Internal, so World's DI scan (which only considers public constructors) never sees it.
+        internal GenerationCommandBase(IRoomRepository rooms, WorldSettings settings, IAuditStore audit, Func<ILibrary> library)
         {
             _rooms = rooms;
             _settings = settings;
-            _audit = new MongoAuditStore(database);
+            _audit = audit;
+            _library = library;
+        }
+
+        private static Func<ILibrary> MongoLibrary(IMongoDatabase database)
+        {
             StoreLibrary cache = null;
-            _library = () =>
+            return () =>
             {
                 if (cache == null)
                 {
@@ -146,6 +158,8 @@ namespace MUD.Core.Commands
     {
         public RegenCommand(IRoomRepository rooms, WorldSettings settings, IMongoDatabase database) : base(rooms, settings, database) { }
 
+        internal RegenCommand(IRoomRepository rooms, WorldSettings settings, IAuditStore audit, Func<ILibrary> library) : base(rooms, settings, audit, library) { }
+
         public override string[] CommandKeywords { get => new string[] { "regen" }; }
 
         protected override bool IsUpdate { get => false; }
@@ -158,6 +172,8 @@ namespace MUD.Core.Commands
     public class UpdateCommand : GenerationCommandBase
     {
         public UpdateCommand(IRoomRepository rooms, WorldSettings settings, IMongoDatabase database) : base(rooms, settings, database) { }
+
+        internal UpdateCommand(IRoomRepository rooms, WorldSettings settings, IAuditStore audit, Func<ILibrary> library) : base(rooms, settings, audit, library) { }
 
         public override string[] CommandKeywords { get => new string[] { "update" }; }
 
