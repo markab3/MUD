@@ -7,6 +7,7 @@ using YamlDotNet.Core;
 using YamlDotNet.Core.Events;
 using YamlDotNet.RepresentationModel;
 using MUD.Core.Import;
+using MUD.Core.Generation.Terrains;
 
 namespace MUD.Core.Generation
 {
@@ -21,6 +22,12 @@ namespace MUD.Core.Generation
 
         public int RoomCount { get; set; }
 
+        // Legend colours by terrain id ("#RRGGBB"), for the web map view only. Never written into the area YAML.
+        public Dictionary<string, string> Colors { get; set; } = new Dictionary<string, string>();
+
+        // Non-fatal notes (e.g. one terrain given two different colours).
+        public List<string> Warnings { get; set; } = new List<string>();
+
         public bool Success { get { return Errors.Count == 0; } }
     }
 
@@ -29,7 +36,7 @@ namespace MUD.Core.Generation
     // Map file (all top-level keys required unless noted):
     //   generator:  prefix, name, seed (string), description (opt), origin: {x, y} (opt, default 0/0), z (opt)
     //   grid:       list of strings, or a block scalar. First line is the NORTH edge.
-    //   legend:     glyph -> template name. Glyphs absent from the legend (and spaces) make no room.
+    //   legend:     glyph -> template name, or {template, color: "#RRGGBB"} (color is for the web map only). Glyphs absent from the legend (and spaces) make no room.
     //   templates:  name -> {walkable (default true), short, long, handles, adjectives, plurals}
     //                 short: a string, or a list of strings (pool; one is picked)
     //                 long:  a list of pools; one fragment is picked from each pool and the picks are
@@ -50,16 +57,18 @@ namespace MUD.Core.Generation
         private static readonly string[] TemplateKeys = { "walkable", "short", "long", "handles", "adjectives", "plurals" };
         private static readonly string[] GeneratorKeys = { "prefix", "name", "description", "seed", "origin", "z" };
 
-        private class Template
-        {
-            public string Name;
-            public bool Walkable = true;
-            public List<string> Short = new List<string>();
-            public List<List<string>> Long = new List<List<string>>();
-            public List<string> Handles = new List<string>();
-            public List<string> Adjectives = new List<string>();
-            public List<string> Plurals = new List<string>();
-        }
+        private static readonly string[] LegendKeys = { "template", "color" };
+        private static readonly System.Text.RegularExpressions.Regex ColorPattern = new System.Text.RegularExpressions.Regex("^#[0-9A-Fa-f]{6}$");
+
+        private class Template : TerrainTemplate { }
+
+        // Library and registry are opt-in: without a library the output is exactly what the generator
+        // produced before terrain generators existed (no x-gen, no library text).
+        private ILibrary _library;
+        private TerrainRegistry _registry;
+        private string _mapName;
+        private readonly Dictionary<string, string> _colors = new Dictionary<string, string>();
+        private readonly List<string> _warnings = new List<string>();
 
         private class Cell
         {
@@ -74,6 +83,13 @@ namespace MUD.Core.Generation
         public static GenerateResult Generate(string mapYaml)
         {
             return new MapGenerator().GenerateInternal(mapYaml);
+        }
+
+        // Terrain-aware generation: rooms get x-gen provenance, neighbour phrases and library picks.
+        // `registry` may be null (TerrainRegistry.Default()).
+        public static GenerateResult Generate(string mapYaml, string mapName, ILibrary library, TerrainRegistry registry = null)
+        {
+            return new MapGenerator { _mapName = mapName, _library = library, _registry = registry ?? TerrainRegistry.Default() }.GenerateInternal(mapYaml);
         }
 
         public static string KeyFor(int x, int y)
@@ -141,6 +157,8 @@ namespace MUD.Core.Generation
             var overrides = ParseOverrides(Get(root, "overrides"));
 
             if (_errors.Count > 0) { result.Errors = _errors; return result; }
+            result.Colors = _colors;
+            result.Warnings = _warnings;
 
             // Build cells. Row 0 of the grid is the north edge.
             int height = rows.Count;
@@ -198,6 +216,7 @@ namespace MUD.Core.Generation
             }
             if (_errors.Count > 0) { result.Errors = _errors; return result; }
 
+            var allCells = cells.Values.ToDictionary(c => Tuple.Create(c.X, c.Y));
             var rooms = cells.Values.Where(c => c.Template.Walkable).ToList();
             foreach (var c in rooms) { c.Key = KeyFor(c.X, c.Y); }
             rooms = rooms.OrderByDescending(c => c.Y).ThenBy(c => c.X).ToList();
@@ -226,7 +245,7 @@ namespace MUD.Core.Generation
             var roomSeq = new YamlSequenceNode();
             foreach (var cell in rooms)
             {
-                roomSeq.Add(BuildRoom(cell, prefix, seed, walkable));
+                roomSeq.Add(BuildRoom(cell, prefix, seed, walkable, allCells));
             }
 
             var doc = new YamlMappingNode();
@@ -257,17 +276,30 @@ namespace MUD.Core.Generation
             return result;
         }
 
-        private YamlMappingNode BuildRoom(Cell cell, string prefix, string seed, HashSet<Tuple<int, int>> walkable)
+        private YamlMappingNode BuildRoom(Cell cell, string prefix, string seed, HashSet<Tuple<int, int>> walkable, Dictionary<Tuple<int, int>, Cell> allCells)
         {
             var rng = new SeededRandom(seed + "\n" + prefix + "\n" + cell.Key);
             var t = cell.Template;
             var ov = cell.Override;
 
-            // Draw in a fixed order regardless of overrides so a cell's text never depends on its neighbours.
-            var shortText = t.Short.Count == 0 ? null : t.Short[rng.Next(t.Short.Count)];
-            var picks = new List<string>();
-            foreach (var pool in t.Long) { picks.Add(pool[rng.Next(pool.Count)]); }
-            var longText = string.Join(" ", picks);
+            // Draw in a fixed order regardless of overrides. Without a library a cell's text never depends on
+            // its neighbours; with one it depends only on the cell, its eight neighbours' terrain ids, the seed
+            // and the library (specs/TERRAIN_GENERATORS.md 7.3).
+            var neighbours = new Neighbour[8];
+            for (int i = 0; i < 8; i++)
+            {
+                Cell n;
+                var found = allCells.TryGetValue(Tuple.Create(cell.X + NeighbourPhrases.Dx[i], cell.Y + NeighbourPhrases.Dy[i]), out n);
+                neighbours[i] = new Neighbour { Dir = (Dir)i, Exists = found, TerrainId = found ? n.Template.Name : null, Walkable = found && n.Template.Walkable };
+            }
+            var generator = (_registry ?? TerrainRegistry.Default()).For(t.Name);
+            var generated = generator.Generate(new GenContext
+            {
+                X = cell.X, Y = cell.Y, MapName = _mapName, Prefix = prefix, Key = cell.Key,
+                TerrainId = t.Name, Template = t, Rng = rng, Library = _library, Neighbours = neighbours,
+            });
+            var shortText = generated.Short;
+            var longText = generated.Long ?? "";
 
             var ctx = "room " + cell.Key;
             var ovShort = ov == null ? null : Text(ov, "short", ctx, false);
@@ -281,9 +313,19 @@ namespace MUD.Core.Generation
             room.Add("key", Str(cell.Key));
             room.Add("short", Str(shortText));
             room.Add("long", new YamlScalarNode(longText) { Style = ScalarStyle.Literal });
-            AddList(room, "handles", ov != null && Get(ov, "handles") != null ? StringList(ov, "handles", ctx) : t.Handles);
-            AddList(room, "adjectives", ov != null && Get(ov, "adjectives") != null ? StringList(ov, "adjectives", ctx) : t.Adjectives);
-            AddList(room, "plurals", ov != null && Get(ov, "plurals") != null ? StringList(ov, "plurals", ctx) : t.Plurals);
+            AddList(room, "handles", ov != null && Get(ov, "handles") != null ? StringList(ov, "handles", ctx) : generated.Handles);
+            AddList(room, "adjectives", ov != null && Get(ov, "adjectives") != null ? StringList(ov, "adjectives", ctx) : generated.Adjectives);
+            AddList(room, "plurals", ov != null && Get(ov, "plurals") != null ? StringList(ov, "plurals", ctx) : generated.Plurals);
+
+            if (_library != null)
+            {
+                var gen = new YamlMappingNode();
+                gen.Add("map", Str(_mapName ?? prefix));
+                gen.Add("terrain", Str(t.Name));
+                gen.Add("seed", Str(seed));
+                gen.Add("libVersion", new YamlScalarNode(_library.Version.ToString()));
+                room.Add("x-gen", gen);
+            }
 
             var coords = new YamlMappingNode { Style = MappingStyle.Flow };
             coords.Add("x", new YamlScalarNode(cell.X.ToString()));
@@ -302,9 +344,30 @@ namespace MUD.Core.Generation
             }
             if (exits.Children.Count > 0) { room.Add("exits", exits); }
 
+            var featureOverride = ov == null ? null : Get(ov, "features");
+            if (featureOverride == null && generated.Features.Count > 0)
+            {
+                var seq = new YamlSequenceNode();
+                foreach (var f in generated.Features)
+                {
+                    var fm = new YamlMappingNode();
+                    fm.Add("short", Str(f.Short));
+                    fm.Add("long", Str(f.Long ?? f.Short));
+                    if (!string.IsNullOrWhiteSpace(f.RoomLine)) { fm.Add("room_line", Str(f.RoomLine)); }
+                    if (!string.IsNullOrWhiteSpace(f.Detail)) { fm.Add("detail", Str(f.Detail)); }
+                    AddList(fm, "handles", f.Handles);
+                    AddList(fm, "adjectives", f.Adjectives);
+                    var fg = new YamlMappingNode { Style = MappingStyle.Flow };
+                    fg.Add("templateId", Str(f.TemplateId));
+                    fg.Add("templateVersion", new YamlScalarNode(f.TemplateVersion.ToString()));
+                    fm.Add("x-gen", fg);
+                    seq.Add(fm);
+                }
+                room.Add("features", seq);
+            }
             if (ov != null)
             {
-                var features = Get(ov, "features");
+                var features = featureOverride;
                 if (features != null) { room.Add("features", features); }
                 var properties = Get(ov, "properties");
                 if (properties != null) { room.Add("properties", properties); }
@@ -400,12 +463,39 @@ namespace MUD.Core.Generation
             foreach (var pair in node.Children)
             {
                 var glyph = (pair.Key as YamlScalarNode)?.Value;
-                var tname = (pair.Value as YamlScalarNode)?.Value;
+                string tname;
+                string color = null;
+                var mapping = pair.Value as YamlMappingNode;
+                if (mapping != null)
+                {
+                    CheckKeys(mapping, LegendKeys, "legend glyph '" + glyph + "'");
+                    tname = (Get(mapping, "template") as YamlScalarNode)?.Value;
+                    var colorNode = Get(mapping, "color");
+                    if (colorNode != null)
+                    {
+                        color = (colorNode as YamlScalarNode)?.Value;
+                        if (color == null || !ColorPattern.IsMatch(color))
+                        {
+                            _errors.Add(string.Format("legend: glyph '{0}' has an invalid color (expected #RRGGBB).", glyph));
+                            color = null;
+                        }
+                    }
+                }
+                else { tname = (pair.Value as YamlScalarNode)?.Value; }
                 if (glyph == null || glyph.Length != 1) { _errors.Add(string.Format("legend: glyph '{0}' must be a single character.", glyph)); continue; }
                 if (glyph == " ") { _errors.Add("legend: space is reserved for 'no room'."); continue; }
                 Template t;
                 if (tname == null || !templates.TryGetValue(tname, out t)) { _errors.Add(string.Format("legend: glyph '{0}' names unknown template '{1}'.", glyph, tname)); continue; }
                 legend[glyph[0]] = t;
+                if (color != null)
+                {
+                    string existing;
+                    if (!_colors.TryGetValue(t.Name, out existing)) { _colors[t.Name] = color.ToUpperInvariant(); }
+                    else if (existing != color.ToUpperInvariant())
+                    {
+                        _warnings.Add(string.Format("legend: terrain '{0}' has more than one color; keeping {1}.", t.Name, existing));
+                    }
+                }
             }
             return legend;
         }
