@@ -35,8 +35,10 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/creator/players` | `CreatorOrAdmin` | player list (see "Player pages") |
 | `/creator/players/{nameKey}` | `CreatorOrAdmin` | player edit page (see "Player pages") |
 | `/creator/modules` | list: `CreatorOrAdmin`; start/stop/restart buttons: admin only | module list with state (see "Modules page") |
+| `/creator/terrain` | `CreatorOrAdmin` | terrain library list with tabs and Delete (see "Terrain library pages") |
+| `/creator/terrain/edit?kind=&id=` | `CreatorOrAdmin` | create or edit one library entity (see "Terrain library pages") |
 
-The nav shows `/creator`, `/creator/map`, `/creator/players` and `/creator/modules` links only when the `CreatorOrAdmin` policy passes.
+The nav shows `/creator`, `/creator/map`, `/creator/players`, `/creator/modules` and `/creator/terrain` links only when the `CreatorOrAdmin` policy passes.
 
 ## Creator page (room creation)
 
@@ -199,6 +201,30 @@ Built (`Pages/Modules.cshtml`, `ModulesModel`). Policy `CreatorOrAdmin`, like th
 - Core unavailable shows the usual "game is not reachable" message with a 503; a refused session shows a 403 message.
 - Manual refresh only (a Refresh link); no auto refresh, no JavaScript, no CDN. All text is Razor-encoded.
 - Tests: `MUD.Web.Tests/ModulesPageTests.cs`, over `FakeAdminClient` (`AddModule`, `ModuleStarts`, `ModuleStops`, `ModuleRestarts`).
+
+## Terrain library pages (`/creator/terrain`, `/creator/terrain/edit`)
+
+Built (`Pages/TerrainList.cshtml`, `TerrainEdit.cshtml`, helpers in `TerrainLibrary.cs`). Policy `CreatorOrAdmin`. Everything goes through
+`IAdminClient` (the Create/Update/Delete/List/Get calls for fragments, feature templates and neighbour phrases; backend in
+`specs/ADMIN_API.md` and `specs/TERRAIN_GENERATORS.md` sections 6 and 11). Core validates every write and owns the feature version.
+
+- **List**: tabs Fragments / Features / Neighbour phrases / Unassigned with counts, filter by terrain and by tag (fragments and features
+  only; phrases have no tags), a Delete POST form per row (antiforgery, kind and id in hidden fields). **Unassigned** lists every entity whose
+  `terrains` is empty. Such rows, and the tab, carry the badge `[!] Not used by any generator` (words, not colour alone): an empty list means
+  no generator uses the entry, never "any terrain".
+- **Edit/create**: `kind` (`fragment`, `feature`, `phrase`) and `id` come from the query string only; no id means create. The form never
+  binds the kind or the stored id, so a form cannot redirect a write to another entity. Terrains are a checkbox multi-select of the known ids
+  (every terrain id already used in the library, including phrase neighbour terrains) plus a free-text box for a new id. With nothing ticked
+  or typed the page shows the same warning badge. Lists (tags, handles, adjectives) are comma or space separated.
+- Feature templates show the stored version and "saving a change ... raises the version from N to N+1" (core decides; weight, chance,
+  terrains and tags edits do not bump it).
+- **Preview**: a phrase is previewed with `{dir}` filled in ("north"); a feature shows its room line (or short). This is a text preview of the
+  entered values only. **No sample-room render for a chosen terrain**: the admin API has no such call (a dry-run generate of one cell would need a
+  new rpc), so it is not built.
+- Result handling: `OK` redirects to the edit page with `TempData["Notice"] = "Saved."` (read null-safely); `NO_CHANGE`, `INVALID` (core's
+  field errors in the validation summary, form values kept), `ALREADY_EXISTS`, `NOT_FOUND` (404), `REFUSED`, `AUDIT_FAILED`, `FORBIDDEN` and
+  other failures show fixed sentences. Core unavailable is a 503 message and a refused session a 403 message.
+- Tests: `MUD.Web.Tests/TerrainPagesTests.cs`, over `FakeAdminClient` (includes the exact bound-property list of `TerrainEditModel`).
 
 ## Auth model
 
