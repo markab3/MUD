@@ -313,6 +313,142 @@ public class FakeAdminClient : IAdminClient
         if (Modules.TryGetValue(name, out var module)) { reply.Module = module; }
         return reply;
     }
+
+    // Terrain library. Tests set LibraryResult (what the create/update/delete calls answer) and seed the stores; every call records its token.
+    public AdminResult LibraryResult { get; set; } = AdminResult.Ok;
+    public string LibraryMessage { get; set; } = string.Empty;
+    public bool RefuseLibraryCalls { get; set; }
+    public bool RefuseBecauseSessionEndedForLibrary { get; set; }
+    public List<string> LibraryTokens { get; } = new();
+    public List<string> LibraryCalls { get; } = new();
+    public Dictionary<string, FragmentRecord> Fragments { get; } = new();
+    public Dictionary<string, FeatureTemplateRecord> FeatureTemplates { get; } = new();
+    public Dictionary<string, NeighborPhraseRecord> NeighborPhrases { get; } = new();
+
+    private void CheckLibraryCall(string token, string call)
+    {
+        if (Unavailable) { throw new CoreUnavailableException(); }
+        LibraryTokens.Add(token);
+        LibraryCalls.Add(call);
+        if (RefuseLibraryCalls) { throw new CoreRefusedException(RefuseBecauseSessionEndedForLibrary); }
+    }
+
+    private LibraryEditReply LibraryReply() => new() { Result = LibraryResult, Message = LibraryMessage };
+
+    public Task<IReadOnlyList<FragmentRecord>> ListFragmentsAsync(string token, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "ListFragments");
+        return Task.FromResult<IReadOnlyList<FragmentRecord>>(Fragments.Values.OrderBy(f => f.Id, StringComparer.Ordinal).ToList());
+    }
+
+    public Task<FragmentRecord?> GetFragmentAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "GetFragment");
+        return Task.FromResult(Fragments.TryGetValue(id, out var f) ? f : null);
+    }
+
+    public Task<LibraryEditReply> CreateFragmentAsync(string token, FragmentRecord fragment, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "CreateFragment");
+        var reply = LibraryReply();
+        if (reply.Result == AdminResult.Ok) { Fragments[fragment.Id] = fragment; reply.Fragment = fragment; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<LibraryEditReply> UpdateFragmentAsync(string token, FragmentRecord fragment, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "UpdateFragment");
+        var reply = LibraryReply();
+        if (reply.Result == AdminResult.Ok) { Fragments[fragment.Id] = fragment; reply.Fragment = fragment; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<LibraryEditReply> DeleteFragmentAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "DeleteFragment");
+        var reply = LibraryReply();
+        if (reply.Result == AdminResult.Ok) { Fragments.Remove(id); }
+        return Task.FromResult(reply);
+    }
+
+    public Task<IReadOnlyList<FeatureTemplateRecord>> ListFeatureTemplatesAsync(string token, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "ListFeatureTemplates");
+        return Task.FromResult<IReadOnlyList<FeatureTemplateRecord>>(FeatureTemplates.Values.OrderBy(f => f.Id, StringComparer.Ordinal).ToList());
+    }
+
+    public Task<FeatureTemplateRecord?> GetFeatureTemplateAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "GetFeatureTemplate");
+        return Task.FromResult(FeatureTemplates.TryGetValue(id, out var f) ? f : null);
+    }
+
+    public Task<LibraryEditReply> CreateFeatureTemplateAsync(string token, FeatureTemplateRecord template, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "CreateFeatureTemplate");
+        var reply = LibraryReply();
+        if (reply.Result == AdminResult.Ok) { template.Version = 1; FeatureTemplates[template.Id] = template; reply.Template = template; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<LibraryEditReply> UpdateFeatureTemplateAsync(string token, FeatureTemplateRecord template, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "UpdateFeatureTemplate");
+        var reply = LibraryReply();
+        if (reply.Result == AdminResult.Ok)
+        {
+            // Like core: the client-sent version is ignored; a text change bumps the stored one.
+            var stored = FeatureTemplates.TryGetValue(template.Id, out var s) ? s : null;
+            template.Version = stored == null ? 1 : (stored.Short != template.Short || stored.Long != template.Long ? stored.Version + 1 : stored.Version);
+            FeatureTemplates[template.Id] = template;
+            reply.Template = template;
+        }
+        return Task.FromResult(reply);
+    }
+
+    public Task<LibraryEditReply> DeleteFeatureTemplateAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "DeleteFeatureTemplate");
+        var reply = LibraryReply();
+        if (reply.Result == AdminResult.Ok) { FeatureTemplates.Remove(id); }
+        return Task.FromResult(reply);
+    }
+
+    public Task<IReadOnlyList<NeighborPhraseRecord>> ListNeighborPhrasesAsync(string token, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "ListNeighborPhrases");
+        return Task.FromResult<IReadOnlyList<NeighborPhraseRecord>>(NeighborPhrases.Values.OrderBy(f => f.Id, StringComparer.Ordinal).ToList());
+    }
+
+    public Task<NeighborPhraseRecord?> GetNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "GetNeighborPhrase");
+        return Task.FromResult(NeighborPhrases.TryGetValue(id, out var f) ? f : null);
+    }
+
+    public Task<LibraryEditReply> CreateNeighborPhraseAsync(string token, NeighborPhraseRecord phrase, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "CreateNeighborPhrase");
+        var reply = LibraryReply();
+        if (reply.Result == AdminResult.Ok) { NeighborPhrases[phrase.Id] = phrase; reply.Phrase = phrase; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<LibraryEditReply> UpdateNeighborPhraseAsync(string token, NeighborPhraseRecord phrase, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "UpdateNeighborPhrase");
+        var reply = LibraryReply();
+        if (reply.Result == AdminResult.Ok) { NeighborPhrases[phrase.Id] = phrase; reply.Phrase = phrase; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<LibraryEditReply> DeleteNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckLibraryCall(token, "DeleteNeighborPhrase");
+        var reply = LibraryReply();
+        if (reply.Result == AdminResult.Ok) { NeighborPhrases.Remove(id); }
+        return Task.FromResult(reply);
+    }
 }
 
 public class LoginPageTests

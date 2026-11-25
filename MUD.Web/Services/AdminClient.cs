@@ -56,6 +56,39 @@ public interface IAdminClient
     // Restart is admin only; core starts the new instance before it ends the old one, and restarting a stopped module starts it.
     // Every module, required ones included, can be started, stopped and restarted.
     Task<ModuleActionReply> RestartModuleAsync(string token, string name, CancellationToken cancellation = default);
+
+    // Terrain library (creator or admin; specs/TERRAIN_GENERATORS.md section 6). Same exceptions as the room calls. Get returns null when
+    // no entity has the id. Create/update/delete answer in the reply's result (Ok, NoChange, Invalid, NotFound, AlreadyExists, Refused,
+    // AuditFailed, Failed). An entity with an empty terrains list is used by no generator. A feature template's version is set by core.
+    Task<IReadOnlyList<FragmentRecord>> ListFragmentsAsync(string token, CancellationToken cancellation = default);
+
+    Task<FragmentRecord?> GetFragmentAsync(string token, string id, CancellationToken cancellation = default);
+
+    Task<LibraryEditReply> CreateFragmentAsync(string token, FragmentRecord fragment, CancellationToken cancellation = default);
+
+    Task<LibraryEditReply> UpdateFragmentAsync(string token, FragmentRecord fragment, CancellationToken cancellation = default);
+
+    Task<LibraryEditReply> DeleteFragmentAsync(string token, string id, CancellationToken cancellation = default);
+
+    Task<IReadOnlyList<FeatureTemplateRecord>> ListFeatureTemplatesAsync(string token, CancellationToken cancellation = default);
+
+    Task<FeatureTemplateRecord?> GetFeatureTemplateAsync(string token, string id, CancellationToken cancellation = default);
+
+    Task<LibraryEditReply> CreateFeatureTemplateAsync(string token, FeatureTemplateRecord template, CancellationToken cancellation = default);
+
+    Task<LibraryEditReply> UpdateFeatureTemplateAsync(string token, FeatureTemplateRecord template, CancellationToken cancellation = default);
+
+    Task<LibraryEditReply> DeleteFeatureTemplateAsync(string token, string id, CancellationToken cancellation = default);
+
+    Task<IReadOnlyList<NeighborPhraseRecord>> ListNeighborPhrasesAsync(string token, CancellationToken cancellation = default);
+
+    Task<NeighborPhraseRecord?> GetNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default);
+
+    Task<LibraryEditReply> CreateNeighborPhraseAsync(string token, NeighborPhraseRecord phrase, CancellationToken cancellation = default);
+
+    Task<LibraryEditReply> UpdateNeighborPhraseAsync(string token, NeighborPhraseRecord phrase, CancellationToken cancellation = default);
+
+    Task<LibraryEditReply> DeleteNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default);
 }
 
 // Core refused the session token (SessionEnded: unknown, revoked, or its player is retired) or the caller's current role is too low.
@@ -240,6 +273,62 @@ public sealed class GrpcAdminClient : IAdminClient
 
     public Task<ModuleActionReply> RestartModuleAsync(string token, string name, CancellationToken cancellation = default) =>
         Call(() => _client.RestartModuleAsync(new ModuleRequest { Token = token ?? string.Empty, Name = name ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
+
+    private static DateTime Deadline() => DateTime.UtcNow + CallDeadline;
+
+    public async Task<IReadOnlyList<FragmentRecord>> ListFragmentsAsync(string token, CancellationToken cancellation = default) =>
+        (await Call(() => _client.ListFragmentsAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Fragments.ToList();
+
+    public async Task<FragmentRecord?> GetFragmentAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        var reply = await Call(() => _client.GetFragmentAsync(new LibraryIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+        return reply.Found ? reply.Fragment : null;
+    }
+
+    public Task<LibraryEditReply> CreateFragmentAsync(string token, FragmentRecord fragment, CancellationToken cancellation = default) =>
+        Call(() => _client.CreateFragmentAsync(new SaveFragmentRequest { Token = token ?? string.Empty, Fragment = fragment }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<LibraryEditReply> UpdateFragmentAsync(string token, FragmentRecord fragment, CancellationToken cancellation = default) =>
+        Call(() => _client.UpdateFragmentAsync(new SaveFragmentRequest { Token = token ?? string.Empty, Fragment = fragment }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<LibraryEditReply> DeleteFragmentAsync(string token, string id, CancellationToken cancellation = default) =>
+        Call(() => _client.DeleteFragmentAsync(new LibraryIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public async Task<IReadOnlyList<FeatureTemplateRecord>> ListFeatureTemplatesAsync(string token, CancellationToken cancellation = default) =>
+        (await Call(() => _client.ListFeatureTemplatesAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Templates.ToList();
+
+    public async Task<FeatureTemplateRecord?> GetFeatureTemplateAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        var reply = await Call(() => _client.GetFeatureTemplateAsync(new LibraryIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+        return reply.Found ? reply.Template : null;
+    }
+
+    public Task<LibraryEditReply> CreateFeatureTemplateAsync(string token, FeatureTemplateRecord template, CancellationToken cancellation = default) =>
+        Call(() => _client.CreateFeatureTemplateAsync(new SaveFeatureTemplateRequest { Token = token ?? string.Empty, Template = template }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<LibraryEditReply> UpdateFeatureTemplateAsync(string token, FeatureTemplateRecord template, CancellationToken cancellation = default) =>
+        Call(() => _client.UpdateFeatureTemplateAsync(new SaveFeatureTemplateRequest { Token = token ?? string.Empty, Template = template }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<LibraryEditReply> DeleteFeatureTemplateAsync(string token, string id, CancellationToken cancellation = default) =>
+        Call(() => _client.DeleteFeatureTemplateAsync(new LibraryIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public async Task<IReadOnlyList<NeighborPhraseRecord>> ListNeighborPhrasesAsync(string token, CancellationToken cancellation = default) =>
+        (await Call(() => _client.ListNeighborPhrasesAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Phrases.ToList();
+
+    public async Task<NeighborPhraseRecord?> GetNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        var reply = await Call(() => _client.GetNeighborPhraseAsync(new LibraryIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+        return reply.Found ? reply.Phrase : null;
+    }
+
+    public Task<LibraryEditReply> CreateNeighborPhraseAsync(string token, NeighborPhraseRecord phrase, CancellationToken cancellation = default) =>
+        Call(() => _client.CreateNeighborPhraseAsync(new SaveNeighborPhraseRequest { Token = token ?? string.Empty, Phrase = phrase }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<LibraryEditReply> UpdateNeighborPhraseAsync(string token, NeighborPhraseRecord phrase, CancellationToken cancellation = default) =>
+        Call(() => _client.UpdateNeighborPhraseAsync(new SaveNeighborPhraseRequest { Token = token ?? string.Empty, Phrase = phrase }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<LibraryEditReply> DeleteNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default) =>
+        Call(() => _client.DeleteNeighborPhraseAsync(new LibraryIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
 
     // Unauthenticated and PermissionDenied are core's answers about the caller; any other failure means core could not answer.
     private static async Task<T> Call<T>(Func<Grpc.Core.AsyncUnaryCall<T>> call)
