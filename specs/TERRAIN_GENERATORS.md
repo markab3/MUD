@@ -1,6 +1,6 @@
 # Planar Realms — Terrain Generators
 
-Status: DRAFT specification. Docs only; nothing here is implemented.
+Status: DRAFT specification. Section 15 records what is implemented (generator card t_6eb48f02); everything else is not yet built.
 Task: t_3326f04a. Branch: tgspec (based on `hermes`, tip 78e053d).
 
 Conventions:
@@ -687,3 +687,16 @@ Not decided by the owner or the code; each has a proposed default used in the te
 13. **Very large maps.** One unary call may be slow; a job/poll rpc is not specified.
 14. **`libVersion` semantics.** Only informational here (section 6.4). Confirm it is not meant to drive an "out of date" listing.
 15. **Fresh-install detection.** "No `terrain_meta.library` document" is used as the signal. Confirm it matches the owner's intent (versus a config flag).
+
+## 15. Implementation status: generators (card t_6eb48f02, branch tgregistry)
+
+Implemented in `MUD.Core/Generation/Terrains/` and `MapGenerator.cs`; tests in `MUD.Tests/TerrainGeneratorTests.cs`. Differences from the sketches above:
+
+- Namespace is `MUD.Core.Generation.Terrains` (plural, so `Terrain` is not a namespace/class clash). The library abstraction is named `ILibrary` (sketched as `ITerrainLibrary`); the only implementation here is `InMemoryLibrary` (tests). The Mongo-backed library and seed loader are card 1 of section 13, not built here.
+- `GenContext` also carries `Template` (the map-file `templates:` entry). `GeneratedRoom` has no `Properties`/search list yet.
+- Opt-in: `MapGenerator.Generate(mapYaml)` is unchanged (no library, no `x-gen`, byte-identical output to before). `MapGenerator.Generate(mapYaml, mapName, library, registry = null)` is the terrain-aware entry point; it emits room `x-gen` (`map`, `terrain`, `seed`, `libVersion`; `genVersion` not emitted yet) and, on generated features, feature `x-gen: {templateId, templateVersion}`.
+- Generic `Terrain` draw order: map-template short, map-template long pools (exactly as before), then library fragments only where the template has none (`short` slot, then `Slots`, default `ground`), `Orientation` hook, neighbour phrases, features. Neighbour phrases and features are added whenever a library is supplied, even to templates with map-file text (a library-less run is the only mode that is identical to the old output).
+- Neighbour phrase draws: one weighted pick per neighbour terrain that has phrases, in first-`Dir` order, all drawn before the cap is applied; ranking by side count then `Dir` then terrain ordinal. Generic cap `MaxNeighborSentences` = 2, `MaxFeatures` = 2.
+- Empty `terrains` rule is enforced twice: `InMemoryLibrary` never returns such entities, and `Terrain` filters again so a misbehaving `ILibrary` cannot leak them.
+- Legend: scalar or `{template, color}`. `color` must match `#RRGGBB` (stored upper-case); exposed as `GenerateResult.Colors` (terrain id -> colour), never in the YAML. Two different colours for one terrain: first wins, a message goes to `GenerateResult.Warnings`.
+- Not done (other cards): `RoomDefinition.Gen`/`FeatureDefinition.TemplateId` parser fields and storage (the parser still skips `x-` keys, so provenance is emitted but not yet persisted), importer `Replace` mode, `MapFileService`/`genmap` wiring, `TerrainRegistry` bespoke classes (registry ships empty).
