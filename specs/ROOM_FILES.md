@@ -572,6 +572,12 @@ from other MUD formats) MUST emit this same YAML format, and nothing else:
   hand-edits are wanted, copy to a new hand-authored area.
 - A generator MAY include `x-generator: {name, version, seed}` under `area`.
 - Coordinates SHOULD be emitted by generators (they know the layout).
+- Terrain generators (ASCII maps with a library of fragments, feature templates and neighbour phrases) additionally emit
+  `x-gen` provenance on each room (`map`, `terrain`, `seed`, `libVersion`) and on each generated feature (`templateId`,
+  `templateVersion`). The parser and importer must read and store these (today `x-` keys are skipped and `x-generator` is not stored).
+  For rooms that carry `x-gen`, a map re-import REPLACES features, properties and behaviors instead of merging them (the merge rules
+  of section 6.2 stay for hand-authored rooms). Regen and update of generated rooms go through the importer too. See
+  [TERRAIN_GENERATORS.md](TERRAIN_GENERATORS.md) (proposed, not implemented).
 
 ## 13. Future web backend
 
