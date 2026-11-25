@@ -28,6 +28,32 @@ namespace MUD.Core.Administration
             return Generate(request.Token, request.DryRun, true, svc => svc.UpdateRooms(request.Keys, request.DryRun));
         }
 
+        // Legend colours of every map file (web map view only). Reads files; no game state. Files that are not maps give nothing.
+        public TerrainColorsReply ListTerrainColors(TokenRequest request)
+        {
+            Authorize(request.Token, AdminRole.Creator);
+            var reply = new TerrainColorsReply();
+            if (string.IsNullOrWhiteSpace(_contentDirectory)) { return reply; }
+            string dir = System.IO.Path.Combine(_contentDirectory, MapFileService.MapSubdirectory);
+            if (!System.IO.Directory.Exists(dir)) { return reply; }
+            const string suffix = ".map.yaml";
+            foreach (string path in System.IO.Directory.GetFiles(dir, "*" + suffix).OrderBy(p => p, StringComparer.Ordinal))
+            {
+                string name = System.IO.Path.GetFileName(path);
+                name = name.Substring(0, name.Length - suffix.Length);
+                try
+                {
+                    var colors = MapGenerator.ReadLegendColors(System.IO.File.ReadAllText(path, System.Text.Encoding.UTF8));
+                    foreach (var pair in colors.OrderBy(p => p.Key, StringComparer.Ordinal))
+                    {
+                        reply.Colors.Add(new TerrainColor { Map = name, Terrain = pair.Key, Color = pair.Value });
+                    }
+                }
+                catch (Exception ex) when (ex is System.IO.IOException || ex is UnauthorizedAccessException) { }
+            }
+            return reply;
+        }
+
         // Game thread (the repository write refreshes the live rooms there), creator or admin, audited first.
         private GenerationReply Generate(string token, bool dryRun, bool update, Func<GenerationService, GenerationReport> run)
         {

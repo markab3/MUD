@@ -1,6 +1,7 @@
 namespace MUD.Web.Services;
 
-public record MapRect(string Key, string Short, double X, double Y, double W, double H, int GridX, int GridY);
+public record MapRect(string Key, string Short, double X, double Y, double W, double H, int GridX, int GridY,
+    string? GenMap = null, string? GenTerrain = null);
 
 // Points are in SVG coordinates. ArrowStart/ArrowEnd mark arrowheads at the first/last point.
 // Warning = coordinates disagree with the exit direction (drawn dashed in a warning colour).
@@ -78,7 +79,7 @@ public class RoomMapLayout
         (double X, double Y) Anchor(RoomRecord r, int dx, int dy) =>
             (Left(r) + Size / 2 + dx * Size / 2, Top(r) + Size / 2 - dy * Size / 2);
 
-        var rects = level.Select(r => new MapRect(r.Key, r.Short, Left(r), Top(r), Size, Size, r.X!.Value, r.Y!.Value)).ToList();
+        var rects = level.Select(r => new MapRect(r.Key, r.Short, Left(r), Top(r), Size, Size, r.X!.Value, r.Y!.Value, r.GenMap, r.GenTerrain)).ToList();
         var lines = new List<MapLine>();
         var stubs = new List<MapStub>();
         var badges = new List<MapBadge>();

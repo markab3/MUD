@@ -49,6 +49,15 @@ public interface IAdminClient
     // (the reply says so); the list shows the outcome. Same exceptions as the room calls.
     Task<IReadOnlyList<ModuleInfo>> ListModulesAsync(string token, CancellationToken cancellation = default);
 
+    // Generated rooms (creator or admin; specs/TERRAIN_GENERATORS.md sections 9 and 10). Regen replaces description, ALL features and properties
+    // with the generator's output; update rewrites only template-referenced features whose template is newer. Same exceptions as the room calls.
+    Task<GenerationReply> RegenerateRoomsAsync(string token, string key, CancellationToken cancellation = default);
+
+    Task<GenerationReply> UpdateRoomsAsync(string token, string key, CancellationToken cancellation = default);
+
+    // Legend colours by map and terrain, for the map view only. Empty when there are none.
+    Task<IReadOnlyList<TerrainColor>> ListTerrainColorsAsync(string token, CancellationToken cancellation = default);
+
     Task<ModuleActionReply> StartModuleAsync(string token, string name, CancellationToken cancellation = default);
 
     Task<ModuleActionReply> StopModuleAsync(string token, string name, CancellationToken cancellation = default);
@@ -264,6 +273,15 @@ public sealed class GrpcAdminClient : IAdminClient
         var reply = await Call(() => _client.ListModulesAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
         return reply.Modules.ToList();
     }
+
+    public Task<GenerationReply> RegenerateRoomsAsync(string token, string key, CancellationToken cancellation = default) =>
+        Call(() => _client.RegenerateRoomsAsync(new RegenerateRoomsRequest { Token = token ?? string.Empty, Keys = { key ?? string.Empty } }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<GenerationReply> UpdateRoomsAsync(string token, string key, CancellationToken cancellation = default) =>
+        Call(() => _client.UpdateRoomsAsync(new UpdateRoomsRequest { Token = token ?? string.Empty, Keys = { key ?? string.Empty } }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public async Task<IReadOnlyList<TerrainColor>> ListTerrainColorsAsync(string token, CancellationToken cancellation = default) =>
+        (await Call(() => _client.ListTerrainColorsAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Colors.ToList();
 
     public Task<ModuleActionReply> StartModuleAsync(string token, string name, CancellationToken cancellation = default) =>
         Call(() => _client.StartModuleAsync(new ModuleRequest { Token = token ?? string.Empty, Name = name ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));

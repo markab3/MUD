@@ -86,6 +86,33 @@ namespace MUD.Core.Generation
             return new MapGenerator().GenerateInternal(mapYaml);
         }
 
+        // Legend colours by terrain id (template name) as "#RRGGBB" upper case, read from the legend only: no library, no grid, no
+        // template checks, so it works for any map file the web view can show. Entries with a missing or invalid colour are skipped; the
+        // first colour of a terrain wins. Returns an empty dictionary when the text is not a map.
+        public static Dictionary<string, string> ReadLegendColors(string mapYaml)
+        {
+            var colors = new Dictionary<string, string>(StringComparer.Ordinal);
+            try
+            {
+                var stream = new YamlStream();
+                stream.Load(new StringReader(mapYaml ?? ""));
+                var root = stream.Documents.Count == 0 ? null : stream.Documents[0].RootNode as YamlMappingNode;
+                var legend = root == null ? null : Get(root, "legend") as YamlMappingNode;
+                if (legend == null) { return colors; }
+                foreach (var pair in legend.Children)
+                {
+                    var entry = pair.Value as YamlMappingNode;
+                    if (entry == null) { continue; }
+                    var template = (Get(entry, "template") as YamlScalarNode)?.Value;
+                    var color = (Get(entry, "color") as YamlScalarNode)?.Value;
+                    if (template == null || color == null || !ColorPattern.IsMatch(color)) { continue; }
+                    if (!colors.ContainsKey(template)) { colors[template] = color.ToUpperInvariant(); }
+                }
+            }
+            catch (YamlException) { }
+            return colors;
+        }
+
         // Terrain-aware generation: rooms get x-gen provenance, neighbour phrases and library picks.
         // `registry` may be null (TerrainRegistry.Default()).
         // seedOverride (optional) replaces generator.seed for this run: regen of stored rooms uses the room's stored seed or a new one.

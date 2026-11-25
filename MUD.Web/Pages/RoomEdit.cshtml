@@ -84,6 +84,23 @@ else
         </fieldset>
     </form>
 
+    @if (Model.IsGenerated)
+    {
+        <section>
+            <h2>Generated room</h2>
+            <p>Made by the map generator: map <code>@Model.GenMap</code>, terrain <code>@Model.GenTerrain</code>.</p>
+            <form method="post" action="@(RoomEditModel.RoomUrl(Model.Key))?handler=Regen" onsubmit="return confirm('@RoomEditModel.RegenWarning');">
+                @Html.AntiForgeryToken()
+                <button type="submit">Regen</button>
+                <small>Replaces the description, all features (hand-added too) and properties from the generator. Hand edits are lost. Exits and occupants stay.</small>
+            </form>
+            <form method="post" action="@(RoomEditModel.RoomUrl(Model.Key))?handler=Update">
+                @Html.AntiForgeryToken()
+                <button type="submit">Update</button>
+                <small>Refreshes only features made from a library template, when the template is newer. The description and hand-added features are not touched.</small>
+            </form>
+        </section>
+    }
     <form method="post" action="@(RoomEditModel.RoomUrl(Model.Key))?handler=Delete">
         @Html.AntiForgeryToken()
         <button type="submit">Delete this room</button>

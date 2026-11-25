@@ -329,3 +329,79 @@ public class CreatorMapPageTests
         Assert.True((await Evaluate(c)).Succeeded);
     }
 }
+
+public class CreatorMapColourTests
+{
+    private static CreatorMapModel Make(FakeAdminClient core)
+    {
+        var page = new CreatorMapModel(core);
+        var http = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        http.Request.Headers.Cookie = SessionAuthentication.CookieName + "=token-1";
+        page.PageContext = new Microsoft.AspNetCore.Mvc.RazorPages.PageContext { HttpContext = http };
+        return page;
+    }
+
+    private static FakeAdminClient Core()
+    {
+        var core = new FakeAdminClient().AddRoom("a.plain", "a", 0, 0, 0).AddRoom("a.g1", "a", 1, 0, 0).AddRoom("a.g2", "a", 2, 0, 0);
+        core.Rooms["a.g1"].Gen = new MUD.Contracts.RoomGen { Map = "a", Terrain = "forest" };
+        core.Rooms["a.g2"].Gen = new MUD.Contracts.RoomGen { Map = "a", Terrain = "swamp" };
+        core.TerrainColors.Add(new MUD.Contracts.TerrainColor { Map = "a", Terrain = "forest", Color = "#228B22" });
+        return core;
+    }
+
+    private static string Fill(CreatorMapModel page, string key) => page.FillFor(page.Map!.Rects.Single(r => r.Key == key));
+
+    [Fact]
+    public async Task GeneratedRoom_TakesTheLegendColourOfItsTerrain_AndUnknownTerrainGetsTheNeutralFallback_AndPlainRoomsKeepTheirFill()
+    {
+        var page = Make(Core());
+        await page.OnGetAsync("a", 0);
+        Assert.Equal("#228B22", Fill(page, "a.g1"));
+        Assert.Equal(CreatorMapModel.GeneratedFallbackFill, Fill(page, "a.g2"));
+        Assert.Equal(CreatorMapModel.PlainFill, Fill(page, "a.plain"));
+    }
+
+    [Fact]
+    public async Task ColourOfAnotherMapIsNotUsed()
+    {
+        var core = Core();
+        core.TerrainColors.Clear();
+        core.TerrainColors.Add(new MUD.Contracts.TerrainColor { Map = "other", Terrain = "forest", Color = "#228B22" });
+        var page = Make(core);
+        await page.OnGetAsync("a", 0);
+        Assert.Equal(CreatorMapModel.GeneratedFallbackFill, Fill(page, "a.g1"));
+    }
+
+    [Fact]
+    public async Task BadColourText_IsIgnored()
+    {
+        var core = Core();
+        core.TerrainColors.Clear();
+        core.TerrainColors.Add(new MUD.Contracts.TerrainColor { Map = "a", Terrain = "forest", Color = "red\" onload=\"x" });
+        var page = Make(core);
+        await page.OnGetAsync("a", 0);
+        Assert.Equal(CreatorMapModel.GeneratedFallbackFill, Fill(page, "a.g1"));
+    }
+
+    [Fact]
+    public async Task WhenColoursAreUnavailable_TheMapStillRenders_WithFallbacks()
+    {
+        var core = Core();
+        core.ColorsUnavailable = true;
+        var page = Make(core);
+        await page.OnGetAsync("a", 0);
+        Assert.Null(page.Error);
+        Assert.Equal(CreatorMapModel.GeneratedFallbackFill, Fill(page, "a.g1"));
+    }
+
+    [Fact]
+    public async Task WithoutGeneratedRooms_ColoursAreNotRequested()
+    {
+        var core = new FakeAdminClient().AddRoom("a.plain", "a", 0, 0, 0);
+        var page = Make(core);
+        await page.OnGetAsync("a", 0);
+        Assert.Equal(0, core.ColorCalls);
+        Assert.Equal(CreatorMapModel.PlainFill, Fill(page, "a.plain"));
+    }
+}

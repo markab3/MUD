@@ -246,6 +246,63 @@ public class RoomEditModel : PageModel
         catch (CoreRefusedException) { return ForbiddenPage(); }
     }
 
+    // Generator provenance of the loaded room (not bound; null for authored rooms). Regen and Update show only when it is set.
+    public string? GenMap { get; private set; }
+    public string? GenTerrain { get; private set; }
+    public bool IsGenerated => GenTerrain != null;
+
+    public const string RegenWarning = "Regen replaces the description of this room, ALL features (including ones you added by hand) and properties with new generator output. Your hand edits to them are lost. Exits and occupants stay. Continue?";
+
+    // Regen: throws away hand edits by design (no lock). The browser asks first (the button's confirm text); core is authoritative.
+    public Task<IActionResult> OnPostRegenAsync(string key) => RunGeneration(key, regen: true);
+
+    // Update: rewrites only features that came from a library template, when the template is newer. Never touches the description.
+    public Task<IActionResult> OnPostUpdateAsync(string key) => RunGeneration(key, regen: false);
+
+    private async Task<IActionResult> RunGeneration(string key, bool regen)
+    {
+        Key = key;
+        try
+        {
+            var reply = regen ? await _core.RegenerateRoomsAsync(Token, key, HttpContext.RequestAborted) : await _core.UpdateRoomsAsync(Token, key, HttpContext.RequestAborted);
+            var line = reply.Rooms.FirstOrDefault();
+            if (line != null && line.Outcome == RoomGenOutcome.RoomGenNotGenerated)
+            {
+                Error = NotGeneratedError;
+            }
+            else
+            {
+                switch (reply.Result)
+                {
+                    case AdminResult.Ok:
+                    case AdminResult.NoChange:
+                        Notice = GenerationNotice(reply, regen);
+                        break;
+                    case AdminResult.NotFound: return NotFoundPage();
+                    case AdminResult.Refused: Error = LibraryUnavailableError; break;
+                    case AdminResult.AuditFailed: Error = AuditFailedError; break;
+                    case AdminResult.Forbidden: Error = ForbiddenError; break;
+                    default: Error = regen ? RegenFailedError : UpdateFailedError; break;
+                }
+            }
+            var after = await ReloadAfterError(key);
+            ModelState.Clear();
+            return after;
+        }
+        catch (CoreUnavailableException) { return UnavailablePage(); }
+        catch (CoreRefusedException) { return ForbiddenPage(); }
+    }
+
+    public const string NotGeneratedError = "This room was not made by a generator, so it cannot be regenerated or updated.";
+    public const string LibraryUnavailableError = "The terrain library is not available right now. Nothing was changed.";
+    public const string RegenFailedError = "The room could not be regenerated. Please try again later.";
+    public const string UpdateFailedError = "The room could not be updated. Please try again later.";
+
+    // Fixed wording around core's counts; nothing else from the reply is echoed.
+    public static string GenerationNotice(GenerationReply reply, bool regen) => regen
+        ? "Regenerated: " + reply.UpdatedCount + " room replaced, " + reply.UnchangedCount + " unchanged."
+        : "Updated: " + reply.UpdatedCount + " features updated, " + reply.UnchangedCount + " already current, " + reply.DeletedTemplateCount + " whose template was deleted (left as they are).";
+
     public async Task<IActionResult> OnPostDeleteAsync(string key)
     {
         Key = key;
@@ -375,6 +432,8 @@ public class RoomEditModel : PageModel
         NewArea ??= dot > 0 ? room.Key.Substring(0, dot) : room.Area;
         NewLocalKey ??= dot > 0 ? room.Key.Substring(dot + 1) : room.Key;
 
+        GenMap = room.Gen?.Map;
+        GenTerrain = room.Gen?.Terrain;
         Short = room.ShortDescription;
         Long = room.LongDescription;
         Area = room.Area;

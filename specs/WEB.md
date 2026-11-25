@@ -91,6 +91,16 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   user's input stays in the form), `NOT_FOUND` (404 page), `AUDIT_FAILED`, `FORBIDDEN`, anything else a generic
   failure. A token core no longer accepts, or a role that was lowered since the request was authorised, shows the
   "not allowed" message (403 page for a read). When core cannot be reached the page says so (503 for a read).
+- Regen and Update (generated rooms only): when `RoomDetail.gen` is set the page shows a "Generated room" block (map and terrain) with
+  two more POST forms, each with an antiforgery token (so the page has five forms: save, move, regen, update, delete; the last four have
+  an `action`). Handlers `Regen` (`RegenerateRooms`) and `Update` (`UpdateRooms`), each for the route's one room key only; nothing is bound
+  from the form, and provenance is read-only (`GenMap`, `GenTerrain` are not bound). Regen's form asks `confirm(...)` in the browser first
+  (`RoomEditModel.RegenWarning`: it replaces description, ALL features including hand-added ones, and properties; hand edits are lost; exits
+  and occupants stay). There is no lock. Update touches only features made from a library template whose template is newer, never the
+  description. The result is a notice with core's counts: regen "N room replaced, M unchanged"; update "N features updated, M already current,
+  K whose template was deleted (left as they are)". A room that is not generated shows a fixed error; `REFUSED` (no library), `AUDIT_FAILED`,
+  `FORBIDDEN` and failures show fixed messages (core's text and errors are never echoed); core down is 503, a refused token 403. The page then
+  reloads the room from core. The confirm is a browser nicety; core is the authority.
 - Delete: the page has a delete button (`DeleteRoom`). Core refuses to delete the default room
   (`WorldSettings:StartRoomKey`, which core reads from its own configuration; the web no longer reads it) and refuses when
   the room has no usable exit and the default room does not exist; the page shows core's fixed sentence. Exits in other
@@ -167,6 +177,13 @@ Query string: `?area=<prefix>&z=<level>` (defaults to the first area and level 0
   the target key as a label (red when the room does not exist).
 - Rooms in the area with null X or Y are listed in the Unplaced panel and are still clickable.
 - The nav shows a `/creator/map` link under the same policy as the `/creator` link.
+- **Generated rooms are coloured by terrain.** A room with provenance (`RoomDetail.gen`: map and terrain) is filled with the `color` of its
+  terrain from the legend of its map file (`MapRect` carries `GenMap`/`GenTerrain`; `CreatorMapModel.FillFor` picks the fill). The colours
+  come from core's `ListTerrainColors` (creator or admin; reads `<content>/maps/*.map.yaml` legends through `MapGenerator.ReadLegendColors`;
+  nothing is stored). They are asked for only when the level shows a generated room. A colour is used only when it is exactly `#RRGGBB`
+  (the value ends up in an SVG attribute). Generated room with no colour for its terrain, or colours unavailable (core down, refused):
+  neutral grey `#d6d3d1`; the map still renders. Rooms without provenance keep the plain `#f5f5f4` fill, so authored maps look as before.
+  The terrain shows in the room's hover title. Colour is a hint, never the only signal: the terrain is also in the title text.
 
 ## Password change (`/account/password`)
 
