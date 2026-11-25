@@ -87,11 +87,13 @@ namespace MUD.Core.Administration
         private readonly Action<string> _log;
         private readonly Func<int, int> _random;
         private readonly IModuleControl _modules;
+        private readonly string _contentDirectory;
 
         public AdminApi(IAdminHost host, IPlayerRepository players, IRoomRepository rooms, IAdminQueries queries, IAuditStore audit,
             AdminSessions sessions, IClock clock, Action<string> log, Func<int, int> random = null, IModuleControl modules = null,
-            ILibraryStore library = null, StoreLibrary libraryCache = null)
+            ILibraryStore library = null, StoreLibrary libraryCache = null, string contentDirectory = null)
         {
+            _contentDirectory = contentDirectory;
             _host = host ?? throw new ArgumentNullException(nameof(host));
             _players = players ?? throw new ArgumentNullException(nameof(players));
             _rooms = rooms ?? throw new ArgumentNullException(nameof(rooms));
@@ -1022,6 +1024,8 @@ namespace MUD.Core.Administration
             detail.Handles.AddRange((feature.Handles ?? new List<string>()).Where(w => w != null));
             detail.Adjectives.AddRange((feature.Adjectives ?? new List<string>()).Where(w => w != null));
             detail.Plurals.AddRange((feature.Plurals ?? new List<string>()).Where(w => w != null));
+            detail.TemplateId = feature.TemplateId ?? string.Empty;
+            detail.TemplateVersion = feature.TemplateVersion ?? 0;
             return detail;
         }
 
@@ -1240,6 +1244,10 @@ namespace MUD.Core.Administration
             {
                 if (feature != null) { detail.Features.Add(FeatureToDetail(feature)); }
             }
+            if (room.Gen != null)
+            {
+                detail.Gen = new RoomGen { Map = room.Gen.Map ?? string.Empty, Terrain = room.Gen.Terrain ?? string.Empty, Seed = room.Gen.Seed ?? string.Empty, LibVersion = room.Gen.LibVersion ?? 0 };
+            }
             return detail;
         }
 
@@ -1286,8 +1294,21 @@ namespace MUD.Core.Administration
                     feature.Handles.AddRange(Words(f, "Handles"));
                     feature.Adjectives.AddRange(Words(f, "Adjectives"));
                     feature.Plurals.AddRange(Words(f, "Plurals"));
+                    feature.TemplateId = Text(f, "TemplateId") ?? string.Empty;
+                    feature.TemplateVersion = Number(f, "TemplateVersion") ?? 0;
                     detail.Features.Add(feature);
                 }
+            }
+            BsonValue gen;
+            if (document.TryGetValue("gen", out gen) && gen.IsBsonDocument)
+            {
+                detail.Gen = new RoomGen
+                {
+                    Map = Text(gen.AsBsonDocument, "map") ?? string.Empty,
+                    Terrain = Text(gen.AsBsonDocument, "terrain") ?? string.Empty,
+                    Seed = Text(gen.AsBsonDocument, "seed") ?? string.Empty,
+                    LibVersion = Number(gen.AsBsonDocument, "libVersion") ?? 0
+                };
             }
             return detail;
         }

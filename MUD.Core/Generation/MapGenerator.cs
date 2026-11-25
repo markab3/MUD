@@ -67,6 +67,7 @@ namespace MUD.Core.Generation
         private ILibrary _library;
         private TerrainRegistry _registry;
         private string _mapName;
+        private string _seedOverride;
         private readonly Dictionary<string, string> _colors = new Dictionary<string, string>();
         private readonly List<string> _warnings = new List<string>();
 
@@ -87,9 +88,10 @@ namespace MUD.Core.Generation
 
         // Terrain-aware generation: rooms get x-gen provenance, neighbour phrases and library picks.
         // `registry` may be null (TerrainRegistry.Default()).
-        public static GenerateResult Generate(string mapYaml, string mapName, ILibrary library, TerrainRegistry registry = null)
+        // seedOverride (optional) replaces generator.seed for this run: regen of stored rooms uses the room's stored seed or a new one.
+        public static GenerateResult Generate(string mapYaml, string mapName, ILibrary library, TerrainRegistry registry = null, string seedOverride = null)
         {
-            return new MapGenerator { _mapName = mapName, _library = library, _registry = registry ?? TerrainRegistry.Default() }.GenerateInternal(mapYaml);
+            return new MapGenerator { _mapName = mapName, _library = library, _registry = registry ?? TerrainRegistry.Default(), _seedOverride = seedOverride }.GenerateInternal(mapYaml);
         }
 
         public static string KeyFor(int x, int y)
@@ -136,6 +138,7 @@ namespace MUD.Core.Generation
                 name = Scalar(gen, "name", "generator", true);
                 description = Scalar(gen, "description", "generator", false);
                 seed = Scalar(gen, "seed", "generator", true);
+                if (_seedOverride != null) { seed = _seedOverride; }
                 var originNode = Get(gen, "origin");
                 if (originNode != null)
                 {

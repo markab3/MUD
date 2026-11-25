@@ -30,8 +30,17 @@ namespace MUD.Tests
         public bool Delete(Room model) { return Stored.Remove(model.Id); }
         public IEnumerable<Room> GetAll() { return Cache.Values; }
         public IEnumerable<Room> Search(Expression<Func<Room, bool>> m) { return new Room[0]; }
-        public List<string> GetIdsByField(string f, string v) { return new List<string>(); }
-        public void UpsertFields(string id, BsonDocument set, BsonDocument setOnInsert) { }
+        public List<string> GetIdsByField(string f, string v) { return Stored.Values.Where(d => d.Contains(f) && d[f].IsString && d[f].AsString == v).Select(d => d["_id"].AsString).ToList(); }
+        public int Upserts;
+        public void UpsertFields(string id, BsonDocument set, BsonDocument setOnInsert)
+        {
+            Upserts++;
+            if (!Stored.ContainsKey(id)) { Stored[id] = new BsonDocument("_id", id); if (setOnInsert != null) { Stored[id].Merge(setOnInsert, true); } }
+            foreach (var e in set) { Stored[id][e.Name] = e.Value.DeepClone(); }
+            // Like the real repository: a cached live room is refreshed from the stored document, never left stale.
+            Room live;
+            if (Cache.TryGetValue(id, out live)) { live.ApplyDefinition(MongoDB.Bson.Serialization.BsonSerializer.Deserialize<Room>(Stored[id])); }
+        }
 
         public string CollectionName { get { return "room"; } }
         public IPersistSink Sink { get; set; }

@@ -193,6 +193,13 @@ namespace MUD.Core.Import
             return result;
         }
 
+        // Field-level write of the Features of one stored room and nothing else (UPDATE of template-referenced features,
+        // specs/TERRAIN_GENERATORS.md 9.3). The caller builds the complete new array from the stored elements.
+        public void WriteFeatures(string roomKey, BsonArray features)
+        {
+            _store.Upsert(roomKey, new BsonDocument("Features", features), null);
+        }
+
         // Validation over the whole parsed file. Mutates the area: expands 'reverse' exits.
         private void Validate(AreaDefinition area, ImportResult result)
         {
