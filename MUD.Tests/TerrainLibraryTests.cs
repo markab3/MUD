@@ -250,7 +250,7 @@ neighborPhrases:
             var store = new FakeLibraryStore();
             var seeded = LibrarySeed.SeedIfFresh(store, LibrarySeed.ReadEmbedded());
             Assert.True(seeded.Seeded, string.Join("; ", seeded.Errors));
-            Assert.Equal(3, store.PhraseTable.Items.Count);
+            Assert.Equal(6, store.PhraseTable.Items.Count);   // seed: 3 grass/forest phrases plus 3 ocean ones (card t_d4afabb3)
             var library = new StoreLibrary(store);
             string map = "generator:\n  prefix: demo\n  name: Demo\n  seed: s1\ngrid:\n  - \"~~\"\n  - \"..\"\nlegend:\n  \"~\": {template: river}\n  \".\": grass\ntemplates:\n  river: {walkable: false}\n  grass: {short: a meadow, long: [[Grass grows here.]]}\n";
             var generated = MUD.Core.Generation.MapGenerator.Generate(map, "demo", library);

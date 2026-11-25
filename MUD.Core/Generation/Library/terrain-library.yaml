@@ -58,6 +58,21 @@ fragments:
     slot: ground
     text: "Cold water runs swiftly over smooth stones."
     weight: 1
+  - id: ocean-short-1
+    terrains: [ocean]
+    slot: short
+    text: "the open sea"
+    weight: 1
+  - id: ocean-ground-1
+    terrains: [ocean]
+    slot: ground
+    text: "Grey swells roll in endless lines toward the horizon."
+    weight: 1
+  - id: ocean-ground-2
+    terrains: [ocean]
+    slot: ground
+    text: "Salt spray hangs in the air above the heaving water."
+    weight: 1
 
 features:
   - id: boulder-grey
@@ -82,6 +97,17 @@ features:
     chance: 0.2
     version: 1
 
+  - id: driftwood
+    terrains: [ocean]
+    short: "a piece of driftwood"
+    long: "A bleached length of driftwood bobs on the swell."
+    handles: [driftwood, wood]
+    adjectives: [bleached]
+    roomLine: "A piece of driftwood bobs nearby."
+    weight: 1
+    chance: 0.2
+    version: 1
+
 neighborPhrases:
   - id: river-near
     terrains: [grass, forest]
@@ -99,5 +125,23 @@ neighborPhrases:
     terrains: [grass]
     neighborTerrain: forest
     text: "Trees crowd together to the {dir}."
+    weight: 1
+    merge: true
+  - id: ocean-near
+    terrains: [grass, forest, river]
+    neighborTerrain: ocean
+    text: "The sea stretches away to the {dir}."
+    weight: 2
+    merge: true
+  - id: ocean-near-alt
+    terrains: [grass, forest, river]
+    neighborTerrain: ocean
+    text: "You taste salt on the wind from the {dir}."
+    weight: 1
+    merge: true
+  - id: river-meets-ocean
+    terrains: [ocean]
+    neighborTerrain: river
+    text: "A river empties into the sea to the {dir}."
     weight: 1
     merge: true

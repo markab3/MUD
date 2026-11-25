@@ -34,7 +34,10 @@ namespace MUD.Core.Import
             var path = Path.Combine(_contentDirectory, area + ".yaml");
             if (!File.Exists(path)) { lines.Add("No such area file: " + path); return lines; }
 
-            var result = _importer.Import(File.ReadAllText(path, Encoding.UTF8), dryRun, replaceBehaviors);
+            // An explicit import of a file is also the map re-import: rooms the file marks as generated (x-gen) are
+            // regenerated wholesale (specs/TERRAIN_GENERATORS.md 9.2). The startup ImportAll keeps the plain merge.
+            var result = _importer.Import(File.ReadAllText(path, Encoding.UTF8),
+                new ImportOptions { DryRun = dryRun, ReplaceBehaviors = replaceBehaviors, ReplaceGenerated = true });
             Describe(area, result, lines);
             return lines;
         }
@@ -64,6 +67,8 @@ namespace MUD.Core.Import
                     lines.Add(string.Format("  {0} {1}{2}", plan.Action.ToString().ToLowerInvariant(), plan.Key,
                         plan.Action == ImportAction.Update ? " (" + string.Join(", ", plan.ChangedFields) + ")" : ""));
                 }
+                if (result.Replaced.Count > 0) { lines.Add(string.Format("  regenerated {0} generated room(s); hand edits to their features, properties and behaviors were replaced.", result.Replaced.Count)); }
+                foreach (var key in result.NotOwned) { lines.Add("  not regenerated (stored room is hand-authored or from another map, merged normally): " + key); }
                 foreach (var orphan in result.Orphans) { lines.Add("  orphaned (kept): " + orphan); }
                 foreach (var skipped in result.SkippedBehaviors) { lines.Add("  " + skipped + " Use 'import <area> replace' to replace stored entries."); }
                 foreach (var replaced in result.ReplacedBehaviors) { lines.Add("  " + replaced); }

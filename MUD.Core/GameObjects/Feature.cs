@@ -16,6 +16,14 @@ namespace MUD.Core.GameObjects
         /// Text shown when the feature itself is looked at.
         public virtual string DetailDescription { get; set; }
 
+        /// The library feature template this feature was generated from (specs/TERRAIN_GENERATORS.md 5.2). Null for authored features.
+        [MongoDB.Bson.Serialization.Attributes.BsonIgnoreIfNull]
+        public string TemplateId { get; set; }
+
+        /// The version of that template at generation time.
+        [MongoDB.Bson.Serialization.Attributes.BsonIgnoreIfNull]
+        public int? TemplateVersion { get; set; }
+
         /// The room-description text as seen by the examiner. Base returns RoomLine; subclasses may vary it
         /// per examiner or return null/empty to hide the feature.
         public virtual string GetRoomLine(Living examiner)

@@ -42,6 +42,20 @@ namespace MUD.Core.Import
 
         // Behavior entries from the 'behaviors:' list (owner decisions D5, D53). Features carry none (D14).
         public List<MUD.Core.Components.BehaviorRef> Behaviors { get; set; } = new List<MUD.Core.Components.BehaviorRef>();
+
+        // Generator provenance from the room's 'x-gen' key (specs/TERRAIN_GENERATORS.md section 5.1). Null for authored rooms.
+        public GenInfo Gen { get; set; }
+    }
+
+    public class GenInfo
+    {
+        public string Map { get; set; }
+
+        public string Terrain { get; set; }
+
+        public string Seed { get; set; }
+
+        public int? LibVersion { get; set; }
     }
 
     public class ExitDefinition
@@ -72,6 +86,11 @@ namespace MUD.Core.Import
         public List<string> Adjectives { get; set; } = new List<string>();
 
         public List<string> Plurals { get; set; } = new List<string>();
+
+        // From the feature's 'x-gen' key: the library template this feature was generated from (section 5.2). Null when none.
+        public string TemplateId { get; set; }
+
+        public int? TemplateVersion { get; set; }
     }
 
     // The only room-file behavior today: "search" -> an entry of the room's search component.

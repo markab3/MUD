@@ -33,6 +33,11 @@ namespace MUD.Core.GameObjects
 
         private MUD.Core.Components.Search _search;
 
+        // Generator provenance (map, terrain, seed, libVersion). Null for hand-authored rooms. Definition field.
+        [BsonElement("gen")]
+        [BsonIgnoreIfNull]
+        public GenProvenance Gen { get; set; }
+
         // Area prefix this room belongs to (e.g. "castle"). Definition field.
         public string Area { get; set; }
 
@@ -177,6 +182,8 @@ namespace MUD.Core.GameObjects
             Components = source.Components;
             Search.ApplyDefinition(source.Search);
             Features = source.Features;
+            Behaviors = source.Behaviors;
+            Gen = source.Gen;
             Exits = source.Exits;
             Area = source.Area;
             X = source.X;
