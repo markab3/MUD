@@ -7,6 +7,7 @@ using MongoDB.Bson;
 using MUD.Contracts;
 using MUD.Core.Components;
 using MUD.Core.GameObjects;
+using MUD.Core.Generation.Terrains;
 using MUD.Core.Modules;
 using MUD.Core.Repositories;
 using MUD.Core.Repositories.Interfaces;
@@ -48,7 +49,7 @@ namespace MUD.Core.Administration
     /// and audited per field, audit first: if the audit rows cannot be written the edit is refused (specs/WEB_EDITING.md section 15).
     /// Passwords are never logged, audited or returned.
     /// </summary>
-    public sealed class AdminApi
+    public sealed partial class AdminApi
     {
         public const string RoomUpdatedMessage = "Something feels different...";
         public const string RoomDeletedArrivalFormat = "A sudden draft of magical wind deposits {0} in the room!";
@@ -88,7 +89,8 @@ namespace MUD.Core.Administration
         private readonly IModuleControl _modules;
 
         public AdminApi(IAdminHost host, IPlayerRepository players, IRoomRepository rooms, IAdminQueries queries, IAuditStore audit,
-            AdminSessions sessions, IClock clock, Action<string> log, Func<int, int> random = null, IModuleControl modules = null)
+            AdminSessions sessions, IClock clock, Action<string> log, Func<int, int> random = null, IModuleControl modules = null,
+            ILibraryStore library = null, StoreLibrary libraryCache = null)
         {
             _host = host ?? throw new ArgumentNullException(nameof(host));
             _players = players ?? throw new ArgumentNullException(nameof(players));
@@ -100,6 +102,8 @@ namespace MUD.Core.Administration
             _log = log ?? (_ => { });
             _random = random ?? (max => new Random().Next(max));
             _modules = modules;
+            _library = library;
+            _libraryCache = libraryCache;
         }
 
         /// <summary>The session table, for tests and for the host that wants to know how many web users are signed in.</summary>

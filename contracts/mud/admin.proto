@@ -44,6 +44,26 @@ service Admin {
   rpc StartModule(ModuleRequest) returns (ModuleActionReply);
   rpc StopModule(ModuleRequest) returns (ModuleActionReply);
   rpc RestartModule(ModuleRequest) returns (ModuleActionReply);
+
+  // Terrain library (specs/TERRAIN_GENERATORS.md section 6). Creator or admin. Reads answer from the stored documents; writes are
+  // audited first (entity terrain_fragment, terrain_feature or terrain_neighbor_phrase), then written, then the library version is
+  // incremented. Create answers ALREADY_EXISTS for a taken id; update and delete answer NOT_FOUND for an unknown id. REFUSED means the
+  // library is not available (no store). An empty `terrains` list means the entity is used by no generator (it is not "any terrain").
+  rpc ListFragments(TokenRequest) returns (ListFragmentsReply);
+  rpc GetFragment(LibraryIdRequest) returns (GetFragmentReply);
+  rpc CreateFragment(SaveFragmentRequest) returns (LibraryEditReply);
+  rpc UpdateFragment(SaveFragmentRequest) returns (LibraryEditReply);
+  rpc DeleteFragment(LibraryIdRequest) returns (LibraryEditReply);
+  rpc ListFeatureTemplates(TokenRequest) returns (ListFeatureTemplatesReply);
+  rpc GetFeatureTemplate(LibraryIdRequest) returns (GetFeatureTemplateReply);
+  rpc CreateFeatureTemplate(SaveFeatureTemplateRequest) returns (LibraryEditReply);
+  rpc UpdateFeatureTemplate(SaveFeatureTemplateRequest) returns (LibraryEditReply);
+  rpc DeleteFeatureTemplate(LibraryIdRequest) returns (LibraryEditReply);
+  rpc ListNeighborPhrases(TokenRequest) returns (ListNeighborPhrasesReply);
+  rpc GetNeighborPhrase(LibraryIdRequest) returns (GetNeighborPhraseReply);
+  rpc CreateNeighborPhrase(SaveNeighborPhraseRequest) returns (LibraryEditReply);
+  rpc UpdateNeighborPhrase(SaveNeighborPhraseRequest) returns (LibraryEditReply);
+  rpc DeleteNeighborPhrase(LibraryIdRequest) returns (LibraryEditReply);
 }
 
 enum AdminRole {
@@ -350,4 +370,88 @@ message ModuleActionReply {
   AdminResult result = 1;
   string message = 2;
   ModuleInfo module = 3;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Terrain library (specs/TERRAIN_GENERATORS.md section 6.1)
+
+message FragmentRecord {
+  string id = 1;
+  // Terrain ids that use the entity. EMPTY = used by no generator (disabled/unassigned), never "any terrain".
+  repeated string terrains = 2;
+  string slot = 3;
+  string text = 4;
+  int32 weight = 5;
+  repeated string tags = 6;
+}
+
+message FeatureTemplateRecord {
+  string id = 1;
+  repeated string terrains = 2;
+  string short = 3;
+  string long = 4;
+  repeated string handles = 5;
+  repeated string adjectives = 6;
+  string room_line = 7;
+  string detail = 8;
+  int32 weight = 9;
+  double chance = 10;
+  // Server-owned: the client-sent value is ignored. Create sets 1; update sets stored + 1 when any of short, long, handles,
+  // adjectives, room_line or detail changed (weight, chance, terrains and tags edits do not bump it).
+  int32 version = 11;
+  repeated string tags = 12;
+}
+
+message NeighborPhraseRecord {
+  string id = 1;
+  // The ROOM terrains the phrase may appear in. EMPTY = unused.
+  repeated string terrains = 2;
+  string neighbor_terrain = 3;
+  // Contains {dir} exactly once.
+  string text = 4;
+  int32 weight = 5;
+  bool merge = 6;
+}
+
+message LibraryIdRequest {
+  string token = 1;
+  string id = 2;
+}
+
+message SaveFragmentRequest {
+  string token = 1;
+  FragmentRecord fragment = 2;
+}
+
+message SaveFeatureTemplateRequest {
+  string token = 1;
+  FeatureTemplateRecord template = 2;
+}
+
+message SaveNeighborPhraseRequest {
+  string token = 1;
+  NeighborPhraseRecord phrase = 2;
+}
+
+message ListFragmentsReply { repeated FragmentRecord fragments = 1; int32 library_version = 2; }
+message ListFeatureTemplatesReply { repeated FeatureTemplateRecord templates = 1; int32 library_version = 2; }
+message ListNeighborPhrasesReply { repeated NeighborPhraseRecord phrases = 1; int32 library_version = 2; }
+message GetFragmentReply { bool found = 1; FragmentRecord fragment = 2; }
+message GetFeatureTemplateReply { bool found = 1; FeatureTemplateRecord template = 2; }
+message GetNeighborPhraseReply { bool found = 1; NeighborPhraseRecord phrase = 2; }
+
+// Reply of every create, update and delete of a library entity.
+// result: OK; NO_CHANGE (update with nothing changed); INVALID (errors lists the fields); NOT_FOUND (update/delete: unknown id);
+// ALREADY_EXISTS (create: the id is taken); REFUSED (the library is not available); AUDIT_FAILED; FAILED (the database write failed).
+// Exactly one of fragment, template and phrase is set after a create or update (the entity as stored); none after a delete.
+message LibraryEditReply {
+  AdminResult result = 1;
+  repeated FieldError errors = 2;
+  // The library version after the write (unchanged for anything but OK).
+  int32 library_version = 3;
+  // A fixed sentence. Never contains stored values.
+  string message = 4;
+  FragmentRecord fragment = 5;
+  FeatureTemplateRecord template = 6;
+  NeighborPhraseRecord phrase = 7;
 }

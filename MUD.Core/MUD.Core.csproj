@@ -16,6 +16,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
     <PackageReference Include="Scrutor" Version="3.2.2" />
     <InternalsVisibleTo Include="MUD.Tests" />
+    <EmbeddedResource Include="Generation\Library\terrain-library.yaml" />
   </ItemGroup>
 
 </Project>

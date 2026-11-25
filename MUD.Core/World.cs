@@ -464,6 +464,24 @@ namespace MUD.Core
         /// </summary>
         public MUD.Core.Administration.AdminApi CreateAdminApi(IMongoDatabase database)
         {
+            // The terrain library (specs/TERRAIN_GENERATORS.md section 6): seeded from the embedded YAML on a fresh install only.
+            // If the database or the seed fails, the Admin service still starts without a library (library calls answer REFUSED).
+            MUD.Core.Generation.Terrains.MongoLibraryStore libraryStore = null;
+            MUD.Core.Generation.Terrains.StoreLibrary libraryCache = null;
+            try
+            {
+                libraryStore = new MUD.Core.Generation.Terrains.MongoLibraryStore(database);
+                var seeded = MUD.Core.Generation.Terrains.LibrarySeed.SeedIfFresh(libraryStore, MUD.Core.Generation.Terrains.LibrarySeed.ReadEmbedded());
+                foreach (string error in seeded.Errors) { Console.WriteLine("Terrain library seed: " + error); }
+                if (seeded.Seeded) { Console.WriteLine(string.Format("Terrain library seeded: {0} fragments, {1} features, {2} neighbour phrases.", seeded.Fragments, seeded.Features, seeded.Phrases)); }
+                libraryCache = new MUD.Core.Generation.Terrains.StoreLibrary(libraryStore);
+            }
+            catch (Exception ex) when (!(ex is OutOfMemoryException))
+            {
+                Console.WriteLine("The terrain library is not available (" + ex.GetType().Name + ").");
+                libraryStore = null;
+                libraryCache = null;
+            }
             return new MUD.Core.Administration.AdminApi(
                 new MUD.Core.Administration.WorldAdminHost(this, _settings.StartRoomKey),
                 GetPlayerRepository(),
@@ -474,7 +492,9 @@ namespace MUD.Core
                 Clock,
                 Console.WriteLine,
                 null,
-                new MUD.Core.Administration.SupervisorModuleControl(() => ModuleSupervisor));
+                new MUD.Core.Administration.SupervisorModuleControl(() => ModuleSupervisor),
+                libraryStore,
+                libraryCache);
         }
 
         // Runs work on the game thread and waits for it, at most ApiCallTimeout. Called on the game thread itself the

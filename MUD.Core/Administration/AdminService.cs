@@ -54,6 +54,36 @@ namespace MUD.Core.Administration
 
         public override Task<ModuleActionReply> RestartModule(ModuleRequest request, ServerCallContext context) { return Run(() => _api.RestartModule(request)); }
 
+        public override Task<ListFragmentsReply> ListFragments(TokenRequest request, ServerCallContext context) { return Run(() => _api.ListFragments(request)); }
+
+        public override Task<GetFragmentReply> GetFragment(LibraryIdRequest request, ServerCallContext context) { return Run(() => _api.GetFragment(request)); }
+
+        public override Task<LibraryEditReply> CreateFragment(SaveFragmentRequest request, ServerCallContext context) { return Run(() => _api.CreateFragment(request)); }
+
+        public override Task<LibraryEditReply> UpdateFragment(SaveFragmentRequest request, ServerCallContext context) { return Run(() => _api.UpdateFragment(request)); }
+
+        public override Task<LibraryEditReply> DeleteFragment(LibraryIdRequest request, ServerCallContext context) { return Run(() => _api.DeleteFragment(request)); }
+
+        public override Task<ListFeatureTemplatesReply> ListFeatureTemplates(TokenRequest request, ServerCallContext context) { return Run(() => _api.ListFeatureTemplates(request)); }
+
+        public override Task<GetFeatureTemplateReply> GetFeatureTemplate(LibraryIdRequest request, ServerCallContext context) { return Run(() => _api.GetFeatureTemplate(request)); }
+
+        public override Task<LibraryEditReply> CreateFeatureTemplate(SaveFeatureTemplateRequest request, ServerCallContext context) { return Run(() => _api.CreateFeatureTemplate(request)); }
+
+        public override Task<LibraryEditReply> UpdateFeatureTemplate(SaveFeatureTemplateRequest request, ServerCallContext context) { return Run(() => _api.UpdateFeatureTemplate(request)); }
+
+        public override Task<LibraryEditReply> DeleteFeatureTemplate(LibraryIdRequest request, ServerCallContext context) { return Run(() => _api.DeleteFeatureTemplate(request)); }
+
+        public override Task<ListNeighborPhrasesReply> ListNeighborPhrases(TokenRequest request, ServerCallContext context) { return Run(() => _api.ListNeighborPhrases(request)); }
+
+        public override Task<GetNeighborPhraseReply> GetNeighborPhrase(LibraryIdRequest request, ServerCallContext context) { return Run(() => _api.GetNeighborPhrase(request)); }
+
+        public override Task<LibraryEditReply> CreateNeighborPhrase(SaveNeighborPhraseRequest request, ServerCallContext context) { return Run(() => _api.CreateNeighborPhrase(request)); }
+
+        public override Task<LibraryEditReply> UpdateNeighborPhrase(SaveNeighborPhraseRequest request, ServerCallContext context) { return Run(() => _api.UpdateNeighborPhrase(request)); }
+
+        public override Task<LibraryEditReply> DeleteNeighborPhrase(LibraryIdRequest request, ServerCallContext context) { return Run(() => _api.DeleteNeighborPhrase(request)); }
+
         public override Task<ListAuditReply> ListAudit(ListAuditRequest request, ServerCallContext context) { return Run(() => _api.ListAudit(request)); }
 
         // The database calls block, so they run on a pool thread and never hold a Kestrel request thread.

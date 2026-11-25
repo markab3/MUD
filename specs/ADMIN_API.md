@@ -125,7 +125,42 @@ Backend of the website Modules page. All logic stays in `ModuleSupervisor` (D67,
   the module and whatever the module provided (its commands, rooms behaviour and timers) is simply absent until it is started again. Core
   restart is the only place a missing required module is fatal.
 
+## Terrain library (`List/Get/Create/Update/Delete` of fragments, feature templates and neighbour phrases)
+
+Backend of the terrain library editor (specs/TERRAIN_GENERATORS.md section 6). Logic: `MUD.Core/Administration/AdminApi.Library.cs`; storage seam
+`ILibraryStore` (`MongoLibraryStore` in production, an in-memory fake in tests); the seed file and loader are in `MUD.Core/Generation/Terrains/LibrarySeed.cs`.
+
+**Deviation from TERRAIN_GENERATORS.md section 10.** That section sketched one `ListTerrainLibrary` plus `Save*` (with a `create` flag) and a single
+`DeleteLibraryEntity`. This card exposes the explicit set the card asked for instead: for each of `Fragment`, `FeatureTemplate` and `NeighborPhrase` the
+rpcs `List<X>s`, `Get<X>`, `Create<X>`, `Update<X>`, `Delete<X>` (15 rpcs). `ResetTerrainLibrary`, the map rpcs and the regen/update rpcs are not part of this card.
+
+- **Roles.** All fifteen calls: creator or admin (token checked per call, the role re-read; status codes as in the table above). Writes run on the game thread together with the token check, like every other mutation.
+- **Reads** answer from the stored documents (`ListFragments` etc. also return `library_version`, ordered by id; `Get*` answers `found = false` for an unknown id). If the library store is not available they answer empty/not found; if the database throws, the call answers gRPC `Unavailable` (not an empty list).
+- **`terrains` is a list of terrain ids. An empty list means the entity is used by no generator, never "any terrain"** (OD5). The API accepts and stores empty lists; the library snapshot generators read never returns such an entity (`InMemoryLibrary` filter, plus a second filter in `Terrain`).
+- **Results** (in `LibraryEditReply.result`; nothing is audited for a refusal or a no-change):
+
+  | result | when |
+  |---|---|
+  | `OK` | written; `library_version` is the new counter value; the entity as stored is in `fragment` / `template` / `phrase` |
+  | `NO_CHANGE` | update where every field equals the stored one (no audit, no version bump) |
+  | `INVALID` | field rules broken; `errors` lists `field` + fixed sentence (nothing echoed from the input) |
+  | `NOT_FOUND` | update or delete of an unknown id (also when the entity vanished between the check and the write) |
+  | `ALREADY_EXISTS` | create with a taken id (also when another writer created it between the check and the write) |
+  | `REFUSED` | the library is not available (core started without a store, e.g. the database or the seed failed at start) |
+  | `AUDIT_FAILED` | the audit rows could not be written; nothing was changed |
+  | `FAILED` | the database write failed after the audit; the audit rows are marked rejected |
+
+- **Field rules** (`LibraryValidation`): `id` required, letters/digits/`-`/`_`/`.`, at most 100; `weight >= 0`; `text` required (neighbour phrase: `{dir}` exactly once, `neighbor_terrain` required); fragment `slot` required; feature `short` and `long` required, `chance` in [0,1]; every terrain/handle/adjective/tag entry a non-empty string; no duplicate terrain id in one entity.
+- **Feature template version.** Server-owned; the client value is ignored. Create sets 1. Update sets `stored + 1` when any of `short`, `long`, `room_line`, `detail`, `handles` or `adjectives` changed; edits to `weight`, `chance`, `terrains` and `tags` leave it. (This is the number `templateVersion` of generated features is compared with.)
+- **Library version.** `terrain_meta.library.version` is incremented (`$inc`) once per successful create/update/delete. After a write the cached snapshot (`StoreLibrary`) is refreshed so the next generator run sees the edit.
+- **Audit first.** One audit row per changed field for an update (`entity` `terrain_fragment`, `terrain_feature` or `terrain_neighbor_phrase`; `entity_id` the id; field = the document field name such as `text` or `terrains`; old and new values). Create writes one row, field `*create*`, new = the whole document; delete one row, field `*delete*`, old = the whole document. Rows are inserted before the write and marked applied (or rejected) after. No row, no write.
+- **Collections** (Mongo, written by core only): `terrain_fragments`, `terrain_features`, `terrain_neighbor_phrases` (`_id` = entity id, plus `updatedAt`, `updatedBy`; multikey index on `terrains`) and `terrain_meta` (`_id: "library"`, `version`, `seededAt`).
+- **Seeding.** On core start, if `terrain_meta` has no `library` document, the embedded `terrain-library.yaml` (source: `MUD.Core/Generation/Library/terrain-library.yaml`) is validated and loaded; the meta document is written last. If the meta document exists the file is not read again, so admin edits survive restarts. A file that fails validation seeds nothing and is logged; the Admin service still starts (library calls then see an empty library). An unreachable database at start leaves the service without a library (calls answer `REFUSED`).
+- **Web.** `IAdminClient` has the same fifteen calls (`ListFragmentsAsync`, `GetFragmentAsync`, `CreateFragmentAsync`, ...); `Get*` returns null for an unknown id; the reply result carries every branch above; exceptions as for rooms (`CoreRefusedException`, `CoreUnavailableException`). `FakeAdminClient` (MUD.Web.Tests) implements them with in-memory dictionaries and the same version rule.
+
 ## Not verified here
+
+Terrain library: `MongoLibraryStore` (collections, the multikey indexes, `$inc` of the version, duplicate-key handling) and the real seed-on-start path in `World.CreateAdminApi` were not run against a database; the library tests use an in-memory `ILibraryStore`.
 
 Room features: the Mongo write of the `Features` field through the persistence worker was not run against a database; the in-memory fake
 stores the same `$set` document.
