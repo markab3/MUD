@@ -178,3 +178,16 @@ socket (`MUD.Tests/AdminApiTests.cs`, `AdminServiceHostTests.cs`).
 - No token file or `FrontEndHello` handshake guards `frontends.sock` yet. The socket is mode 0600 inside a 0700 directory, which is the same
   protection the module socket had before its token. The front-end token of D66 is card P7-1; the web card (P6-2) decides whether the web
   presents one earlier.
+
+## Regen and update of generated rooms (`RegenerateMap`, `RegenerateRooms`, `UpdateRooms`)
+
+Logic: `MUD.Core/Administration/AdminApi.Generation.cs` over `MUD.Core/Generation/GenerationService.cs` (shared with the creator commands `regen` and `update`). Design: specs/TERRAIN_GENERATORS.md section 9.
+
+- **Roles.** Creator or admin; token re-checked per call; run on the game thread (so the repository write that refreshes live rooms is on the right thread).
+- **Audit first.** One audit row per changed room (entity `room`, field `*regen*` or `*update*`, a short summary as the new value, not the old text), written before the room, marked applied or rejected after. If the rows cannot be written nothing is written (`AUDIT_FAILED`). `dry_run` writes and audits nothing.
+- **Writes** go through the importer (`ReplaceGenerated` for regen; a features-only field write for update). The repository refreshes the cached live room from the stored one, so players in the room see the change at once.
+- **Regen** replaces description, ALL features (hand-added too), properties and behaviors with the generator output; exits follow the map; items and occupants stay. Seed: the stored `gen.seed`, or `new_seed`. A room needs its map file (`<content>/maps/<gen.map>.map.yaml`) else `ROOM_GEN_MAP_NOT_FOUND`. A hand-authored room is `ROOM_GEN_NOT_GENERATED`; a room of another map at a map key is `ROOM_GEN_NOT_OWNED`.
+- **Update** touches only features carrying a `templateId`: newer template -> rewritten (`FEATURE_UPDATED`); same -> `FEATURE_CURRENT`; template deleted -> `FEATURE_TEMPLATE_DELETED` (left as is); older template -> `FEATURE_NEWER_IN_ROOM`; a rename that would duplicate a short in the room -> `FEATURE_CONFLICT`. Description, provenance, exits, properties, behaviors and unreferenced features are never read for change.
+- **Reply counts** `updated_count`, `unchanged_count`, `deleted_template_count`: for regen rooms replaced / unchanged; for update features updated / current / template deleted.
+- `RoomDetail` gains `gen` (provenance) and `RoomFeature` gains `template_id`, `template_version` (read-only).
+- Not verified against a real MongoDB (none in the authoring sandbox); tests use in-memory fakes.

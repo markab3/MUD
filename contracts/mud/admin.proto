@@ -64,6 +64,16 @@ service Admin {
   rpc CreateNeighborPhrase(SaveNeighborPhraseRequest) returns (LibraryEditReply);
   rpc UpdateNeighborPhrase(SaveNeighborPhraseRequest) returns (LibraryEditReply);
   rpc DeleteNeighborPhrase(LibraryIdRequest) returns (LibraryEditReply);
+
+  // Regen and update of generated rooms (specs/TERRAIN_GENERATORS.md section 9). Creator or admin. A room is generated when it has
+  // provenance (RoomDetail.gen). RegenerateMap and RegenerateRooms replace description, ALL features (hand-added too), properties and
+  // behaviors with the generator's output; exits follow the map; items and occupants stay. UpdateRooms rewrites only features that carry
+  // a template reference, when the library template is newer. All three are audited first (one row per changed room, field *regen* or
+  // *update*), write through the importer, and refresh the live rooms. dry_run reports without writing or auditing. The reply carries one
+  // line per room; a failure that stops everything (library or map unavailable, map errors, audit failure) is in `errors`/`result`.
+  rpc RegenerateMap(RegenerateMapRequest) returns (GenerationReply);
+  rpc RegenerateRooms(RegenerateRoomsRequest) returns (GenerationReply);
+  rpc UpdateRooms(UpdateRoomsRequest) returns (GenerationReply);
 }
 
 enum AdminRole {
@@ -155,7 +165,14 @@ message RoomFeature {
   repeated string handles = 5;
   repeated string adjectives = 6;
   repeated string plurals = 7;
+  // The library template this feature was generated from, and its version at that time. Empty / 0 for authored features.
+  // Read-only: UpdateRoom keeps the stored values for a matched feature and ignores what a client sends.
+  string template_id = 8;
+  int32 template_version = 9;
 }
+
+// Generator provenance of a room (RoomDetail.gen); absent for authored rooms.
+message RoomGen { string map = 1; string terrain = 2; string seed = 3; int32 lib_version = 4; }
 
 // Definition fields of a room. x, y, z are absent when the room is unplaced (blank is never 0).
 message RoomDetail {
@@ -169,6 +186,8 @@ message RoomDetail {
   repeated RoomExit exits = 8;
   // The room's Features in stored order.
   repeated RoomFeature features = 9;
+  // Generator provenance. Absent for authored rooms; present means the generator owns the room (regen and update apply).
+  RoomGen gen = 10;
 }
 
 message ListRoomsReply { repeated RoomDetail rooms = 1; }
@@ -454,4 +473,62 @@ message LibraryEditReply {
   FragmentRecord fragment = 5;
   FeatureTemplateRecord template = 6;
   NeighborPhraseRecord phrase = 7;
+}
+
+// ---- Regen and update of generated rooms (specs/TERRAIN_GENERATORS.md sections 9 and 10) ----
+
+// new_seed is optional: empty keeps the stored seed (the same library gives the same output), a value rerolls.
+message RegenerateMapRequest { string token = 1; string map = 2; bool dry_run = 3; string new_seed = 4; }
+message RegenerateRoomsRequest { string token = 1; repeated string keys = 2; bool dry_run = 3; string new_seed = 4; }
+message UpdateRoomsRequest { string token = 1; repeated string keys = 2; bool dry_run = 3; }
+
+enum RoomGenOutcome {
+  ROOM_GEN_OUTCOME_UNSPECIFIED = 0;
+  ROOM_GEN_REPLACED = 1;
+  ROOM_GEN_UNCHANGED = 2;
+  ROOM_GEN_NOT_OWNED = 3;
+  ROOM_GEN_MAP_NOT_FOUND = 4;
+  ROOM_GEN_ERROR = 5;
+  ROOM_GEN_UPDATED = 6;
+  ROOM_GEN_NOT_GENERATED = 7;
+}
+
+enum FeatureUpdateOutcome {
+  FEATURE_UPDATE_OUTCOME_UNSPECIFIED = 0;
+  FEATURE_UPDATED = 1;
+  FEATURE_CURRENT = 2;
+  FEATURE_TEMPLATE_DELETED = 3;
+  FEATURE_NEWER_IN_ROOM = 4;
+  FEATURE_CONFLICT = 5;
+}
+
+message FeatureUpdateLine {
+  string feature_short = 1;
+  string template_id = 2;
+  FeatureUpdateOutcome outcome = 3;
+  int32 from_version = 4;
+  int32 to_version = 5;
+}
+
+message RoomGenLine {
+  string key = 1;
+  RoomGenOutcome outcome = 2;
+  string detail = 3;
+  repeated FeatureUpdateLine features = 4;
+}
+
+// result: OK (the operation ran; per-room outcomes are in rooms), NO_CHANGE (ran, nothing differed), INVALID (errors says why; nothing
+// written), REFUSED (the library is not available), AUDIT_FAILED (nothing written), FAILED (a write failed part way; re-run to finish).
+message GenerationReply {
+  AdminResult result = 1;
+  repeated string errors = 2;
+  repeated RoomGenLine rooms = 3;
+  // Map regen only: rooms of the area no longer in the map. Never deleted.
+  repeated string orphans = 4;
+  bool dry_run = 5;
+  int32 library_version = 6;
+  // Regen: rooms replaced / unchanged. Update: features updated / current (unchanged) / whose template was deleted.
+  int32 updated_count = 7;
+  int32 unchanged_count = 8;
+  int32 deleted_template_count = 9;
 }

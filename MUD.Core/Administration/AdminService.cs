@@ -84,6 +84,12 @@ namespace MUD.Core.Administration
 
         public override Task<LibraryEditReply> DeleteNeighborPhrase(LibraryIdRequest request, ServerCallContext context) { return Run(() => _api.DeleteNeighborPhrase(request)); }
 
+        public override Task<GenerationReply> RegenerateMap(RegenerateMapRequest request, ServerCallContext context) { return Run(() => _api.RegenerateMap(request)); }
+
+        public override Task<GenerationReply> RegenerateRooms(RegenerateRoomsRequest request, ServerCallContext context) { return Run(() => _api.RegenerateRooms(request)); }
+
+        public override Task<GenerationReply> UpdateRooms(UpdateRoomsRequest request, ServerCallContext context) { return Run(() => _api.UpdateRooms(request)); }
+
         public override Task<ListAuditReply> ListAudit(ListAuditRequest request, ServerCallContext context) { return Run(() => _api.ListAudit(request)); }
 
         // The database calls block, so they run on a pool thread and never hold a Kestrel request thread.

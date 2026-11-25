@@ -494,7 +494,8 @@ namespace MUD.Core
                 null,
                 new MUD.Core.Administration.SupervisorModuleControl(() => ModuleSupervisor),
                 libraryStore,
-                libraryCache);
+                libraryCache,
+                _settings.ContentDirectory);
         }
 
         // Runs work on the game thread and waits for it, at most ApiCallTimeout. Called on the game thread itself the
