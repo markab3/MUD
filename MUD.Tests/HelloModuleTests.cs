@@ -334,6 +334,21 @@ namespace MUD.Tests
         [Fact]
         public async Task CoreStartsTheHelloProgramAsAChildProcessAndItGreetsAMoverOverTheRealSocket()
         {
+            // The supervisor starts the module's apphost with a cleaned environment that keeps DOTNET_ROOT only when core has it. When the
+            // runtime is not where the apphost looks (no DOTNET_ROOT, /etc/dotnet/install_location pointing elsewhere) the apphost exits 131
+            // ("You must install .NET"). Give the test process the root of the runtime it is running on, as a real host would have.
+            string previousRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+            if (string.IsNullOrEmpty(previousRoot))
+            {
+                string runtimeDirectory = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory().TrimEnd(Path.DirectorySeparatorChar); // <root>/shared/Microsoft.NETCore.App/<version>
+                Environment.SetEnvironmentVariable("DOTNET_ROOT", Path.GetFullPath(Path.Combine(runtimeDirectory, "..", "..", "..")));
+            }
+            try { await CoreStartsTheHelloProgramCore(); }
+            finally { if (string.IsNullOrEmpty(previousRoot)) { Environment.SetEnvironmentVariable("DOTNET_ROOT", null); } }
+        }
+
+        private async Task CoreStartsTheHelloProgramCore()
+        {
             string modulesDirectory = Path.Combine(Path.GetTempPath(), "mm" + Guid.NewGuid().ToString("N").Substring(0, 8));
             string folder = Path.Combine(modulesDirectory, "hello");
             Directory.CreateDirectory(folder);
