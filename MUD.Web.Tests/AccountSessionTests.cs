@@ -280,6 +280,33 @@ public class FakeAdminClient : IAdminClient
         if (RefuseModuleCalls) { throw new CoreRefusedException(RefuseBecauseSessionEnded); }
     }
 
+    public List<(string Kind, string Key)> GenerationCalls { get; } = new();
+    public GenerationReply GenerationResult { get; set; } = new GenerationReply { Result = AdminResult.Ok, UpdatedCount = 1 };
+    public List<TerrainColor> TerrainColors { get; } = new();
+    public bool ColorsUnavailable { get; set; }
+    public int ColorCalls { get; set; }
+
+    public Task<GenerationReply> RegenerateRoomsAsync(string token, string key, CancellationToken cancellation = default)
+    {
+        CheckRoomCall(token);
+        GenerationCalls.Add(("regen", key));
+        return Task.FromResult(GenerationResult);
+    }
+
+    public Task<GenerationReply> UpdateRoomsAsync(string token, string key, CancellationToken cancellation = default)
+    {
+        CheckRoomCall(token);
+        GenerationCalls.Add(("update", key));
+        return Task.FromResult(GenerationResult);
+    }
+
+    public Task<IReadOnlyList<TerrainColor>> ListTerrainColorsAsync(string token, CancellationToken cancellation = default)
+    {
+        ColorCalls++;
+        if (ColorsUnavailable) { throw new CoreUnavailableException(); }
+        return Task.FromResult<IReadOnlyList<TerrainColor>>(TerrainColors.ToList());
+    }
+
     public Task<IReadOnlyList<ModuleInfo>> ListModulesAsync(string token, CancellationToken cancellation = default)
     {
         CheckModuleCall(token);

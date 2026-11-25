@@ -74,6 +74,10 @@ service Admin {
   rpc RegenerateMap(RegenerateMapRequest) returns (GenerationReply);
   rpc RegenerateRooms(RegenerateRoomsRequest) returns (GenerationReply);
   rpc UpdateRooms(UpdateRoomsRequest) returns (GenerationReply);
+
+  // Legend colours of the map files, for the website map view only (specs/TERRAIN_GENERATORS.md section 3). Creator or admin. One entry per
+  // map file and terrain that has a legend `color`; files that are not maps, and terrains without a valid colour, are left out. Read-only.
+  rpc ListTerrainColors(TokenRequest) returns (TerrainColorsReply);
 }
 
 enum AdminRole {
@@ -480,6 +484,8 @@ message LibraryEditReply {
 // new_seed is optional: empty keeps the stored seed (the same library gives the same output), a value rerolls.
 message RegenerateMapRequest { string token = 1; string map = 2; bool dry_run = 3; string new_seed = 4; }
 message RegenerateRoomsRequest { string token = 1; repeated string keys = 2; bool dry_run = 3; string new_seed = 4; }
+message TerrainColor { string map = 1; string terrain = 2; string color = 3; }
+message TerrainColorsReply { repeated TerrainColor colors = 1; }
 message UpdateRoomsRequest { string token = 1; repeated string keys = 2; bool dry_run = 3; }
 
 enum RoomGenOutcome {

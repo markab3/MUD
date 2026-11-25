@@ -168,8 +168,10 @@ public class RoomEditPageTests
     public void Page_FormsHaveAntiforgery()
     {
         var cshtml = File.ReadAllText(FindFile("MUD.Web/Pages/RoomEdit.cshtml"));
-        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(cshtml, "<form method=\"post\"").Count);
-        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(cshtml, "Html.AntiForgeryToken\\(\\)").Count);
+        // Save, Move, Delete, plus Regen and Update (shown only for generated rooms).
+        Assert.Equal(5, System.Text.RegularExpressions.Regex.Matches(cshtml, "<form method=\"post\"").Count);
+        Assert.Equal(4, System.Text.RegularExpressions.Regex.Matches(cshtml, "<form method=\"post\" action=").Count);
+        Assert.Equal(5, System.Text.RegularExpressions.Regex.Matches(cshtml, "Html.AntiForgeryToken\\(\\)").Count);
     }
 
     [Fact]
@@ -414,6 +416,115 @@ public class RoomEditPageTests
         var (model, _) = Page(new FakeAdminClient { RoomEditResult = AdminResult.Refused }.AddRoom("t.start"));
         await model.OnPostDeleteAsync("t.start");
         Assert.Equal(RoomEditModel.FailedError, model.Error);
+    }
+
+    private static (RoomEditModel Page, FakeAdminClient Core) GeneratedPage()
+    {
+        var core = new FakeAdminClient().AddRoom("t.gen").AddRoom("t.hand");
+        core.Rooms["t.gen"].Gen = new RoomGen { Map = "t", Terrain = "forest", Seed = "s", LibVersion = 1 };
+        return Page(core);
+    }
+
+    [Fact]
+    public async Task Get_ShowsGenerationInfo_OnlyForGeneratedRooms()
+    {
+        var (gen, _) = GeneratedPage();
+        await gen.OnGetAsync("t.gen");
+        Assert.True(gen.IsGenerated);
+        Assert.Equal(("t", "forest"), (gen.GenMap, gen.GenTerrain));
+        var (hand, _) = Page(new FakeAdminClient().AddRoom("t.hand"));
+        await hand.OnGetAsync("t.hand");
+        Assert.False(hand.IsGenerated);
+    }
+
+    [Fact]
+    public void Page_RegenAndUpdateForms_AreInsideTheGeneratedBlock_WithConfirmAndAntiforgery()
+    {
+        var cshtml = File.ReadAllText(FindFile("MUD.Web/Pages/RoomEdit.cshtml"));
+        var block = cshtml.Substring(cshtml.IndexOf("@if (Model.IsGenerated)", StringComparison.Ordinal));
+        block = block.Substring(0, block.IndexOf("handler=Delete", StringComparison.Ordinal));
+        Assert.Contains("handler=Regen", block);
+        Assert.Contains("handler=Update", block);
+        Assert.Contains("confirm(", block);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(block, "Html.AntiForgeryToken\\(\\)").Count);
+        Assert.Contains("hand edits", RoomEditModel.RegenWarning, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("'", RoomEditModel.RegenWarning); // it sits inside a single-quoted script string
+    }
+
+    [Fact]
+    public async Task Regen_CallsCoreForThatRoomOnly_AndShowsTheCounts()
+    {
+        var (model, core) = GeneratedPage();
+        core.GenerationResult = new GenerationReply { Result = AdminResult.Ok, UpdatedCount = 1, UnchangedCount = 0 };
+        await model.OnPostRegenAsync("t.gen");
+        Assert.Equal(new[] { ("regen", "t.gen") }, core.GenerationCalls);
+        Assert.Equal("Regenerated: 1 room replaced, 0 unchanged.", model.Notice);
+        Assert.Null(model.Error);
+    }
+
+    [Fact]
+    public async Task Update_ShowsTheFeatureCounts()
+    {
+        var (model, core) = GeneratedPage();
+        core.GenerationResult = new GenerationReply { Result = AdminResult.Ok, UpdatedCount = 2, UnchangedCount = 3, DeletedTemplateCount = 1 };
+        await model.OnPostUpdateAsync("t.gen");
+        Assert.Equal(new[] { ("update", "t.gen") }, core.GenerationCalls);
+        Assert.Equal("Updated: 2 features updated, 3 already current, 1 whose template was deleted (left as they are).", model.Notice);
+    }
+
+    [Fact]
+    public async Task Regen_NoChange_IsANoticeNotAnError()
+    {
+        var (model, core) = GeneratedPage();
+        core.GenerationResult = new GenerationReply { Result = AdminResult.NoChange, UnchangedCount = 1 };
+        await model.OnPostRegenAsync("t.gen");
+        Assert.Null(model.Error);
+        Assert.Equal("Regenerated: 0 room replaced, 1 unchanged.", model.Notice);
+    }
+
+    [Fact]
+    public async Task Regen_OfARoomThatIsNotGenerated_ShowsAFixedError()
+    {
+        var (model, core) = GeneratedPage();
+        var reply = new GenerationReply { Result = AdminResult.Ok };
+        reply.Rooms.Add(new RoomGenLine { Key = "t.hand", Outcome = RoomGenOutcome.RoomGenNotGenerated, Detail = "secret detail" });
+        core.GenerationResult = reply;
+        await model.OnPostRegenAsync("t.hand");
+        Assert.Equal(RoomEditModel.NotGeneratedError, model.Error);
+        Assert.Null(model.Notice);
+    }
+
+    [Theory]
+    [InlineData(AdminResult.Refused, "The terrain library is not available right now. Nothing was changed.")]
+    [InlineData(AdminResult.AuditFailed, RoomEditModel.AuditFailedError)]
+    [InlineData(AdminResult.Forbidden, RoomEditModel.ForbiddenError)]
+    [InlineData(AdminResult.Failed, RoomEditModel.RegenFailedError)]
+    public async Task Regen_Failures_ShowFixedMessages_NeverCoreText(AdminResult result, string expected)
+    {
+        var (model, core) = GeneratedPage();
+        core.GenerationResult = new GenerationReply { Result = result, Errors = { "stored value leak" } };
+        await model.OnPostRegenAsync("t.gen");
+        Assert.Equal(expected, model.Error);
+    }
+
+    [Fact]
+    public async Task Regen_WhenCoreIsDown_Is503_AndWhenTheSessionEnded_Is403()
+    {
+        var (down, _) = Page(new FakeAdminClient { Unavailable = true });
+        await down.OnPostRegenAsync("t.gen");
+        Assert.Equal(503, down.Response.StatusCode);
+        var (refused, _) = Page(new FakeAdminClient { RefuseRoomCalls = true });
+        await refused.OnPostUpdateAsync("t.gen");
+        Assert.Equal(403, refused.Response.StatusCode);
+    }
+
+    [Fact]
+    public void Page_BoundProperties_DoNotIncludeGenerationState()
+    {
+        var bound = typeof(RoomEditModel).GetProperties()
+            .Where(p => p.GetCustomAttributes(typeof(BindPropertyAttribute), true).Any()).Select(p => p.Name).ToHashSet();
+        Assert.DoesNotContain("GenMap", bound);
+        Assert.DoesNotContain("GenTerrain", bound);
     }
 
     [Fact]

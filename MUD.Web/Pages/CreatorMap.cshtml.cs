@@ -47,7 +47,32 @@ public class CreatorMapModel : PageModel
             .Select(RoomMapLayout.LevelOf).Distinct().OrderBy(l => l).ToList();
         Z = z.HasValue ? z.Value : Levels.Count == 0 || Levels.Contains(0) ? 0 : Levels[0];
         Map = new RoomMapLayout().Build(all, Area, Z);
+        if (Map.Rects.Any(r => r.GenTerrain != null))
+        {
+            // Colours are cosmetic: when core cannot give them, generated rooms get the neutral generated colour.
+            try
+            {
+                foreach (var c in await _core.ListTerrainColorsAsync(SessionAuthentication.TokenFrom(Request), HttpContext.RequestAborted))
+                {
+                    if (ColorPattern.IsMatch(c.Color)) { _colors[(c.Map, c.Terrain)] = c.Color; }
+                }
+            }
+            catch (CoreUnavailableException) { }
+            catch (CoreRefusedException) { }
+        }
         return Page();
+    }
+
+    public const string PlainFill = "#f5f5f4";
+    public const string GeneratedFallbackFill = "#d6d3d1";
+    private static readonly System.Text.RegularExpressions.Regex ColorPattern = new("^#[0-9A-Fa-f]{6}$");
+    private readonly Dictionary<(string Map, string Terrain), string> _colors = new();
+
+    // Rooms without provenance keep the plain fill. A generated room takes the legend colour of its terrain (from its map file), else a neutral grey.
+    public string FillFor(MapRect rect)
+    {
+        if (rect.GenTerrain == null) { return PlainFill; }
+        return _colors.TryGetValue((rect.GenMap ?? string.Empty, rect.GenTerrain), out var color) ? color : GeneratedFallbackFill;
     }
 
     public static string RoomUrl(string key) => "/creator/rooms/" + Uri.EscapeDataString(key);

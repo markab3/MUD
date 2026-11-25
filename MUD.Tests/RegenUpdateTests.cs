@@ -555,6 +555,21 @@ namespace MUD.Tests
         }
 
         [Fact]
+        public void AdminListTerrainColors_ReturnsLegendColoursPerMap_SkipsBrokenMaps_AndNeedsACreator()
+        {
+            File.WriteAllText(Path.Combine(_dir, "maps", "broken.map.yaml"), "this: [is not a map");
+            var api = new Api(_dir, Library());
+            var creator = api.Login("Cora", creator: true);
+            var reply = api.Admin.ListTerrainColors(new TokenRequest { Token = creator });
+            Assert.All(reply.Colors, c => Assert.Equal(Map, c.Map));
+            var forest = Assert.Single(reply.Colors, c => c.Terrain == "forest");
+            Assert.Equal("#1F6F3A", forest.Color);
+            Assert.DoesNotContain(reply.Colors, c => c.Map == "broken");
+            var player = api.Login("Pip", creator: false);
+            Assert.Equal(AdminFailure.Forbidden, Assert.Throws<AdminCallException>(() => api.Admin.ListTerrainColors(new TokenRequest { Token = player })).Failure);
+        }
+
+        [Fact]
         public void AdminGetRoom_ShowsProvenanceAndTemplateReferences()
         {
             var lib = Library();
