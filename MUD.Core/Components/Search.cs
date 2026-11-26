@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MUD.Core.Formatting;
 using MUD.Core.GameObjects;
@@ -26,11 +27,12 @@ namespace MUD.Core.Components
             set { _entries = value; }
         }
 
-        // Only the first entry is consulted, as the search command has always consulted only the first search
-        // property of a room. Returns true when the searcher found the reward.
+        // All entries are consulted: the first whose target matches what was typed answers (so a room with one entry
+        // behaves as before). Returns true when the searcher found something (a reward or a discovery).
         public bool TrySearch(Living searcher, string searchTarget, DateTime now)
         {
-            SearchEntry entry = Entries.FirstOrDefault();
+            if (searchTarget == null) { return false; }
+            SearchEntry entry = Entries.FirstOrDefault(e => e != null && e.Matches(searchTarget));
             return entry != null && entry.TrySearch(searcher, searchTarget, now);
         }
 
@@ -67,7 +69,13 @@ namespace MUD.Core.Components
         public int RefreshMilliseconds { get; set; }
 
         [BsonElement("reward")]
+        [BsonIgnoreIfNull]
         public InventoryItem Reward { get; set; }
+
+        // Optional: finding it flags the searcher (per player, no room cooldown). An entry has a reward, a discovery, or both.
+        [BsonElement("discovery")]
+        [BsonIgnoreIfNull]
+        public SearchDiscovery Discovery { get; set; }
 
         // Runtime state: the time before which no reward is found. Absent until the first reward.
         [BsonElement("nextRewardAt")]
@@ -75,16 +83,42 @@ namespace MUD.Core.Components
         [BsonDateTimeOptions(Kind = DateTimeKind.Local)]
         public DateTime? NextRewardAt { get; set; }
 
+        public bool Matches(string searchTarget)
+        {
+            return Target != null && searchTarget != null && searchTarget.ToLower().Trim() == Target.ToLower().Trim();
+        }
+
         public bool TrySearch(Living searcher, string searchTarget, DateTime now)
         {
-            if (Target == null || searchTarget == null || Reward == null) { return false; }
-            if (searchTarget.ToLower().Trim() != Target.ToLower().Trim()) { return false; }
-            if (NextRewardAt.HasValue && now < NextRewardAt.Value) { return false; }
+            if (!Matches(searchTarget)) { return false; }
+            bool found = false;
 
-            searcher.ReceiveMessage(string.Format("You search the {0} and find {1} {2}!", Target, Reward.ShortDescription.GetArticle(), Reward.ShortDescription));
-            searcher.Inventory.Add(Reward.Clone<InventoryItem>());
-            NextRewardAt = now.AddMilliseconds(RefreshMilliseconds);
-            return true;
+            if (Discovery != null && !string.IsNullOrEmpty(Discovery.FlagId))
+            {
+                if (!DiscoveryFlags.Has(searcher, Discovery.FlagId))
+                {
+                    DiscoveryFlags.Mark(searcher, Discovery.FlagId);
+                    searcher.ReceiveMessage(!string.IsNullOrEmpty(Discovery.Found) ? Discovery.Found : string.Format("You search the {0} and find something!", Target));
+                    // The flag is player state: saved with the player (a Living that is not a player keeps it in memory only).
+                    var player = searcher as Player;
+                    if (player != null) { player.Save(true); }
+                    found = true;
+                }
+                else if (Reward == null)
+                {
+                    searcher.ReceiveMessage(!string.IsNullOrEmpty(Discovery.Again) ? Discovery.Again : string.Format("You search the {0} but find nothing new.", Target));
+                    found = true;
+                }
+            }
+
+            if (Reward != null && !(NextRewardAt.HasValue && now < NextRewardAt.Value))
+            {
+                searcher.ReceiveMessage(string.Format("You search the {0} and find {1} {2}!", Target, Reward.ShortDescription.GetArticle(), Reward.ShortDescription));
+                searcher.Inventory.Add(Reward.Clone<InventoryItem>());
+                NextRewardAt = now.AddMilliseconds(RefreshMilliseconds);
+                found = true;
+            }
+            return found;
         }
 
         public SearchEntry Clone()
@@ -95,8 +129,64 @@ namespace MUD.Core.Components
                 Target = Target,
                 RefreshMilliseconds = RefreshMilliseconds,
                 Reward = Reward == null ? null : Reward.Clone<InventoryItem>(),
+                Discovery = Discovery == null ? null : new SearchDiscovery { FlagId = Discovery.FlagId, Found = Discovery.Found, Again = Discovery.Again },
                 NextRewardAt = NextRewardAt
             };
+        }
+    }
+
+    // What a discovering search entry grants: a named per-player flag (see DiscoveryFlags) and the two messages.
+    [BsonIgnoreExtraElements]
+    public class SearchDiscovery
+    {
+        [BsonElement("id")]
+        public string FlagId { get; set; }
+
+        // Told to the searcher the first time.
+        [BsonElement("found")]
+        [BsonIgnoreIfNull]
+        public string Found { get; set; }
+
+        // Told to a searcher who has already found it.
+        [BsonElement("again")]
+        [BsonIgnoreIfNull]
+        public string Again { get; set; }
+    }
+
+    // Per-player discovery flags: the player component "search.found" { ids: [ "<discovery id>" ] }. It is player state, saved with
+    // the player (survives relog and restart) and never touched by an area re-import. A discovery id is global to the world.
+    public static class DiscoveryFlags
+    {
+        public const string ComponentFullName = "search.found";
+        public const string IdsField = "ids";
+
+        public static bool Has(GameObject player, string id)
+        {
+            BsonDocument data;
+            if (player == null || string.IsNullOrEmpty(id) || !player.TryGetComponent(ComponentFullName, out data)) { return false; }
+            BsonValue ids = data.GetValue(IdsField, BsonNull.Value);
+            if (!ids.IsBsonArray) { return false; }
+            foreach (BsonValue value in ids.AsBsonArray)
+            {
+                if (value.IsString && value.AsString == id) { return true; }
+            }
+            return false;
+        }
+
+        // Records the flag on the player (the caller saves the player).
+        public static void Mark(GameObject player, string id)
+        {
+            if (Has(player, id)) { return; }
+            BsonDocument data;
+            BsonArray ids = null;
+            if (player.TryGetComponent(ComponentFullName, out data))
+            {
+                BsonValue existing = data.GetValue(IdsField, BsonNull.Value);
+                if (existing.IsBsonArray) { ids = existing.AsBsonArray.DeepClone().AsBsonArray; }
+            }
+            if (ids == null) { ids = new BsonArray(); }
+            ids.Add(id);
+            player.SetComponent(ComponentFullName, new BsonDocument(IdsField, ids));
         }
     }
 }

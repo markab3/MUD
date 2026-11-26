@@ -13,9 +13,7 @@ area:
 rooms:
   - key: hall
     short: "a small stone hall"
-    long: |
-      Pale light spills through a high window onto a worn stone floor.
-      A heavy oak table stands against the far wall.
+    long: "Pale light spills through a high window onto a worn stone floor."
     handles: [hall]
     coords: {x: 0, y: 0}
     exits:
@@ -34,20 +32,19 @@ rooms:
         adjectives: [heavy, oak]
         plurals: [tables]
     behaviors:
-      # A hidden button: "search floor" finds it (per player), "press button" then opens a down exit for open_for_s seconds.
-      # Both hooks are needed: command.entered takes the lines, heartbeat closes the exit again.
+      # The hidden button: "search floor" (the core search entry below) grants the per-player discovery hidden_button;
+      # "press button" then opens a down exit for open_for_s seconds. Both hooks are needed: command.entered takes the
+      # line, heartbeat closes the exit again.
       - hook: command.entered
         module: secretexit
         type: SecretExit
         config:
-          search_target: floor
+          discovery: hidden_button
           verb: press
           noun: button
           dir: down
           to: sample_area.secret_vault
           open_for_s: 60
-          found_msg: "You search the floor and find a small hidden button!"
-          already_found_msg: "You have already found the hidden button."
           press_msg: "You press the button."
           open_msg: "A section of the floor grinds aside, revealing stairs leading down."
           already_open_msg: "The stairs leading down are already open."
@@ -70,6 +67,15 @@ rooms:
             handles: [sword]
             adjectives: [cool]
             plurals: [swords]
+      - behavior: search
+        id: floor_search
+        params:
+          target: floor
+          refresh_ms: 0
+          discovery:
+            id: hidden_button
+            found: "You search the floor and find a small hidden button!"
+            again: "You have already found the button here."
 
   - key: study
     short: "a cluttered study"
@@ -86,10 +92,8 @@ rooms:
 
   # Reached only through the timed secret exit of the hall (down). The way back up is a permanent exit.
   - key: secret_vault
-    short: "a hidden stone vault"
-    long: |
-      A low vault of dressed stone, cold and dry. Dust lies undisturbed on
-      the shelves, and a narrow stair climbs back up to the hall.
+    short: "Inside a Dark Stone Vault"
+    long: "This is the inside of a stone vault, left abandoned for countless years. A layer of dust covers the floor and carved stone walls. The roof is constructed of the same cold, unmoving stone and looms oppressively above."
     coords: {x: 0, y: 0, z: -1}
     exits:
       - dir: up

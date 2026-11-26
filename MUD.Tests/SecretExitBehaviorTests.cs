@@ -64,14 +64,23 @@ namespace MUD.Tests
 
             var config = new BsonDocument
             {
-                { "search_target", "floor" }, { "verb", "press" }, { "noun", "button" }, { "dir", "down" }, { "to", "t.vault" },
+                { "discovery", "hidden_button" }, { "verb", "press" }, { "noun", "button" }, { "dir", "down" }, { "to", "t.vault" },
                 { "open_for_s", openForSeconds },
-                { "found_msg", "You search the floor and find a small hidden button!" },
                 { "press_msg", "You press the button." },
                 { "open_msg", "A section of the floor grinds aside, revealing stairs leading down." },
                 { "close_msg", "The floor grinds shut." },
                 { "close_dest_msg", "The stairs above seal." }
             };
+            hall.Search.Entries.Add(new SearchEntry
+            {
+                EntryId = "table_search", Target = "table", RefreshMilliseconds = 600000,
+                Reward = new InventoryItem { ShortDescription = "a really cool sword", Handles = new List<string> { "sword" }, Plurals = new List<string>() }
+            });
+            hall.Search.Entries.Add(new SearchEntry
+            {
+                EntryId = "floor_search", Target = "floor",
+                Discovery = new SearchDiscovery { FlagId = "hidden_button", Found = "You search the floor and find a small hidden button!", Again = "You have already found the button here." }
+            });
             hall.Behaviors.Add(new BehaviorRef(BehaviorHooks.CommandEntered, SecretExitBehavior.Module, SecretExitBehavior.Type, 0, config));
             hall.Behaviors.Add(new BehaviorRef(BehaviorHooks.Heartbeat, SecretExitBehavior.Module, SecretExitBehavior.Type));
 
@@ -128,15 +137,15 @@ namespace MUD.Tests
             s.Ann.DataReceivedHandler(null, "search floor");
 
             Assert.Equal(new[] { "You begin your search." }, s.Ann.Messages);
-            Assert.False(SecretExitBehavior.HasFound(s.Ann, "t.hall", "button"));
+            Assert.False(DiscoveryFlags.Has(s.Ann, "hidden_button"));
             s.Queue.Dispatch(); // not yet: still busy
-            Assert.False(SecretExitBehavior.HasFound(s.Ann, "t.hall", "button"));
+            Assert.False(DiscoveryFlags.Has(s.Ann, "hidden_button"));
 
             _clock.Advance(SearchCommand.SearchDuration);
             s.Queue.Dispatch();
 
             Assert.Contains("You search the floor and find a small hidden button!", s.Ann.Messages);
-            Assert.True(SecretExitBehavior.HasFound(s.Ann, "t.hall", "button"));
+            Assert.True(DiscoveryFlags.Has(s.Ann, "hidden_button"));
             Assert.DoesNotContain("Command not recognized.", s.Ann.Messages);
             Assert.Contains("ann searches around a bit.", s.Bob.Messages);
         }
@@ -151,7 +160,7 @@ namespace MUD.Tests
             _clock.Advance(SearchCommand.SearchDuration);
             s.Queue.Dispatch();
 
-            Assert.False(SecretExitBehavior.HasFound(s.Ann, "t.hall", "button"));
+            Assert.False(DiscoveryFlags.Has(s.Ann, "hidden_button"));
             Assert.DoesNotContain("You search the floor and find a small hidden button!", s.Ann.Messages);
         }
 
@@ -163,8 +172,10 @@ namespace MUD.Tests
             s.Ann.Messages.Clear();
 
             s.Ann.DataReceivedHandler(null, "search floor");
+            _clock.Advance(SearchCommand.SearchDuration);
+            s.Queue.Dispatch();
 
-            Assert.Equal(new[] { "You have already found a hidden button here." }, s.Ann.Messages);
+            Assert.Equal(new[] { "You begin your search.", "You have already found the button here." }, s.Ann.Messages);
         }
 
         [Fact]
@@ -190,13 +201,35 @@ namespace MUD.Tests
             Scene s = NewScene();
             FindTheButton(s);
 
-            BsonDocument component = s.Ann.Components["secretexit"]["found"];
-            Assert.Equal(new BsonArray { "t.hall|button" }, component["keys"]);
+            BsonDocument component = s.Ann.Components["search"]["found"];
+            Assert.Equal(new BsonArray { "hidden_button" }, component["ids"]);
 
             var reloaded = BsonSerializer.Deserialize<Player>(s.Repo.Docs["p.ann"]); // saved when found
-            Assert.True(SecretExitBehavior.HasFound(reloaded, "t.hall", "button"));
-            Assert.False(SecretExitBehavior.HasFound(reloaded, "t.hall", "lever"));
-            Assert.False(SecretExitBehavior.HasFound(reloaded, "t.other", "button"));
+            Assert.True(DiscoveryFlags.Has(reloaded, "hidden_button"));
+            Assert.False(DiscoveryFlags.Has(reloaded, "other_flag"));
+        }
+
+        [Fact]
+        public void SearchFloorGivesNoRewardAndHasNoRoomCooldown()
+        {
+            Scene s = NewScene();
+            FindTheButton(s);
+
+            Assert.Empty(s.Ann.Inventory);
+            Assert.Null(s.Hall.Search.Entries[1].NextRewardAt);
+        }
+
+        [Fact]
+        public void SearchTableWhenTheFloorEntryIsSecondStillUsesTheTableEntry()
+        {
+            Scene s = NewScene();
+            s.Hall.Search.Entries.Reverse(); // floor first, table second: the typed target decides, not the position
+
+            s.Ann.DataReceivedHandler(null, "search table");
+            _clock.Advance(SearchCommand.SearchDuration);
+            s.Queue.Dispatch();
+
+            Assert.Single(s.Ann.Inventory);
         }
 
         [Fact]
@@ -210,18 +243,13 @@ namespace MUD.Tests
 
             Assert.Contains("You begin your search.", s.Ann.Messages);
             Assert.Contains("You finish your search.", s.Ann.Messages);
-            Assert.False(SecretExitBehavior.HasFound(s.Ann, "t.hall", "button"));
+            Assert.False(DiscoveryFlags.Has(s.Ann, "hidden_button"));
         }
 
         [Fact]
         public void SwordSearchOnTheTableStillWorks()
         {
             Scene s = NewScene();
-            s.Hall.Search.Entries.Add(new SearchEntry
-            {
-                EntryId = "table_search", Target = "table", RefreshMilliseconds = 600000,
-                Reward = new InventoryItem { ShortDescription = "a really cool sword", Handles = new List<string> { "sword" }, Plurals = new List<string>() }
-            });
 
             s.Ann.DataReceivedHandler(null, "search table");
             _clock.Advance(SearchCommand.SearchDuration);
@@ -229,7 +257,7 @@ namespace MUD.Tests
 
             Assert.Contains(s.Ann.Messages, m => m.StartsWith("You search the table and find") && m.Contains("really cool sword"));
             Assert.Single(s.Ann.Inventory);
-            Assert.False(SecretExitBehavior.HasFound(s.Ann, "t.hall", "button"));
+            Assert.False(DiscoveryFlags.Has(s.Ann, "hidden_button")); // the table entry, not the floor entry, answered
         }
 
         [Fact]
@@ -371,6 +399,34 @@ namespace MUD.Tests
 
             Assert.Equal(new[] { "Command not recognized." }, s.Ann.Messages);
             Assert.False(s.Hall.HasTemporaryExit("down"));
+        }
+
+        [Fact]
+        public void SampleAreaHallHasBothSearchEntriesTheButtonBehaviorAndTheOwnersTexts()
+        {
+            string path = null;
+            for (var d = new System.IO.DirectoryInfo(System.IO.Directory.GetCurrentDirectory()); d != null && path == null; d = d.Parent)
+            {
+                var candidate = System.IO.Path.Combine(d.FullName, "MUD.Main", "Content", "sample_area.yaml");
+                if (System.IO.File.Exists(candidate)) { path = candidate; }
+            }
+            Assert.NotNull(path);
+            var store = new FakeStore();
+            var result = new MUD.Core.Import.AreaImporter(store).Import(System.IO.File.ReadAllText(path));
+            Assert.True(result.Success, string.Join("; ", result.Errors));
+
+            BsonDocument hall = store.Docs["sample_area.hall"];
+            Assert.Equal("Pale light spills through a high window onto a worn stone floor.", hall["LongDescription"].AsString);
+            var entries = hall["search"]["entries"].AsBsonArray;
+            Assert.Equal(new[] { "table", "floor" }, entries.Select(e => e["target"].AsString).ToArray());
+            Assert.Equal("hidden_button", entries[1]["discovery"]["id"].AsString);
+            Assert.Contains(hall["behaviors"].AsBsonArray, b => b["hook"] == "command.entered" && b["config"]["discovery"] == "hidden_button");
+
+            BsonDocument vault = store.Docs["sample_area.secret_vault"];
+            Assert.Equal("Inside a Dark Stone Vault", vault["ShortDescription"].AsString);
+            Assert.StartsWith("This is the inside of a stone vault, left abandoned for countless years.", vault["LongDescription"].AsString);
+            Assert.EndsWith("looms oppressively above.", vault["LongDescription"].AsString);
+            Assert.Equal(-1, vault["Z"].ToInt32());
         }
     }
 }

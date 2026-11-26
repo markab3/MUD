@@ -103,6 +103,18 @@ namespace MUD.Core.Import
         public int RefreshMs { get; set; }
 
         public ItemDefinition Reward { get; set; }
+
+        // Optional: the entry grants a per-player flag instead of, or as well as, a reward.
+        public DiscoveryDefinition Discovery { get; set; }
+    }
+
+    public class DiscoveryDefinition
+    {
+        public string Id { get; set; }
+
+        public string Found { get; set; }
+
+        public string Again { get; set; }
     }
 
     public class ItemDefinition

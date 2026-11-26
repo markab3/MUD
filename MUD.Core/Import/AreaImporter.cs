@@ -437,7 +437,7 @@ namespace MUD.Core.Import
                 EntryId = def.Id,
                 Target = def.Target,
                 RefreshMilliseconds = def.RefreshMs,
-                Reward = new InventoryItem
+                Reward = def.Reward == null ? null : new InventoryItem
                 {
                     Id = def.Id + ".reward",
                     ShortDescription = def.Reward.Short,
@@ -445,7 +445,8 @@ namespace MUD.Core.Import
                     Handles = new List<string>(def.Reward.Handles),
                     Adjectives = new List<string>(def.Reward.Adjectives),
                     Plurals = new List<string>(def.Reward.Plurals)
-                }
+                },
+                Discovery = def.Discovery == null ? null : new MUD.Core.Components.SearchDiscovery { FlagId = def.Discovery.Id, Found = def.Discovery.Found, Again = def.Discovery.Again }
             };
         }
     }

@@ -223,7 +223,14 @@ namespace MUD.Core.Import
 
                 var reward = propDoc.GetValue("reward", BsonNull.Value);
                 if (reward.IsBsonDocument) { prop.Reward = BuildItem(reward.AsBsonDocument, pctx + ", reward", errors); }
-                else { errors.Add(pctx + ": reward is missing."); }
+                var discovery = propDoc.GetValue("discovery", BsonNull.Value);
+                if (discovery.IsBsonDocument)
+                {
+                    var d = discovery.AsBsonDocument;
+                    prop.Discovery = new DiscoveryDefinition { Id = Str(d, "id"), Found = NullIfEmpty(Str(d, "found")), Again = NullIfEmpty(Str(d, "again")) };
+                    if (prop.Discovery.Id == null) { errors.Add(pctx + ": discovery id is missing."); }
+                }
+                if (prop.Reward == null && prop.Discovery == null) { errors.Add(pctx + ": reward is missing."); }
 
                 result.Add(prop);
             }
@@ -429,8 +436,18 @@ namespace MUD.Core.Import
                 sb.Append(item).Append("params:\n");
                 sb.Append(parameters).Append("target: ").Append(Quote(prop.Target)).Append('\n');
                 sb.Append(parameters).Append("refresh_ms: ").Append(Num(prop.RefreshMs)).Append('\n');
-                sb.Append(parameters).Append("reward:\n");
-                WriteItem(sb, parameters + "  ", prop.Reward);
+                if (prop.Reward != null)
+                {
+                    sb.Append(parameters).Append("reward:\n");
+                    WriteItem(sb, parameters + "  ", prop.Reward);
+                }
+                if (prop.Discovery != null)
+                {
+                    sb.Append(parameters).Append("discovery:\n");
+                    sb.Append(parameters).Append("  id: ").Append(Scalar(prop.Discovery.Id)).Append('\n');
+                    if (prop.Discovery.Found != null) { WriteText(sb, parameters + "  ", "found", prop.Discovery.Found); }
+                    if (prop.Discovery.Again != null) { WriteText(sb, parameters + "  ", "again", prop.Discovery.Again); }
+                }
             }
         }
 

@@ -293,5 +293,58 @@ rooms:
             Assert.Equal(4, first.Count(ImportAction.Insert));
             Assert.Equal(4, importer.Import(File.ReadAllText(path)).Count(ImportAction.Unchanged));
         }
+
+        private const string DiscoveryArea = @"
+area:
+  schema_version: 1
+  prefix: t
+  name: Test
+rooms:
+  - key: hall
+    short: a hall
+    long: A hall.
+    properties:
+      - behavior: search
+        id: floor
+        params:
+          target: floor
+          refresh_ms: 0
+          discovery: {id: hidden_button, found: You find a button!, again: Already found.}
+";
+
+        [Fact]
+        public void ADiscoveryOnlySearchEntryImportsAndIsStoredWithoutAReward()
+        {
+            var store = new FakeStore();
+
+            var result = new AreaImporter(store).Import(DiscoveryArea);
+
+            Assert.True(result.Success, string.Join("; ", result.Errors));
+            var entry = store.Docs["t.hall"]["search"]["entries"].AsBsonArray[0].AsBsonDocument;
+            Assert.False(entry.Contains("reward"));
+            Assert.Equal("hidden_button", entry["discovery"]["id"].AsString);
+            Assert.Equal("You find a button!", entry["discovery"]["found"].AsString);
+            Assert.Equal("Already found.", entry["discovery"]["again"].AsString);
+        }
+
+        [Fact]
+        public void ASearchEntryWithNeitherRewardNorDiscoveryIsRejected()
+        {
+            var yaml = DiscoveryArea.Replace("          discovery: {id: hidden_button, found: You find a button!, again: Already found.}\n", "");
+
+            var result = new AreaImporter(new FakeStore()).Import(yaml);
+
+            Assert.Contains(result.Errors, e => e.Contains("needs a 'reward', a 'discovery', or both"));
+        }
+
+        [Fact]
+        public void ADiscoveryWithoutAnIdIsRejected()
+        {
+            var yaml = DiscoveryArea.Replace("id: hidden_button, ", "");
+
+            var result = new AreaImporter(new FakeStore()).Import(yaml);
+
+            Assert.Contains(result.Errors, e => e.Contains("'id' is required"));
+        }
     }
 }
