@@ -90,12 +90,12 @@ public class PlayerListPresenterTests
     }
 
     [Fact]
-    public void Urls_AreUnderThePrefix_AndEscapeTheKeyAndFilter()
+    public void Urls_PointAtTheRealUrls_AndEscapeTheKeyAndFilter()
     {
-        Assert.Equal("/next/creator/players/ann", PlayerListPresenter.EditUrl("ann"));
+        Assert.Equal("/creator/players/ann", PlayerListPresenter.EditUrl("ann"));
         Assert.DoesNotContain("\"", PlayerListPresenter.EditUrl("a\"b<c>"));
         Assert.DoesNotContain("<", WebRoutes.PlayerEdit("a\"b<c>"));
-        Assert.Equal("/next/creator/players?q=a%26b&sort=desc&page=2", PlayerListPresenter.PageUrl("a&b", true, 2));
+        Assert.Equal("/creator/players?q=a%26b&sort=desc&page=2", PlayerListPresenter.PageUrl("a&b", true, 2));
     }
 
     [Fact]
@@ -104,8 +104,8 @@ public class PlayerListPresenterTests
         var core = new FakeAdminClient().AddPlayer("Ann");
         var list = new PlayerListPresenter(core, Token);
         await list.LoadAsync("an", "desc", 1);
-        Assert.Equal("/next/creator/players?q=an&sort=desc&page=3", list.UrlFor(3));
-        Assert.Equal("/next/creator/players?q=an&sort=asc&page=1", list.UrlFor(1, false));
+        Assert.Equal("/creator/players?q=an&sort=desc&page=3", list.UrlFor(3));
+        Assert.Equal("/creator/players?q=an&sort=asc&page=1", list.UrlFor(1, false));
     }
 
     [Fact]
@@ -388,20 +388,20 @@ public class PlayerEditPresenterTests
     }
 
     [Fact]
-    public void FixedMessages_ContainNoPlaceholders_AndMatchTheRazorPageModels()
+    public void FixedMessages_ContainNoPlaceholders_AndArePinned()
     {
         foreach (var s in new[] { Messages.PlayerNotFound, Messages.PlayerSaveFailed, Messages.PlayerAuditFailed, Messages.PlayerForbidden, Messages.PlayerLastAdmin, Messages.PlayerListFailed, Messages.PlayerListForbidden, Messages.Unavailable })
         {
             Assert.DoesNotContain("{", s);
         }
-        Assert.Equal(PlayerEditModel.NotFoundError, Messages.PlayerNotFound);
-        Assert.Equal(PlayerEditModel.FailedError, Messages.PlayerSaveFailed);
-        Assert.Equal(PlayerEditModel.AuditFailedError, Messages.PlayerAuditFailed);
-        Assert.Equal(PlayerEditModel.ForbiddenError, Messages.PlayerForbidden);
-        Assert.Equal(PlayerEditModel.LastAdminError, Messages.PlayerLastAdmin);
-        Assert.Equal(PlayerEditModel.UnavailableError, Messages.Unavailable);
-        Assert.Equal(PlayerListModel.FailedError, Messages.PlayerListFailed);
-        Assert.Equal(PlayerListModel.ForbiddenError, Messages.PlayerListForbidden);
+        Assert.Equal("That player does not exist.", Messages.PlayerNotFound);
+        Assert.Equal("The player could not be saved. Please try again later.", Messages.PlayerSaveFailed);
+        Assert.Equal("The change could not be recorded, so nothing was saved. Please try again later.", Messages.PlayerAuditFailed);
+        Assert.Equal("You are not allowed to make that change to this player.", Messages.PlayerForbidden);
+        Assert.Equal("The last Admin cannot lose the Admin role.", Messages.PlayerLastAdmin);
+        Assert.Equal("The game is not reachable right now. Please try again later.", Messages.Unavailable);
+        Assert.Equal("The player list could not be loaded. Please try again later.", Messages.PlayerListFailed);
+        Assert.Equal("You are not allowed to list players.", Messages.PlayerListForbidden);
     }
 }
 
@@ -586,13 +586,13 @@ public class ModulesPresenterTests
     }
 
     [Fact]
-    public void Messages_MatchTheRazorPageModel()
+    public void Messages_ArePinned()
     {
-        Assert.Equal(ModulesModel.UnavailableError, Messages.Unavailable);
-        Assert.Equal(ModulesModel.ForbiddenError, Messages.ModuleForbidden);
-        Assert.Equal(ModulesModel.FailedError, Messages.ModuleFailed);
-        Assert.Equal(ModulesModel.ListFailedError, Messages.ModuleListFailed);
-        Assert.Equal(ModulesModel.RestartHint, Messages.ModuleRestartHint);
+        Assert.Equal("The game is not reachable right now. Please try again later.", Messages.Unavailable);
+        Assert.Equal("You are not allowed to do that.", Messages.ModuleForbidden);
+        Assert.Equal("The module request could not be completed. Please try again later.", Messages.ModuleFailed);
+        Assert.Equal("The module list could not be loaded. Please try again later.", Messages.ModuleListFailed);
+        Assert.Equal("Restart starts a new instance before it stops the old one.", Messages.ModuleRestartHint);
     }
 }
 
@@ -610,9 +610,9 @@ public class PlayerModuleComponentTests
         typeof(IAdminClient).Assembly.GetTypes().Single(t => t.FullName == "MUD.Web.Components.Pages." + name);
 
     [Theory]
-    [InlineData("PlayerList", "/next/creator/players")]
-    [InlineData("PlayerEdit", "/next/creator/players/{NameKey}")]
-    [InlineData("Modules", "/next/creator/modules")]
+    [InlineData("PlayerList", "/creator/players")]
+    [InlineData("PlayerEdit", "/creator/players/{NameKey}")]
+    [InlineData("Modules", "/creator/modules")]
     public void ThePages_RequireTheCreatorOrAdminPolicy_OnTheirRoutes(string name, string route)
     {
         var type = Component(name);

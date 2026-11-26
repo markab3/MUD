@@ -276,10 +276,10 @@ public class RoomEditPresenterTests
     }
 
     [Fact]
-    public void RegenWarning_MentionsHandEdits_AndItsSentenceIsTheOneTheRazorPageAsks()
+    public void RegenWarning_MentionsHandEdits()
     {
         Assert.Contains("hand edits", Messages.RegenWarning, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(RoomEditModel.RegenWarning, Messages.RegenWarning);
+        Assert.Equal("Regen replaces the description of this room, ALL features (including ones you added by hand) and properties with new generator output. Your hand edits to them are lost. Exits and occupants stay. Continue?", Messages.RegenWarning);
     }
 
     [Fact]
@@ -588,7 +588,7 @@ public class RoomEditPresenterTests
     [Fact]
     public void RoomUrl_EscapesTheKey_SoItCannotBreakOutOfTheLink()
     {
-        Assert.Equal("/next/creator/rooms/t.hall", WebRoutes.RoomEdit("t.hall"));
+        Assert.Equal("/creator/rooms/t.hall", WebRoutes.RoomEdit("t.hall"));
         Assert.DoesNotContain("\"", WebRoutes.RoomEdit("a\"b<c>"));
         Assert.DoesNotContain("<", WebRoutes.RoomEdit("a\"b<c>"));
     }
@@ -611,7 +611,7 @@ public class CreatorPresenterTests
         Fill(p);
         Assert.Equal(CreatorOutcome.Created, await p.CreateAsync());
         Assert.Equal("t.new", p.CreatedKey);
-        Assert.Equal("/next/creator/rooms/t.new", WebRoutes.RoomEdit(p.CreatedKey!));
+        Assert.Equal("/creator/rooms/t.new", WebRoutes.RoomEdit(p.CreatedKey!));
         Assert.Equal(new[] { "abc" }, core.RoomTokens.Distinct());
     }
 
@@ -796,8 +796,8 @@ public class CreatorMapPresenterTests
     [Fact]
     public void RoomLinks_PointAtTheBlazorEditPage()
     {
-        Assert.Equal("/next/creator/rooms/castle.hall", WebRoutes.RoomEdit("castle.hall"));
-        Assert.Equal("/next/creator/map?area=a%20b&z=2", WebRoutes.MapFor("a b", 2));
+        Assert.Equal("/creator/rooms/castle.hall", WebRoutes.RoomEdit("castle.hall"));
+        Assert.Equal("/creator/map?area=a%20b&z=2", WebRoutes.MapFor("a b", 2));
     }
 
     private static FakeAdminClient Coloured()
@@ -880,9 +880,9 @@ public class RoomComponentGuardTests
         typeof(IAdminClient).Assembly.GetTypes().Single(t => t.FullName == "MUD.Web.Components.Pages." + name);
 
     [Theory]
-    [InlineData("Creator", "/next/creator")]
-    [InlineData("CreatorMap", "/next/creator/map")]
-    [InlineData("RoomEdit", "/next/creator/rooms/{Key}")]
+    [InlineData("Creator", "/creator")]
+    [InlineData("CreatorMap", "/creator/map")]
+    [InlineData("RoomEdit", "/creator/rooms/{Key}")]
     public void TheRoomPages_RequireTheCreatorOrAdminPolicy_OnTheirRoutes(string name, string route)
     {
         var type = Component(name);
@@ -948,7 +948,7 @@ public class RoomComponentGuardTests
     [Fact]
     public void Drafts_AreNeverKeptForPasswords_AndTheStoreKeyIsPerUserAndRoute()
     {
-        Assert.Equal("draft:Bob:/next/creator/rooms/t.hall", DraftStore.KeyFor("Bob", WebRoutes.RoomEdit("t.hall")));
+        Assert.Equal("draft:Bob:/creator/rooms/t.hall", DraftStore.KeyFor("Bob", WebRoutes.RoomEdit("t.hall")));
         foreach (var f in new[] { "Creator", "RoomEdit" }) { Assert.DoesNotContain("password", Read("MUD.Web/Components/Pages/" + f + ".razor"), StringComparison.OrdinalIgnoreCase); }
     }
 
@@ -962,25 +962,25 @@ public class RoomComponentGuardTests
     }
 
     [Fact]
-    public void TheMessages_AreTheSameSentencesTheRazorRoomPagesShow()
+    public void TheMessages_ArePinned()
     {
-        Assert.Equal(CreatorModel.KeyExistsError, Messages.RoomKeyExists);
-        Assert.Equal(CreatorModel.FailedError, Messages.RoomCreateFailed);
-        Assert.Equal(CreatorModel.ForbiddenError, Messages.RoomCreateForbidden);
-        Assert.Equal(CreatorModel.UnavailableError, Messages.Unavailable);
-        Assert.Equal(CreatorMapModel.UnavailableError, Messages.Unavailable);
-        Assert.Equal(RoomEditModel.NotFoundError, Messages.RoomNotFound);
-        Assert.Equal(RoomEditModel.FailedError, Messages.RoomSaveFailed);
-        Assert.Equal(RoomEditModel.AuditFailedError, Messages.RoomAuditFailed);
-        Assert.Equal(RoomEditModel.MoveExistsError, Messages.RoomKeyExists);
-        Assert.Equal(RoomEditModel.ForbiddenError, Messages.RoomForbidden);
-        Assert.Equal(RoomEditModel.UnavailableError, Messages.Unavailable);
-        Assert.Equal(RoomEditModel.RegenWarning, Messages.RegenWarning);
-        Assert.Equal(RoomEditModel.NotGeneratedError, Messages.RoomNotGenerated);
-        Assert.Equal(RoomEditModel.LibraryUnavailableError, Messages.LibraryUnavailable);
-        Assert.Equal(RoomEditModel.RegenFailedError, Messages.RegenFailed);
-        Assert.Equal(RoomEditModel.UpdateFailedError, Messages.UpdateFailed);
-        Assert.Equal(RoomEditModel.MaxFormExits, RoomEditPresenter.MaxFormExits);
-        Assert.Equal(RoomEditModel.MaxFormFeatures, RoomEditPresenter.MaxFormFeatures);
+        Assert.Equal("A room with that key already exists.", Messages.RoomKeyExists);
+        Assert.Equal("The room could not be created. Please try again later.", Messages.RoomCreateFailed);
+        Assert.Equal("You are not allowed to create rooms.", Messages.RoomCreateForbidden);
+        Assert.Equal("The game is not reachable right now. Please try again later.", Messages.Unavailable);
+        Assert.Equal("The game is not reachable right now. Please try again later.", Messages.Unavailable);
+        Assert.Equal("That room no longer exists.", Messages.RoomNotFound);
+        Assert.Equal("The room could not be saved. Please try again later.", Messages.RoomSaveFailed);
+        Assert.Equal("The change could not be recorded, so nothing was saved. Please try again later.", Messages.RoomAuditFailed);
+        Assert.Equal("A room with that key already exists.", Messages.RoomKeyExists);
+        Assert.Equal("You are not allowed to edit rooms.", Messages.RoomForbidden);
+        Assert.Equal("The game is not reachable right now. Please try again later.", Messages.Unavailable);
+        Assert.Equal("Regen replaces the description of this room, ALL features (including ones you added by hand) and properties with new generator output. Your hand edits to them are lost. Exits and occupants stay. Continue?", Messages.RegenWarning);
+        Assert.Equal("This room was not made by a generator, so it cannot be regenerated or updated.", Messages.RoomNotGenerated);
+        Assert.Equal("The terrain library is not available right now. Nothing was changed.", Messages.LibraryUnavailable);
+        Assert.Equal("The room could not be regenerated. Please try again later.", Messages.RegenFailed);
+        Assert.Equal("The room could not be updated. Please try again later.", Messages.UpdateFailed);
+        Assert.Equal(32, RoomEditPresenter.MaxFormExits);
+        Assert.Equal(64, RoomEditPresenter.MaxFormFeatures);
     }
 }

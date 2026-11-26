@@ -61,7 +61,7 @@ public class CreatorPolicyTests
     [Fact]
     public void CreatorPage_RequiresPolicy()
     {
-        var attr = (AuthorizeAttribute?)Attribute.GetCustomAttribute(typeof(CreatorModel), typeof(AuthorizeAttribute));
+        var attr = (AuthorizeAttribute?)Attribute.GetCustomAttribute(typeof(MUD.Web.Components.Pages.Creator), typeof(AuthorizeAttribute));
         Assert.NotNull(attr);
         Assert.Equal(WebPolicies.CreatorOrAdmin, attr!.Policy);
     }

@@ -1,19 +1,12 @@
 # Web site (MUD.Web)
 
-> **Planned replacement:** the Razor Pages UI described below is to be replaced by Blazor Server components (Fluent UI,
-> phone-first) running in this host and calling core through `IAdminClient`. See [WEB_BLAZOR.md](WEB_BLAZOR.md). Until that is built, this file describes the
-> current behaviour, which the new design must preserve (routes, policies, messages, auth model, caveats).
+> **Cutover done (card t_2375c78f):** the site is a Blazor Server UI (.NET 8, interactive server rendering, Fluent UI) and the Razor Pages are gone.
+> Design and per-page notes are in [WEB_BLAZOR.md](WEB_BLAZOR.md). The URLs below are unchanged. Behaviour differences, stated: a missing room, a refused role
+> and an unreachable core are in-page views with HTTP 200 (not 404/403/503); notices no longer survive a hard reload (they were TempData); `/` and
+> `/login` are static pages, everything else runs in one SignalR circuit. Where the text below names `Pages/*.cshtml` or a `*Model`, read the
+> component in `Components/Pages/*.razor` and the `*Presenter` in `Pages/`.
 
-> **Blazor foundation (built, card t_4b0a86b1):** Blazor Server + Fluent UI 4.14.5 now runs in this host beside the Razor Pages, under the
-> temporary prefix `/next` (`WebRoutes.Prefix`). Ported so far: `/next/login` (static SSR, antiforgery form), `POST /next/logout` (minimal endpoint,
-> antiforgery), `/next/character`, `/next/account/password`, `/next/access-denied`, `/next` (redirect), plus the responsive shell (bottom bar on phone, left rail
-> from 600px), reconnect banner and circuit settings (20 min retention, 60 s client timeout). The user comes from the `mud.session` cookie; a circuit re-checks the
-> token with core every 30 s (`SessionAuthenticationStateProvider`), so a lowered role or ended session applies within one interval. Logic lives in
-> `LoginPresenter` / `PasswordPresenter` (same behaviour and messages as the page models; sentences in `Messages.cs`). The other pages are still Razor Pages;
-> the shell links to them at their real URLs. Deviations from WEB_BLAZOR.md: .NET 8 has no `[ExcludeFromInteractiveRouting]`, so `App.razor` picks the static render mode by path
-> (`/next`, `/next/login`); Log out posts a hidden antiforgery token passed from `App.razor` to the layout. Not exercised: a signed-in circuit end to end (no core in the sandbox), real phone, bUnit.
-
-ASP.NET Core (Razor Pages, net8.0) site for logging in with the same character
+ASP.NET Core (Blazor Server, net8.0) site for logging in with the same character
 accounts the telnet game uses. It does not start the World or the telnet
 server and does not reference MUD.Core. It is a client of core's Admin service on `frontends.sock` and has no
 database access: `MongoDB.Driver` is not referenced by `MUD.Web` and no Mongo setting is read (core is the only process
@@ -214,7 +207,7 @@ Query string: `?area=<prefix>&z=<level>` (defaults to the first area and level 0
 
 ## Modules page (`/creator/modules`)
 
-Built (`Pages/Modules.cshtml`, `ModulesModel`). Policy `CreatorOrAdmin`, like the player pages (there is no `/admin` area). Its backend is in
+Built (`Components/Pages/Modules.razor`, `ModulesPresenter`). Policy `CreatorOrAdmin`, like the player pages (there is no `/admin` area). Its backend is in
 `specs/ADMIN_API.md` ("Modules"); the web reaches it only through `IAdminClient` (`ListModulesAsync`, `StartModuleAsync`, `StopModuleAsync`,
 `RestartModuleAsync`).
 
@@ -234,7 +227,7 @@ Built (`Pages/Modules.cshtml`, `ModulesModel`). Policy `CreatorOrAdmin`, like th
 
 ## Terrain library pages (`/creator/terrain`, `/creator/terrain/edit`)
 
-Built (`Pages/TerrainList.cshtml`, `TerrainEdit.cshtml`, helpers in `TerrainLibrary.cs`). Policy `CreatorOrAdmin`. Everything goes through
+Built (`Components/Pages/TerrainList.razor`, `TerrainEdit.razor`, `TerrainListPresenter`, `TerrainEditPresenter`, helpers in `Pages/TerrainLibrary.cs`). Policy `CreatorOrAdmin`. Everything goes through
 `IAdminClient` (the Create/Update/Delete/List/Get calls for fragments, feature templates and neighbour phrases; backend in
 `specs/ADMIN_API.md` and `specs/TERRAIN_GENERATORS.md` sections 6 and 11). Core validates every write and owns the feature version.
 

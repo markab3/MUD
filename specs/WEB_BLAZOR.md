@@ -1,7 +1,8 @@
 # Website: Blazor Server with Fluent UI (design spec)
 
-Status: **design, not built.** Card t_d73059a1 (docs only). Nothing here was compiled or run against Fluent UI, bUnit or a
-circuit; items to confirm in the spike are marked **[verify]** and collected in "Open questions".
+Status: **built; cutover done** (card t_2375c78f). The Razor Pages are removed and the components own the real URLs (`WebRoutes.Prefix` is empty).
+Sections 1-13 are the original design text and still describe intent; Appendices B-D describe what was built; Appendix E records the cutover verification.
+Items marked **[verify]** in the design were exercised only where Appendix E says so.
 
 Replaces the Razor Pages UI of `MUD.Web` described in [WEB.md](WEB.md). The behaviour in WEB.md and
 [WEB_EDITING.md](WEB_EDITING.md) stays the requirement; this file changes the delivery mechanism only.
@@ -416,3 +417,21 @@ Logic is in `TerrainListPresenter` and `TerrainEditPresenter`; `TerrainLibrary.c
 Lists render a table and a card list from the same rows (CSS, 600px). The four tabs are links from 600px and one `<select>` below. The terrain tick list is a scrollable box (max 40vh) on a phone and a three-column grid from 600px. The empty-terrains warning (`[!] Not used by any generator`) shows on the editor and in list rows exactly as before.
 Decisions: Delete asks first in `ConfirmDialog` (new text `TerrainDeleteConfirm`); the editor keeps a local draft like the room and player editors (`TerrainDraftFound`); a saved new entry navigates to its edit address with the "Saved." notice via `NoticeService`; a saved edit reloads from core. HTTP 403/404/503 become in-page views (7.3).
 Not verified here: layout at 360px, touch targets, reconnect behaviour and a signed-in circuit (no core, Mongo or browser in the sandbox).
+
+## Appendix E. Cutover and verification (card t_2375c78f)
+
+Cutover: `Pages/*.cshtml`, their `.cshtml.cs` page models and `Pages/Shared/_Layout.cshtml` are deleted; `AddRazorPages`/`MapRazorPages` are gone; `@page`
+routes lost the `/next` prefix and `WebRoutes.Prefix` is `""` (`WebRoutes.Home` is `/`). The presenters stay in `MUD.Web/Pages/` (namespace `MUD.Web.Pages`);
+`FeatureInput` moved from the deleted `RoomEdit.cshtml.cs` into `RoomEditPresenter.cs` unchanged. Same URLs as before: /login, /character, /creator, /creator/map,
+/creator/rooms/{key}, /creator/players[/{nameKey}], /creator/modules, /creator/terrain[/edit], /account/password, /access-denied; `POST /logout` is the minimal endpoint
+(GET redirects). `scripts/deploy.sh` and the unit are unchanged (publish output contains the Fluent static assets under `wwwroot/_content`). CI needed no change (no workload).
+
+Tests: the Razor page-model test classes (`LoginPageTests`, `LogoutPageTests`, `PasswordPageTests`, `ModulesPageTests`, `PlayerPagesTests`, `RoomEditPageTests`,
+`CreatorPageTests`, `CreatorMapPageTests`, `CreatorMapColourTests`, `TerrainPagesTests`) were deleted because each has a presenter/endpoint counterpart ported earlier
+(`LoginPresenterTests`, `PasswordPresenterTests`, `LogoutEndpointTests`, `ModulesPresenterTests`, `PlayerEditPresenterTests`, `RoomEditPresenterTests`,
+`CreatorPresenterTests`, `CreatorMapPresenterTests`, `TerrainPresenterTests`). Parity assertions against the deleted models now pin the literal sentences. Services, rules,
+layout, policy, gRPC and guard tests are untouched. A new test asserts no `.cshtml` remains and the real routes.
+
+Measured with headless Chromium (Playwright) against the published Release build and a stand-in core on a Unix socket (no real core or Mongo; room, player and
+module data were canned). Results and screenshots are attached to the PR. Not verified: a real phone, real touch gestures on the map (pinch, one-finger pan), the
+core-down banner, a role lowered mid-circuit, throttled networks.

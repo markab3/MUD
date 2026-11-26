@@ -332,6 +332,27 @@ public class BlazorShellTests
     }
 
     [Fact]
+    public void RazorPagesAreGone_BlazorIsTheOnlyUi_AndOwnsTheRealUrls()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root != null && !File.Exists(Path.Combine(root.FullName, "MUD.sln"))) { root = root.Parent; }
+        Assert.NotNull(root);
+        var web = Path.Combine(root!.FullName, "MUD.Web");
+        Assert.Empty(Directory.EnumerateFiles(web, "*.cshtml", SearchOption.AllDirectories));
+        Assert.DoesNotContain("MapRazorPages", File.ReadAllText(Path.Combine(web, "Program.cs")));
+        Assert.DoesNotContain("AddRazorPages", File.ReadAllText(Path.Combine(web, "Program.cs")));
+        Assert.Equal(string.Empty, WebRoutes.Prefix);
+        Assert.Equal("/login", WebRoutes.Login);
+        Assert.Equal("/logout", WebRoutes.Logout);
+        Assert.Equal("/character", WebRoutes.Character);
+        Assert.Equal("/account/password", WebRoutes.Password);
+        Assert.Equal("/creator/map", WebRoutes.Map);
+        Assert.Equal("/creator/players", WebRoutes.Players);
+        Assert.Equal("/creator/modules", WebRoutes.Modules);
+        Assert.Equal("/creator/terrain", WebRoutes.Terrain);
+    }
+
+    [Fact]
     public void TheRoutes_MatchTheRouteConstants_AndTheSignedInPagesRequireSignIn()
     {
         var byRoute = Components().ToDictionary(c => c.Route, c => c.Type);
@@ -347,18 +368,16 @@ public class BlazorShellTests
     }
 
     [Fact]
-    public void TheMessages_AreTheSameSentencesTheRazorPagesShow()
+    public void TheMessages_ArePinned()
     {
-        Assert.Equal(LoginModelStrings.Generic, Messages.LoginGeneric);
-        Assert.Equal(LoginModel.RetiredError, Messages.LoginRetired);
-        Assert.Equal(LoginModel.UnavailableError, Messages.Unavailable);
-        Assert.Equal(PasswordModel.UnavailableError, Messages.Unavailable);
-        Assert.Equal(PasswordModel.WrongCurrentError, Messages.PasswordWrongCurrent);
-        Assert.Equal(PasswordModel.MismatchError, Messages.PasswordMismatch);
-        Assert.Equal(PasswordModel.SameError, Messages.PasswordSame);
-        Assert.Equal(PasswordModel.SaveFailedError, Messages.PasswordSaveFailed);
+        Assert.Equal("Invalid name or password.", Messages.LoginGeneric);
+        Assert.Equal("This character has been retired and can no longer be played.", Messages.LoginRetired);
+        Assert.Equal("The game is not reachable right now. Please try again later.", Messages.Unavailable);
+        Assert.Equal("The game is not reachable right now. Please try again later.", Messages.Unavailable);
+        Assert.Equal("Your password could not be changed. Check your current password and try again.", Messages.PasswordWrongCurrent);
+        Assert.Equal("The new passwords did not match.", Messages.PasswordMismatch);
+        Assert.Equal("The new password must be different from the current one.", Messages.PasswordSame);
+        Assert.Equal("Your password could not be saved. Please try again later.", Messages.PasswordSaveFailed);
     }
 
-    // LoginModel.GenericError is private; its sentence is pinned by LoginPageTests, so repeat it here instead of changing the page model.
-    private static class LoginModelStrings { public const string Generic = "Invalid name or password."; }
 }

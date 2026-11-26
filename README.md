@@ -20,6 +20,10 @@ Things to do:
 `MUD.Main` is the composition root. `MUD.Core` (the game) and `MUD.Telnet` (the telnet front end) do not
 reference each other; both depend on `MUD.CoreApi`, the front-end-neutral surface (`ICoreApi`, `IFrontEndSink`). See `specs/ARCHITECTURE.md`.
 
+**Website**
+
+`MUD.Web` is a Blazor Server site (.NET 8, interactive server rendering, Fluent UI) with a phone-first layout. It is a client of core's Admin service and has no database access. Run it with `dotnet run --project MUD.Web` (core must be running). See `specs/WEB.md` and `specs/WEB_BLAZOR.md`.
+
 **Telnet Stuff**
 
 ~~You can connect now, but I am pretty sure not all the edge cases are getting handled or handled correctly.~~
