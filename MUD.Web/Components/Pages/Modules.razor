@@ -87,13 +87,13 @@ else
     {
         if (m.Running)
         {
-            <button type="button" class="mud-btn" disabled="@_busy" @onclick="() => Ask(ModuleAction.Stop, m.Name)">Stop</button>
+            <button type="button" class="mud-btn" data-mutating disabled="@_busy" @onclick="() => Ask(ModuleAction.Stop, m.Name)">Stop</button>
         }
         else
         {
-            <button type="button" class="mud-btn" disabled="@_busy" @onclick="() => RunAsync(ModuleAction.Start, m.Name)">Start</button>
+            <button type="button" class="mud-btn" data-mutating disabled="@_busy" @onclick="() => RunAsync(ModuleAction.Start, m.Name)">Start</button>
         }
-        <button type="button" class="mud-btn" disabled="@_busy" @onclick="() => Ask(ModuleAction.Restart, m.Name)">Restart</button>
+        <button type="button" class="mud-btn" data-mutating disabled="@_busy" @onclick="() => Ask(ModuleAction.Restart, m.Name)">Restart</button>
     };
 
     protected override async Task OnInitializedAsync()

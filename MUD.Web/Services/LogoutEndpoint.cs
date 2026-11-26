@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Antiforgery;
 
 namespace MUD.Web.Services;
 
-// POST /next/logout (plain HTTP: a cookie cannot be removed from a circuit). Antiforgery is validated here; GET only redirects.
+// POST /logout (plain HTTP: a cookie cannot be removed from a circuit). Antiforgery is validated here; GET only redirects.
 public static class LogoutEndpoint
 {
     public static void Map(IEndpointRouteBuilder app)

@@ -1,7 +1,7 @@
 namespace MUD.Web.Services;
 
-// Every internal link of the Blazor UI is built from here (WEB_BLAZOR.md 2.2). While the Razor Pages own the real URLs the Blazor
-// components live under Prefix; the cutover card empties it. The @page directives are literals (Razor needs that), so a route
+// Every internal link of the Blazor UI is built from here (WEB_BLAZOR.md 2.2). Until the cutover, while the Razor Pages owned the real URLs, the Blazor
+// components lived under Prefix; the cutover emptied it (Prefix is now ""). The @page directives are literals (Razor needs that), so a route
 // table test pins each one against these constants.
 public static class WebRoutes
 {
