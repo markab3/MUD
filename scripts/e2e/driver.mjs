@@ -315,9 +315,14 @@ async function coreDownPhase(browser, vp) {
     await expectText(page, 'Hello');
   });
   execSync(process.env.E2E_CORE_START, { stdio: 'inherit' });
-  await step(vp, 'core restarted: old session ends at next revalidation', page, async () => {
-    await page.waitForFunction(() => /\/login/.test(location.pathname) || !document.body.innerText.includes('Hello'), null, { timeout: 70000 });
-    return 'now at ' + new URL(page.url()).pathname;
+  await step(vp, 'core restarted: state observed after the revalidation window', page, async () => {
+    // Observation, not a claim that the session ends: wait past one 30 s revalidation, then report where the page is.
+    await sleep(40000);
+    const path = new URL(page.url()).pathname;
+    const text = await page.evaluate(() => document.body.innerText);
+    if (path === '/login') return 'session ended: now at /login';
+    if (/Hello/.test(text)) return 'still signed in at ' + path + ' (session not ended)';
+    throw new Error('unexpected state at ' + path + ': ' + text.slice(0, 80));
   });
   await ctx.close();
 }

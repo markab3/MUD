@@ -436,6 +436,11 @@ Measured with headless Chromium (Playwright) against the published Release build
 module data were canned). Results and screenshots are attached to the PR. Not verified: a real phone, real touch gestures on the map (pinch, one-finger pan), the
 core-down banner, a role lowered mid-circuit, throttled networks.
 
+## Response compression (first-load size)
+
+`MUD.Web/Services/CompressionSetup.cs`: Brotli and gzip (Fastest level), only for `text/css`, `text/javascript`, `application/javascript`, `application/x-javascript` and `image/svg+xml`, so `blazor.web.js`, Fluent's `lib.module.js`/css and `css/mobile.css`/`js/app.js` are compressed. HTML and JSON are deliberately not in the list (the page HTML carries the antiforgery request token, `/_blazor/negotiate` a connection token: BREACH). `EnableForHttps` is false: the site binds plain http on 127.0.0.1; a TLS proxy in front would see plain http from us. The circuit WebSocket is unaffected.
+Measured (published, curl, page plus referenced css/js, interactive pages also load Fluent `lib.module.js`, 395 KB raw, about 112 KB gzip-1, not counted below): /login 210,438 B before, 73,479 B after (`curl --compressed`); /creator 211,402 B before, 74,463 B after. The Fluent package ships no fonts or icons (only reboot.css, a 104 KB bundle css, lib.module.js and per-component js), so nothing was trimmed.
+
 ## Appendix F. End-to-end verification against a real core and Mongo (card t_a4fd23b9)
 
 Repeatable script: `scripts/e2e/run.sh` (with `core.sh`, `gen_rooms.py`, `driver.mjs`). It touches nothing live: `mongod` on spare port 27391 with a temp dbpath and
@@ -456,7 +461,7 @@ Results worth knowing:
   The user ended on the login page rather than on a page with reduced navigation. Whether core ends the session on a role change or revalidation signs the user out was not isolated. A fresh login as the plain player is refused the creator pages.
 - Forced disconnect keeps the circuit: the retained circuit resumes (retention is 20 minutes), input is intact, mutating buttons are disabled while the banner shows. The *rejected* path (circuit evicted) and the local draft restore were not exercised.
 - **GAP: no shared core-down banner.** 3.1 and 7.2 say a shell banner is shown while core is unavailable. None exists: with core stopped, the idle signed-in page shows nothing; only an action that calls core shows "The game is not reachable right now. Please try again later."
-  The user is correctly not signed out while core is away, and after core restarts the old session was ended at the next revalidation (the cause was not investigated). Backlog card filed.
+  The user is correctly not signed out while core is away, and after core restarts the page was still on `/character` (signed in) when the script looked; whether the old session is ended after a core restart was not established (the step now waits 40 s and records what it sees). Backlog card filed.
 - Modules page: no module executables were published in the run, so it showed "No modules found"; start/stop/restart were not exercised.
 
 Not verified: a real phone and touch gestures, throttled networks, HTTPS or a reverse proxy, module start/stop/restart, the rejected-circuit banner and draft restore, concurrent users, the `[!]` Gen "needs update" path with a changed library template.

@@ -32,4 +32,5 @@ msbuild.wrn
 .vs/
 # Hermes agent worktrees
 .worktrees/
+touch-audit-out/
 scripts/e2e/out/
