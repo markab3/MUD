@@ -1274,6 +1274,92 @@ namespace MUD.Tests
             Assert.Equal("table", f.Api.ListRooms(new TokenRequest { Token = token }).Rooms.Single(r => r.Key == "t.hall").Features.Single().Handles.Single());
         }
 
+        private static void AddBehaviorsAndSearch(Fixture f)
+        {
+            Room hall = f.Rooms.Cache["t.hall"];
+            hall.Behaviors.Add(new MUD.Core.Components.BehaviorRef("room.entered", "desert", "Trap", 3, new BsonDocument { { "damage", 5 }, { "name", "a \"quoted\" \u00e9" }, { "tags", new BsonArray { "a", 1.5 } } }));
+            hall.Behaviors.Add(new MUD.Core.Components.BehaviorRef("room.tick", "desert", "Plain"));
+            hall.Search.Entries.Add(new MUD.Core.Components.SearchEntry { EntryId = "table", Target = "table", RefreshMilliseconds = 60000, Reward = new InventoryItem { ShortDescription = "a coin", LongDescription = "secret reward detail" } });
+            hall.Search.Entries.Add(new MUD.Core.Components.SearchEntry { EntryId = "rug", Target = "rug", RefreshMilliseconds = 5 });
+            f.Rooms.Stored["t.hall"] = hall.ToBsonDocument();
+        }
+
+        private static void AssertBehaviorsAndSearch(RoomDetail room)
+        {
+            Assert.Equal(2, room.Behaviors.Count);
+            Assert.Equal("room.entered", room.Behaviors[0].Hook);
+            Assert.Equal("desert", room.Behaviors[0].Module);
+            Assert.Equal("Trap", room.Behaviors[0].Type);
+            Assert.Equal(3, room.Behaviors[0].Priority);
+            Assert.Equal("{\"damage\":5,\"name\":\"a \\u0022quoted\\u0022 \\u00E9\",\"tags\":[\"a\",1.5]}", room.Behaviors[0].ConfigJson);
+            Assert.Equal("room.tick", room.Behaviors[1].Hook);
+            Assert.Equal("{}", room.Behaviors[1].ConfigJson);
+            Assert.Equal(2, room.Searches.Count);
+            Assert.Equal(("table", "table", 60000, "a coin"), (room.Searches[0].Id, room.Searches[0].Target, room.Searches[0].RefreshMs, room.Searches[0].RewardShort));
+            Assert.Equal(("rug", "rug", 5, ""), (room.Searches[1].Id, room.Searches[1].Target, room.Searches[1].RefreshMs, room.Searches[1].RewardShort));
+            Assert.DoesNotContain("secret", room.ToString());
+        }
+
+        [Fact]
+        public void GetRoomAndListRoomsCarryTheBehaviorsAndSearchEntriesFromALiveRoom()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            AddBehaviorsAndSearch(f);
+            string token = f.Login("cris");
+            AssertBehaviorsAndSearch(f.Api.GetRoom(new GetRoomRequest { Token = token, Key = "t.hall" }).Room);
+            AssertBehaviorsAndSearch(f.Api.ListRooms(new TokenRequest { Token = token }).Rooms.Single(r => r.Key == "t.hall"));
+            RoomDetail start = f.Api.GetRoom(new GetRoomRequest { Token = token, Key = "t.start" }).Room;
+            Assert.Empty(start.Behaviors);
+            Assert.Empty(start.Searches);
+        }
+
+        [Fact]
+        public void ListRoomsCarriesTheBehaviorsAndSearchEntriesFromAStoredDocument()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            AddBehaviorsAndSearch(f);
+            f.Rooms.Cache.Remove("t.hall"); // not loaded: ListRooms reads the stored document
+            string token = f.Login("cris");
+            AssertBehaviorsAndSearch(f.Api.ListRooms(new TokenRequest { Token = token }).Rooms.Single(r => r.Key == "t.hall"));
+        }
+
+        [Fact]
+        public void ARoomWithoutTheCreatorRoleCannotReadBehaviors()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Pat");
+            AddBehaviorsAndSearch(f);
+            string token = f.Login("pat");
+            Assert.Equal(AdminFailure.Forbidden, Refused(() => f.Api.GetRoom(new GetRoomRequest { Token = token, Key = "t.hall" })).Failure);
+            Assert.Equal(AdminFailure.Forbidden, Refused(() => f.Api.ListRooms(new TokenRequest { Token = token })).Failure);
+        }
+
+        [Fact]
+        public void UpdateRoomIgnoresSentBehaviorsAndSearchesAndKeepsTheStoredOnes()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            AddBehaviorsAndSearch(f);
+            Room hall = f.Rooms.Cache["t.hall"];
+            string token = f.Login("cris");
+            RoomEditRequest request = Fixture.Edit(token, "t.hall", "edited short", hall.LongDescription, "t", hall.Exits[0].Name, "t.start");
+            // The request message has no behaviors or searches field; the web form sends the whole room, so only the editable fields count.
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateRoom(request).Result);
+
+            Assert.Equal("edited short", hall.ShortDescription);
+            Assert.Equal(2, hall.Behaviors.Count);
+            Assert.Equal(2, hall.Search.Entries.Count);
+            BsonDocument stored = f.Rooms.Stored["t.hall"];
+            Assert.Equal(2, stored["behaviors"].AsBsonArray.Count);
+            Assert.Equal(5, stored["behaviors"][0]["config"]["damage"].AsInt32);
+            Assert.Equal(2, stored["search"]["entries"].AsBsonArray.Count);
+            RoomDetail after = f.Api.GetRoom(new GetRoomRequest { Token = token, Key = "t.hall" }).Room;
+            AssertBehaviorsAndSearch(after);
+            Assert.DoesNotContain(f.Audit.Rows, r => r.Field != null && (r.Field.Contains("ehavior") || r.Field.Contains("earch")));
+        }
+
         [Fact]
         public void ACallerWithoutTheCreatorRoleCannotEditFeatures()
         {

@@ -1242,6 +1242,65 @@ namespace MUD.Core.Administration
             catch (Exception) { return value.ToString(); }
         }
 
+        private static RoomBehavior BehaviorToDetail(string hook, string module, string type, int priority, BsonDocument config)
+        {
+            return new RoomBehavior { Hook = hook ?? string.Empty, Module = module ?? string.Empty, Type = type ?? string.Empty, Priority = priority, ConfigJson = CompactJson(config) };
+        }
+
+        private static RoomSearchEntry SearchToDetail(string id, string target, int refreshMilliseconds, string rewardShort)
+        {
+            return new RoomSearchEntry { Id = id ?? string.Empty, Target = target ?? string.Empty, RefreshMs = refreshMilliseconds, RewardShort = rewardShort ?? string.Empty };
+        }
+
+        // Compact JSON text of a behavior config; "{}" for null or empty. Never throws.
+        private static string CompactJson(BsonDocument config)
+        {
+            if (config == null || config.ElementCount == 0) { return "{}"; }
+            try
+            {
+                using (var stream = new System.IO.MemoryStream())
+                {
+                    using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+                    {
+                        WriteJson(writer, config);
+                    }
+                    return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+                }
+            }
+            catch (Exception) { return "{}"; }
+        }
+
+        private static void WriteJson(System.Text.Json.Utf8JsonWriter writer, BsonValue value)
+        {
+            switch (value.BsonType)
+            {
+                case BsonType.Document:
+                    writer.WriteStartObject();
+                    foreach (BsonElement element in value.AsBsonDocument)
+                    {
+                        writer.WritePropertyName(element.Name);
+                        WriteJson(writer, element.Value);
+                    }
+                    writer.WriteEndObject();
+                    break;
+                case BsonType.Array:
+                    writer.WriteStartArray();
+                    foreach (BsonValue item in value.AsBsonArray) { WriteJson(writer, item); }
+                    writer.WriteEndArray();
+                    break;
+                case BsonType.String: writer.WriteStringValue(value.AsString); break;
+                case BsonType.Boolean: writer.WriteBooleanValue(value.AsBoolean); break;
+                case BsonType.Int32: writer.WriteNumberValue(value.AsInt32); break;
+                case BsonType.Int64: writer.WriteNumberValue(value.AsInt64); break;
+                case BsonType.Double:
+                    if (double.IsNaN(value.AsDouble) || double.IsInfinity(value.AsDouble)) { writer.WriteStringValue(value.AsDouble.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
+                    else { writer.WriteNumberValue(value.AsDouble); }
+                    break;
+                case BsonType.Null: writer.WriteNullValue(); break;
+                default: writer.WriteStringValue(value.ToString()); break;
+            }
+        }
+
         private static RoomDetail RoomFrom(Room room)
         {
             var detail = new RoomDetail
@@ -1261,6 +1320,14 @@ namespace MUD.Core.Administration
             foreach (Feature feature in room.Features ?? new List<Feature>())
             {
                 if (feature != null) { detail.Features.Add(FeatureToDetail(feature)); }
+            }
+            foreach (MUD.Core.Components.BehaviorRef behavior in room.Behaviors ?? new List<MUD.Core.Components.BehaviorRef>())
+            {
+                if (behavior != null) { detail.Behaviors.Add(BehaviorToDetail(behavior.Hook, behavior.Module, behavior.Type, behavior.Priority, behavior.Config)); }
+            }
+            foreach (MUD.Core.Components.SearchEntry entry in room.Search.Entries)
+            {
+                if (entry != null) { detail.Searches.Add(SearchToDetail(entry.EntryId, entry.Target, entry.RefreshMilliseconds, entry.Reward == null ? null : entry.Reward.ShortDescription)); }
             }
             if (room.Gen != null)
             {
@@ -1315,6 +1382,29 @@ namespace MUD.Core.Administration
                     feature.TemplateId = Text(f, "TemplateId") ?? string.Empty;
                     feature.TemplateVersion = Number(f, "TemplateVersion") ?? 0;
                     detail.Features.Add(feature);
+                }
+            }
+            BsonValue behaviors;
+            if (document.TryGetValue("behaviors", out behaviors) && behaviors.IsBsonArray)
+            {
+                foreach (BsonValue element in behaviors.AsBsonArray)
+                {
+                    if (!element.IsBsonDocument) { continue; }
+                    BsonDocument b = element.AsBsonDocument;
+                    BsonValue config;
+                    detail.Behaviors.Add(BehaviorToDetail(Text(b, "hook"), Text(b, "module"), Text(b, "type"), Number(b, "priority") ?? 0, b.TryGetValue("config", out config) && config.IsBsonDocument ? config.AsBsonDocument : null));
+                }
+            }
+            BsonValue search;
+            if (document.TryGetValue("search", out search) && search.IsBsonDocument && search.AsBsonDocument.TryGetValue("entries", out BsonValue entries) && entries.IsBsonArray)
+            {
+                foreach (BsonValue element in entries.AsBsonArray)
+                {
+                    if (!element.IsBsonDocument) { continue; }
+                    BsonDocument e = element.AsBsonDocument;
+                    BsonValue reward;
+                    string rewardShort = e.TryGetValue("reward", out reward) && reward.IsBsonDocument ? Text(reward.AsBsonDocument, "ShortDescription") : null;
+                    detail.Searches.Add(SearchToDetail(Text(e, "id"), Text(e, "target"), Number(e, "refreshMilliseconds") ?? 0, rewardShort));
                 }
             }
             BsonValue gen;
