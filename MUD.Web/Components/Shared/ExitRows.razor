@@ -1,0 +1,54 @@
+@* Exit rows, shared by the create-room and the room edit forms. Each row is a card: stacked labelled fields, 44px buttons. Row edits are local (no core call). *@
+<fieldset class="mud-fieldset">
+    <legend>Exits (direction and target room key)</legend>
+    @for (var i = 0; i < Exits.Count; i++)
+    {
+        var index = i;
+        var exit = Exits[index];
+        <div class="mud-row-card">
+            <div class="mud-field"><label for="@(Id)-dir-@index">Direction</label>
+                <input id="@(Id)-dir-@index" value="@exit.Dir" @onchange="e => Set(exit, true, e.Value?.ToString())" maxlength="32" placeholder="north" aria-label="Exit direction" autocomplete="off" autocapitalize="none" /></div>
+            <div class="mud-field"><label for="@(Id)-to-@index">Target room key</label>
+                <input id="@(Id)-to-@index" value="@exit.To" @onchange="e => Set(exit, false, e.Value?.ToString())" maxlength="128" placeholder="area.room" aria-label="Exit target room key" autocomplete="off" autocapitalize="none" /></div>
+            @foreach (var m in ErrorsFor(index)) { <p class="mud-error" role="alert">@m</p> }
+            @if (AllowRemove)
+            {
+                <div class="mud-actions"><button type="button" class="mud-btn" @onclick="() => Remove(index)">Remove exit @(index + 1)</button></div>
+            }
+        </div>
+    }
+    @if (AllowAdd)
+    {
+        <p class="mud-hint">@Exits.Count of @Max exits</p>
+        <div class="mud-actions"><button type="button" class="mud-btn" disabled="@(Exits.Count >= Max)" @onclick="Add">Add exit</button></div>
+    }
+    <div class="mud-check"><label><input type="checkbox" checked="@ConfirmDangling" @onchange="e => ConfirmDanglingChanged.InvokeAsync((bool)(e.Value ?? false))" /> Save exits to rooms that do not exist</label></div>
+</fieldset>
+
+@code {
+    [Parameter] public string Id { get; set; } = "exit";
+    [Parameter, EditorRequired] public List<MUD.Web.Services.ExitInput> Exits { get; set; } = new();
+    [Parameter] public bool ConfirmDangling { get; set; }
+    [Parameter] public EventCallback<bool> ConfirmDanglingChanged { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public int Max { get; set; } = 32;
+    // The create form has a fixed number of rows; the edit form adds and removes rows.
+    [Parameter] public bool AllowAdd { get; set; }
+    [Parameter] public bool AllowRemove { get; set; }
+    [Parameter] public Action? OnAdd { get; set; }
+    [Parameter] public Action<int>? OnRemove { get; set; }
+    // Messages by row index, from the page (for the create form: (Exits[i].Dir|To) errors).
+    [Parameter] public Func<int, IEnumerable<string>>? RowErrors { get; set; }
+
+    private IEnumerable<string> ErrorsFor(int index) => RowErrors?.Invoke(index) ?? Enumerable.Empty<string>();
+
+    private Task Set(MUD.Web.Services.ExitInput exit, bool dir, string? value)
+    {
+        if (dir) { exit.Dir = value; } else { exit.To = value; }
+        return Changed.InvokeAsync();
+    }
+
+    private Task Add() { OnAdd?.Invoke(); return Changed.InvokeAsync(); }
+
+    private Task Remove(int index) { OnRemove?.Invoke(index); return Changed.InvokeAsync(); }
+}

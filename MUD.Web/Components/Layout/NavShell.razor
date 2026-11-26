@@ -6,8 +6,8 @@
             <ul>
                 @if (_creator)
                 {
-                    <li><a href="@WebRoutes.LegacyMap">Map</a></li>
-                    <li><a href="@WebRoutes.LegacyCreator">Creator</a></li>
+                    <li><NavLink href="@WebRoutes.Map">Map</NavLink></li>
+                    <li><NavLink href="@WebRoutes.Creator" Match="NavLinkMatch.All">Creator</NavLink></li>
                     <li><a href="@WebRoutes.LegacyPlayers">Players</a></li>
                     <li class="mud-nav-extra"><a href="@WebRoutes.LegacyModules">Modules</a></li>
                     <li class="mud-nav-extra"><a href="@WebRoutes.LegacyTerrain">Terrain</a></li>

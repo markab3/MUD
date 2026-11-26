@@ -37,6 +37,8 @@ builder.Services.AddRazorPages();
 // Blazor Server with Fluent UI (WEB_BLAZOR.md): beside the Razor Pages, under /next, until the cutover card. Interactive server only.
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddFluentUIComponents();
+builder.Services.AddScoped<NoticeService>();
+builder.Services.AddScoped<DraftStore>();
 builder.Services.AddScoped<AuthenticationStateProvider, SessionAuthenticationStateProvider>();
 builder.Services.Configure<CircuitOptions>(o =>
 {

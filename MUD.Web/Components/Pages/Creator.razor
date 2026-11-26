@@ -1,0 +1,150 @@
+@page "/next/creator"
+@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@inject IRoomCreationService Rooms
+@inject NavigationManager Navigation
+@inject NoticeService Notices
+@inject DraftStore Drafts
+<PageTitle>Creator - Planar Realms</PageTitle>
+<h1>Creator</h1>
+<p>Create a room. The stored key is the area prefix, a dot, then the room key. More exits can be added on the room's edit page afterwards.</p>
+@if (_presenter == null)
+{
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else
+{
+    @if (_presenter.Error != null)
+    {
+        <p role="alert" class="mud-error">@_presenter.Error</p>
+    }
+    @if (_presenter.Errors.Count > 0)
+    {
+        <ul role="alert" class="mud-error">
+            @foreach (var e in _presenter.Errors) { <li>@e.Message</li> }
+        </ul>
+    }
+    @if (_draftOffer != null)
+    {
+        <div class="mud-draft" role="status">
+            <p>@Messages.DraftFound</p>
+            <div class="mud-actions">
+                <button type="button" class="mud-btn" @onclick="RestoreDraft">Restore unsaved changes</button>
+                <button type="button" class="mud-btn" @onclick="DiscardDraft">Discard</button>
+            </div>
+        </div>
+    }
+    <form @onsubmit="SubmitAsync" @onsubmit:preventDefault novalidate>
+        @{ var f = _presenter.Form; }
+        <div class="mud-field"><label for="cr-key">Room key</label>
+            <input id="cr-key" value="@f.Key" @onchange="e => Edit(() => f.Key = e.Value?.ToString())" maxlength="64" required autocomplete="off" autocapitalize="none" />
+            @foreach (var m in _presenter.ErrorsFor("Key")) { <span class="mud-error">@m</span> }</div>
+        <div class="mud-field"><label for="cr-short">Short description</label>
+            <input id="cr-short" value="@f.Short" @onchange="e => Edit(() => f.Short = e.Value?.ToString())" maxlength="100" required />
+            @foreach (var m in _presenter.ErrorsFor("Short")) { <span class="mud-error">@m</span> }</div>
+        <div class="mud-field"><label for="cr-long">Long description</label>
+            <textarea id="cr-long" value="@f.Long" @onchange="e => Edit(() => f.Long = e.Value?.ToString())" maxlength="4000" rows="6" required></textarea>
+            @foreach (var m in _presenter.ErrorsFor("Long")) { <span class="mud-error">@m</span> }</div>
+        <div class="mud-field"><label for="cr-area">Area prefix</label>
+            <input id="cr-area" value="@f.Area" @onchange="e => Edit(() => f.Area = e.Value?.ToString())" maxlength="128" required list="cr-area-list" autocomplete="off" autocapitalize="none" />
+            @foreach (var m in _presenter.ErrorsFor("Area")) { <span class="mud-error">@m</span> }</div>
+        <datalist id="cr-area-list">
+            @foreach (var a in _presenter.Areas) { <option value="@a"></option> }
+        </datalist>
+        <div class="mud-coords">
+            <div class="mud-field"><label for="cr-x">X</label>
+                <input id="cr-x" type="number" inputmode="numeric" value="@f.X" @onchange="e => Edit(() => f.X = ParseInt(e.Value))" /></div>
+            <div class="mud-field"><label for="cr-y">Y</label>
+                <input id="cr-y" type="number" inputmode="numeric" value="@f.Y" @onchange="e => Edit(() => f.Y = ParseInt(e.Value))" /></div>
+            <div class="mud-field"><label for="cr-z">Z</label>
+                <input id="cr-z" type="number" inputmode="numeric" value="@f.Z" @onchange="e => Edit(() => f.Z = ParseInt(e.Value))" /></div>
+        </div>
+        <p class="mud-hint">(leave blank for an unplaced room)</p>
+        @foreach (var m in _presenter.ErrorsFor("X").Concat(_presenter.ErrorsFor("Y")).Concat(_presenter.ErrorsFor("Z"))) { <p class="mud-error">@m</p> }
+        <ExitRows Id="cr-exit" Exits="f.Exits" ConfirmDangling="f.ConfirmDangling"
+                  ConfirmDanglingChanged="v => Edit(() => f.ConfirmDangling = v)" Changed="SaveDraftAsync"
+                  RowErrors="ExitErrors" />
+        <div class="mud-sticky-actions">
+            <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Create room</button>
+        </div>
+    </form>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    private CreatorPresenter? _presenter;
+    private bool _busy;
+    private string _draftKey = string.Empty;
+    private RoomForm? _draftOffer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthState).User;
+        var token = user.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
+        _draftKey = DraftStore.KeyFor(user.FindFirstValue(ClaimTypes.Name) ?? string.Empty, WebRoutes.Creator);
+        var presenter = new CreatorPresenter(Rooms, token);
+        await presenter.LoadAreasAsync();
+        _presenter = presenter;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // JS interop is only available after the first render.
+        if (!firstRender || _presenter == null) { return; }
+        var draft = await Drafts.LoadAsync<RoomForm>(_draftKey);
+        if (draft != null && (draft.Exits?.Count ?? 0) <= RoomForm.ExitRows && !IsBlank(draft))
+        {
+            _draftOffer = draft;
+            StateHasChanged();
+        }
+    }
+
+    private IEnumerable<string> ExitErrors(int i) =>
+        _presenter!.ErrorsFor("Exits[" + i + "].Dir").Concat(_presenter.ErrorsFor("Exits[" + i + "].To"));
+
+    private static bool IsBlank(RoomForm f) =>
+        string.IsNullOrEmpty(f.Key) && string.IsNullOrEmpty(f.Short) && string.IsNullOrEmpty(f.Long) && string.IsNullOrEmpty(f.Area)
+        && f.X == null && f.Y == null && f.Z == null && (f.Exits ?? new()).All(e => e == null || e.IsEmpty);
+
+    private static int? ParseInt(object? value) =>
+        int.TryParse(value?.ToString(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : null;
+
+    private Task Edit(Action change)
+    {
+        change();
+        return SaveDraftAsync();
+    }
+
+    // Typed values survive a lost circuit in the browser. This form has no secret fields.
+    private Task SaveDraftAsync() => Drafts.SaveAsync(_draftKey, _presenter!.Form);
+
+    private void RestoreDraft()
+    {
+        if (_draftOffer == null) { return; }
+        var form = _draftOffer;
+        form.Exits ??= new();
+        while (form.Exits.Count < RoomForm.ExitRows) { form.Exits.Add(new ExitInput()); }
+        _presenter!.Form = form;
+        _draftOffer = null;
+    }
+
+    private async Task DiscardDraft()
+    {
+        _draftOffer = null;
+        await Drafts.RemoveAsync(_draftKey);
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_busy || _presenter == null) { return; }
+        _busy = true;
+        try
+        {
+            if (await _presenter.CreateAsync() == CreatorOutcome.Created)
+            {
+                await Drafts.RemoveAsync(_draftKey);
+                Navigation.NavigateTo(WebRoutes.RoomEdit(_presenter.CreatedKey!));
+            }
+        }
+        finally { _busy = false; }
+    }
+}

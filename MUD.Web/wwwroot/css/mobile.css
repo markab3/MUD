@@ -55,3 +55,37 @@ h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
 .components-reconnect-show .mud-reconnect-show, .components-reconnect-failed .mud-reconnect-failed, .components-reconnect-rejected .mud-reconnect-rejected { display: block; }
 @media (min-width: 600px) { .mud-reconnect { bottom: 0; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* Room pages: forms stack, row cards, sticky actions, map. */
+.mud-field textarea, .mud-field select { width: 100%; padding: 8px; border: 1px solid #888; border-radius: 6px; font: inherit; box-sizing: border-box; }
+.mud-field { max-width: 100%; }
+@media (min-width: 600px) { .mud-field { max-width: 560px; } }
+.mud-hint { font-size: 0.875rem; color: #555; margin: 4px 0 12px; }
+.mud-section { margin: 0 0 20px; }
+.mud-section h2 { font-size: 1.15rem; margin: 12px 0 8px; }
+.mud-fieldset { border: 0; padding: 0; margin: 0 0 12px; min-width: 0; }
+.mud-fieldset legend { font-weight: 600; padding: 0; margin-bottom: 8px; }
+.mud-row-card { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.mud-row-card h3 { font-size: 1rem; margin: 0 0 8px; }
+.mud-row-card .mud-actions { flex-wrap: wrap; }
+.mud-coords { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 560px; }
+.mud-coords .mud-field { margin-bottom: 4px; }
+.mud-check label { display: inline-flex; align-items: center; gap: 8px; min-height: var(--mud-hit); }
+.mud-check input { min-height: 24px; width: 24px; height: 24px; }
+.mud-actions { flex-wrap: wrap; }
+.mud-btn-danger { background: #b10e1c; color: #fff; border-color: #b10e1c; }
+.mud-danger { border-top: 2px solid #b10e1c; padding-top: 8px; }
+.mud-draft, .mud-confirm { border: 1px solid #c8a000; background: #fff4ce; border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+.mud-link { display: inline-flex; align-items: center; min-height: var(--mud-hit); }
+.mud-cardlist { list-style: none; padding: 0; margin: 0; }
+.mud-cardlist li { border: 1px solid #ccc; border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+.mud-sticky-actions { position: sticky; bottom: calc(var(--mud-hit) + env(safe-area-inset-bottom)); z-index: 10; background: #fff; padding: 8px 0; border-top: 1px solid #ccc; display: flex; gap: 8px; }
+.mud-sticky-actions .mud-btn { flex: 1 1 auto; }
+@media (min-width: 600px) { .mud-sticky-actions { bottom: 0; } .mud-sticky-actions .mud-btn { flex: 0 0 auto; } }
+.mud-map-toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-width: 560px; }
+.mud-map { position: relative; border: 1px solid #ccc; border-radius: 8px; overflow: hidden; touch-action: none; width: 100%; height: 60vh; min-height: 280px; background: #fafafa; user-select: none; -webkit-user-select: none; }
+.mud-map svg { width: 100%; height: 100%; display: block; }
+.mud-map a { cursor: pointer; }
+.mud-map-tools { position: absolute; top: 8px; right: 8px; z-index: 5; display: flex; flex-direction: column; gap: 8px; }
+.mud-map-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; background: #fff; border-top: 1px solid #ccc; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mud-map-sheet[hidden] { display: none; }

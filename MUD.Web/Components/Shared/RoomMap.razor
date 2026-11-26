@@ -1,0 +1,77 @@
+@using System.Globalization
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+@* The SVG from the unchanged RoomMapLayout, rendered by the server. Room squares are real links, so a tap navigates even if the script
+   fails. roommap.js does pan, pinch, wheel and double-tap zoom by editing the viewBox in the browser; no event goes to the server during a gesture. *@
+<div class="mud-map" @ref="_host" id="@_id" tabindex="0" aria-label="Room map. Arrow keys pan, plus and minus zoom.">
+    <div class="mud-map-tools">
+        <button type="button" class="mud-btn" data-map="in" aria-label="Zoom in">+</button>
+        <button type="button" class="mud-btn" data-map="out" aria-label="Zoom out">&minus;</button>
+        <button type="button" class="mud-btn" data-map="fit" aria-label="Fit map">Fit</button>
+    </div>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 @N(Map.Width) @N(Map.Height)" data-w="@N(Map.Width)" data-h="@N(Map.Height)" role="img" aria-label="Room map">
+        <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke" /></marker>
+        </defs>
+        @foreach (var l in Map.Lines)
+        {
+            <polyline points="@Pts(l.Points)" fill="none" stroke="@(l.Warning ? "#d97706" : "#333")" stroke-width="2"
+                      stroke-dasharray="@(l.Warning ? "6 4" : null)" marker-end="@(l.ArrowEnd ? "url(#arrow)" : null)"
+                      marker-start="@(l.ArrowStart ? "url(#arrow)" : null)"><title>@l.FromKey → @l.ToKey</title></polyline>
+        }
+        @foreach (var s in Map.Stubs)
+        {
+            var color = s.Missing ? "#dc2626" : "#666";
+            <polyline points="@Pts(s.Points)" fill="none" stroke="@color" stroke-width="2" marker-end="url(#arrow)" />
+            @:<text x="@N(s.LabelX)" y="@N(s.LabelY)" font-size="10" fill="@color" text-anchor="middle">@Clip(s.Target, 28)</text>
+        }
+        @foreach (var r in Map.Rects)
+        {
+            <a href="@WebRoutes.RoomEdit(r.Key)" data-room="@r.Key" data-x="@N(r.X + r.W / 2)" data-y="@N(r.Y + r.H / 2)">
+                <rect x="@N(r.X)" y="@N(r.Y)" width="@N(r.W)" height="@N(r.H)" fill="@FillFor(r)" stroke="#111" stroke-width="1.5"><title>@r.Key@(r.GenTerrain != null ? " (" + r.GenTerrain + ")" : "")</title></rect>
+                <text x="@N(r.X + r.W / 2)" y="@N(r.Y + 28)" font-size="11" text-anchor="middle">@Clip(r.Short, 20)</text>
+                <text x="@N(r.X + r.W / 2)" y="@N(r.Y + 44)" font-size="9" text-anchor="middle" fill="#555">@Clip(r.Key, 24)</text>
+            </a>
+        }
+        @foreach (var b in Map.Badges)
+        {
+            @:<text x="@N(b.X + 6)" y="@N(b.Y)" font-size="10" fill="@(b.Missing ? "#dc2626" : "#1d4ed8")">@b.Text @Clip(b.Target, 16)<title>@b.Text → @b.Target</title></text>
+        }
+    </svg>
+    <div class="mud-map-sheet" hidden>
+        <span class="mud-map-sheet-name"></span>
+        <a class="mud-btn mud-btn-primary" href="#">Open room</a>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MUD.Web.Services.RoomMap Map { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<MUD.Web.Services.MapRect, string> FillFor { get; set; } = default!;
+
+    private readonly string _id = "map-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+    private ElementReference _host;
+    private IJSObjectReference? _module;
+
+    private static string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+    private static string Pts(IReadOnlyList<(double X, double Y)> p) => string.Join(" ", p.Select(t => N(t.X) + "," + N(t.Y)));
+    private static string Clip(string s, int n) => s.Length <= n ? s : s.Substring(0, n - 1) + "\u2026";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Gestures live in the browser. (Re)attach after every render of a new map: the module resets its view when the data size changes.
+        try
+        {
+            _module ??= await Js.InvokeAsync<IJSObjectReference>("import", "/js/roommap.js");
+            await _module.InvokeVoidAsync("attach", _host);
+        }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module == null) { return; }
+        try { await _module.InvokeVoidAsync("detach", _host); await _module.DisposeAsync(); }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException) { }
+    }
+}
