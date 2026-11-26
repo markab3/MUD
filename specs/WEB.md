@@ -1,7 +1,7 @@
 # Web site (MUD.Web)
 
-> **Planned replacement:** the Razor Pages UI described below is to be replaced by a hosted Blazor WebAssembly client (Fluent UI,
-> phone-first) calling a JSON API on this host. See [WEB_BLAZOR.md](WEB_BLAZOR.md). Until that is built, this file describes the
+> **Planned replacement:** the Razor Pages UI described below is to be replaced by Blazor Server components (Fluent UI,
+> phone-first) running in this host and calling core through `IAdminClient`. See [WEB_BLAZOR.md](WEB_BLAZOR.md). Until that is built, this file describes the
 > current behaviour, which the new design must preserve (routes, policies, messages, auth model, caveats).
 
 ASP.NET Core (Razor Pages, net8.0) site for logging in with the same character

@@ -13,7 +13,7 @@ commit `ce8f7b9`).
 | [CONFIGURATION.md](CONFIGURATION.md) | Runtime config (environment, appsettings), build, local dev |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | systemd user unit, `scripts/deploy.sh`, rollback, triggering deploys |
 | [WEB.md](WEB.md) | MUD.Web site: config, routes, cookie auth model, plaintext password caveat |
-| [WEB_BLAZOR.md](WEB_BLAZOR.md) | **Design (not built):** replace the Razor site with hosted Blazor WebAssembly + Fluent UI: projects, JSON API per page, cookie/antiforgery flow, mobile-first layout, tests, CI/deploy impact, migration and rollback, open questions |
+| [WEB_BLAZOR.md](WEB_BLAZOR.md) | **Design (not built):** replace the Razor site with Blazor Server + Fluent UI: components per page, auth/circuit flow, mobile-first layout, reconnect strategy, tests, CI/deploy impact, migration and rollback, open questions |
 | [ROOM_FILES.md](ROOM_FILES.md) | Area YAML format and import semantics. **Partly superseded by V2 (D39)**: sections 4.5, 6, 7, 9 obsolete; YAML is an optional one-off import/export format |
 | [TERRAIN_GENERATORS.md](TERRAIN_GENERATORS.md) | Terrain generators for ASCII maps (draft): `ITerrainGenerator` classes, Mongo-backed library seeded from YAML, neighbour-aware text, `x-gen` provenance, regen/update/map re-import semantics, admin gRPC surface and web pages, open questions |
 | [WEB_EDITING.md](WEB_EDITING.md) | Web editing vs the live game: allow-lists, roles, audit. **Rev/poll parts removed in P6-5 (D30)** |

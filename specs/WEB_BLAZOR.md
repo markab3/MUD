@@ -1,597 +1,395 @@
-# Website: Blazor WebAssembly with Fluent UI (design spec)
+# Website: Blazor Server with Fluent UI (design spec)
 
-Status: **design, not built.** Card t_d73059a1 (docs only). Nothing in this file has been compiled or run; every
-statement about the Blazor/Fluent packages is from the design, not from a build here. Items to verify at implementation
-time are marked **[verify]** and collected in "Open questions".
+Status: **design, not built.** Card t_d73059a1 (docs only). Nothing here was compiled or run against Fluent UI, bUnit or a
+circuit; items to confirm in the spike are marked **[verify]** and collected in "Open questions".
 
-Replaces the Razor Pages implementation of `MUD.Web` described in [WEB.md](WEB.md). The behaviour in WEB.md and
+Replaces the Razor Pages UI of `MUD.Web` described in [WEB.md](WEB.md). The behaviour in WEB.md and
 [WEB_EDITING.md](WEB_EDITING.md) stays the requirement; this file changes the delivery mechanism only.
 
-Owner decisions this spec implements (not re-opened here):
+Owner decisions (fixed; they supersede earlier WASM / JSON API / DTO-project text):
 
-1. Replace Razor Pages with Blazor WebAssembly using `Microsoft.FluentUI.AspNetCore.Components`.
-2. Phone use is first class: mobile-first, touch targets of at least 44px, no horizontal page scroll at 360px width,
-   navigation collapses to a drawer or bottom bar, forms and tables reflow, long pages usable one-handed, map supports
-   touch pan and pinch zoom.
-3. The browser never reaches core. The server host keeps `IAdminClient` and the session authentication; the WASM client
-   calls a JSON API on the host (backend-for-frontend). `NoDatabaseAccessTests` still holds.
-4. Preserve behaviour, policies, antiforgery, the plaintext-password caveat, audit-first admin calls and every
-   user-visible message. Same URLs. Localhost bind. `scripts/deploy.sh` still produces one release. No deploy in this card.
+1. Blazor **Server** (.NET 8 Blazor Web App, interactive server rendering) with `Microsoft.FluentUI.AspNetCore.Components`.
+   Not WebAssembly. No JSON API, no client project, no shared DTO project, no wasm-tools.
+2. Components run in the `MUD.Web` host and inject `IAdminClient` (gRPC to core) directly. The browser never touches core.
+   `NoDatabaseAccessTests` still holds.
+3. Login and logout stay plain HTTP (cookies cannot be set from a circuit). `SessionAuthenticationHandler` stays; components read
+   the user through `AuthenticationState`; the session token is re-checked on circuit start and periodically (D31).
+4. Phone is first class: mobile-first, touch targets >= 44px, no horizontal page scroll at 360px, nav collapses to drawer/bottom bar,
+   forms and tables reflow to stacked cards, one-handed use, map with touch pan and pinch zoom.
+5. Dropped connections must not silently lose input: reconnect UI, state kept in components, clear lost-circuit message,
+   optional local draft (section 8).
+6. Preserve behaviour, policies (creator/admin), antiforgery on plain-HTTP posts, audit-first admin calls, every user-visible
+   message, same URLs. Localhost bind and `scripts/deploy.sh` unchanged; one project, one release. Razor Pages and Blazor run side
+   by side until the cutover card. No deploy, no restarts.
 
 ## 1. Facts about the current site (inventory)
 
-Established from the repo at `d5ed91a` (`hermes`).
+From the repo at `d5ed91a` (`hermes`).
 
 ### 1.1 Pages (`MUD.Web/Pages`)
 
-| Route | Page model | Auth | Handlers / purpose | Lines (model) |
-|---|---|---|---|---|
-| `/` | `Index` | none | redirect to `/character` or `/login` | 10 |
-| `/login` | `Login` | anonymous | GET; POST `WebAuthenticate`, sets cookie, generic/retired/unavailable errors, 500 ms delay on failure | 62 |
-| `/logout` | `Logout` | none | GET redirects `/`; POST (antiforgery) `Logout` + delete cookie | 26 |
-| `/access-denied` | `AccessDenied` | anonymous | 403 page | 15 |
-| `/character` | `Character` | signed in | `Hello (<PlayerName>)!` | 16 |
-| `/account/password` | `Password` | signed in | POST `ChangePassword`, per-IP `LoginThrottle` (5 failures / 5 min) + 500 ms delay | 85 |
-| `/creator` | `Creator` | CreatorOrAdmin | create-room form (Key, Short, Long, Area, X/Y/Z, up to 4 exits, dangling-exit checkbox); GET `ListRooms` for area suggestions; POST `CreateRoom` via `RoomCreationService` | 98 |
-| `/creator/map` | `CreatorMap` | CreatorOrAdmin | `ListRooms` (+ `ListTerrainColors` when a generated room is on the level); `RoomMapLayout` renders SVG; `?area=&z=` | 79 |
-| `/creator/rooms/{key}` | `RoomEdit` | CreatorOrAdmin | GET `GetRoom`; Save (`UpdateRoom`), Move (`MoveRoom`), Delete (`DeleteRoom`), Regen (`RegenerateRooms`), Update (`UpdateRooms`); AddExit/RemoveExit/AddFeature/RemoveFeature/MoveFeatureUp/Down are no-write round trips | 463 |
-| `/creator/players` | `PlayerList` | CreatorOrAdmin | `ListPlayers` (`q`, `sort`, `page`, 50 per page) | 71 |
-| `/creator/players/{nameKey}` | `PlayerEdit` | CreatorOrAdmin | `GetPlayer`, `UpdatePlayer`; `PlayerRules` hides controls | 184 |
-| `/creator/modules` | `Modules` | CreatorOrAdmin (buttons admin only) | `ListModules`; POST `Start`/`Stop`/`Restart` Module; `TempData["Notice"]` | 108 |
-| `/creator/terrain` | `TerrainList` | CreatorOrAdmin | tabs + filters over fragments/features/phrases; POST Delete per row | 145 |
-| `/creator/terrain/edit?kind=&id=` | `TerrainEdit` | CreatorOrAdmin | Get/Create/Update for one library entity; `TempData["Notice"]` | 194 (+56 `TerrainLibrary.cs`) |
+| Route | Page model (lines) | Auth | Handlers / purpose |
+|---|---|---|---|
+| `/` | `Index` (10) | none | redirect to `/character` or `/login` |
+| `/login` | `Login` (62) | anonymous | POST `WebAuthenticate`, sets cookie; generic / retired / unavailable errors; 500 ms delay on failure |
+| `/logout` | `Logout` (26) | none | GET redirects `/`; POST (antiforgery) `Logout` + delete cookie |
+| `/access-denied` | `AccessDenied` (15) | anonymous | 403 page |
+| `/character` | `Character` (16) | signed in | `Hello (<PlayerName>)!` |
+| `/account/password` | `Password` (85) | signed in | `ChangePassword`; per-IP `LoginThrottle` (5 / 5 min) + 500 ms delay |
+| `/creator` | `Creator` (98) | CreatorOrAdmin | create-room form (Key, Short, Long, Area, X/Y/Z, 4 exits, dangling checkbox); `ListRooms` for area suggestions; `CreateRoom` via `RoomCreationService` |
+| `/creator/map` | `CreatorMap` (79) | CreatorOrAdmin | `ListRooms` (+ `ListTerrainColors` when a generated room is on the level); `RoomMapLayout` SVG; `?area=&z=` |
+| `/creator/rooms/{key}` | `RoomEdit` (463) | CreatorOrAdmin | `GetRoom`; Save `UpdateRoom`, Move `MoveRoom`, Delete `DeleteRoom`, Regen `RegenerateRooms`, Update `UpdateRooms`; Add/Remove exit, Add/Remove/MoveUp/MoveDown feature are no-write round trips |
+| `/creator/players` | `PlayerList` (71) | CreatorOrAdmin | `ListPlayers` (`q`, `sort`, `page`, 50 per page) |
+| `/creator/players/{nameKey}` | `PlayerEdit` (184) | CreatorOrAdmin | `GetPlayer`, `UpdatePlayer`; `PlayerRules` hides controls |
+| `/creator/modules` | `Modules` (108) | CreatorOrAdmin (buttons admin only) | `ListModules`; `Start/Stop/RestartModule`; `TempData["Notice"]` |
+| `/creator/terrain` | `TerrainList` (145) | CreatorOrAdmin | tabs + filters over fragments / features / phrases; Delete per row |
+| `/creator/terrain/edit?kind=&id=` | `TerrainEdit` (194) + `TerrainLibrary.cs` (56) | CreatorOrAdmin | Get / Create / Update one library entity; `TempData["Notice"]` |
 
-Plus `Pages/Shared/_Layout.cshtml` (a bare `<nav>`; **no CSS, no stylesheet, no viewport-specific layout exists today**).
-Total 14 pages, 1 layout, 5 antiforgery-protected POST forms on the room page alone.
+Plus `Pages/Shared/_Layout.cshtml`: a bare `<nav>`; **no CSS, no stylesheet, no responsive layout exists today.** 14 pages.
 
 ### 1.2 Services (`MUD.Web/Services`)
 
-| File | Role | Fate (section 6) |
-|---|---|---|
-| `AdminClient.cs` (371) | `IAdminClient`, `GrpcAdminClient`, `CoreRefusedException`, `CoreUnavailableException`, `CoreSocket` | stays in host, unchanged |
-| `SessionAuthentication.cs` (111) | cookie `mud.session`, `SessionAuthenticationHandler` (asks core `GetSession` per request), `SessionAccountService` | stays in host; challenge/forbidden behaviour changes for `/api` |
-| `LoginThrottle.cs` (35) | per-IP failure window | stays in host (password endpoint) |
-| `RoomCreation.cs` (174) | `IRoomCreationService` + room form validation via `MUD.Data.RoomRules` | rules to Shared, service to host |
-| `RoomMapLayout.cs` (154), `RoomRecord.cs` (22) | pure map layout | to Shared |
-| `PlayerEditing.cs` (32) | `PlayerRules` (which controls an editor may use) | to Shared |
-| `Account.cs` (20) | `Account`, `AccountRole`, `IAccountService` | `AccountRole` to Shared |
+`AdminClient.cs` (`IAdminClient`, `GrpcAdminClient`, `CoreRefusedException`, `CoreUnavailableException`, `CoreSocket`), `SessionAuthentication.cs`
+(cookie `mud.session`, `SessionAuthenticationHandler`, `SessionAccountService`), `LoginThrottle.cs`, `RoomCreation.cs`
+(`RoomCreationService`, uses `MUD.Data.RoomRules`), `RoomMapLayout.cs`, `RoomRecord.cs`, `PlayerEditing.cs` (`PlayerRules`), `Account.cs`.
+All of these stay as they are (they are not page-technology specific). `MUD.Web` keeps its `MUD.Data` reference (for `RoomRules`)
+and `MUD.Contracts`; both are fine because everything runs on the server.
 
 ### 1.3 Tests (`MUD.Web.Tests`, 253 `[Fact]`/`[Theory]` methods, xunit 2.4.1, no Mongo)
 
-| File | Methods | Classes | What moves where |
+| File | Methods | Classes | Fate |
 |---|---|---|---|
-| `AccountSessionTests.cs` | 41 | `FakeAdminClient`, `LoginPageTests`, `LogoutPageTests`, `SessionAuthenticationHandlerTests`, `SessionAccountServiceTests`, `PasswordPageTests`, `LoginThrottleTests`, `CoreSocketTests`, `NoMongoForAccountsTests`, `GrpcAdminClientSocketTests` (+`StandInAdmin`) | Page tests become `AuthApiTests`/`PasswordApiTests`; the rest stay |
-| `CreatorTests.cs` | 12 | `CreatorPolicyTests`, `RoomFormValidationTests` | policy test stays (host); validation to `MUD.Web.Shared` tests |
-| `LibraryClientTests.cs` | 9 | `LibraryGrpcClientTests`, `FakeLibraryClientTests` | stay (host) |
-| `ModulesPageTests.cs` | 19 | `ModulesPageTests` | to `ModulesApiTests` + client component tests |
-| `NoDatabaseAccessTests.cs` | 4 | `NoDatabaseAccessTests` | stay and extend (section 9.4) |
-| `PlayerEditTests.cs` | 35 | `PlayerRulesTests`, `PlayerPagesTests` | rules to Shared tests; pages to `PlayersApiTests` + client tests |
-| `RoomMapTests.cs` | 34 | `RoomMapLayoutTests`, `CreatorMapPageTests`, `CreatorMapColourTests` | layout to Shared tests; page/colour to `MapApiTests` + client tests |
-| `RoomPagesTests.cs` | 75 | `RoomCreationServiceTests`, `RoomValidatorParityTests`, `RoomEditPageTests`, `CreatorPageTests` | service/parity stay or move to Shared; page tests to `RoomsApiTests` + client tests |
-| `TerrainPagesTests.cs` | 24 | `TerrainPagesTests` | to `LibraryApiTests` + client tests |
+| `AccountSessionTests.cs` | 41 | `FakeAdminClient`, `LoginPageTests`, `LogoutPageTests`, `SessionAuthenticationHandlerTests`, `SessionAccountServiceTests`, `PasswordPageTests`, `LoginThrottleTests`, `CoreSocketTests`, `NoMongoForAccountsTests`, `GrpcAdminClientSocketTests` | page tests port to logic classes (6.2); the rest stay |
+| `CreatorTests.cs` | 12 | `CreatorPolicyTests`, `RoomFormValidationTests` | stay |
+| `LibraryClientTests.cs` | 9 | `LibraryGrpcClientTests`, `FakeLibraryClientTests` | stay |
+| `ModulesPageTests.cs` | 19 | `ModulesPageTests` | port |
+| `NoDatabaseAccessTests.cs` | 4 | `NoDatabaseAccessTests` | stay, extend (9.4) |
+| `PlayerEditTests.cs` | 35 | `PlayerRulesTests`, `PlayerPagesTests` | rules stay; pages port |
+| `RoomMapTests.cs` | 34 | `RoomMapLayoutTests`, `CreatorMapPageTests`, `CreatorMapColourTests` | layout stays; page/colour port |
+| `RoomPagesTests.cs` | 75 | `RoomCreationServiceTests`, `RoomValidatorParityTests`, `RoomEditPageTests`, `CreatorPageTests` | service/parity stay; page tests port |
+| `TerrainPagesTests.cs` | 24 | `TerrainPagesTests` | port |
 
-`MUD.Web.Tests` references `MUD.Web` and (for `PasswordRuleParityTests`-style checks) `MUD.Core`. CI (`.github/workflows/ci.yml`)
-runs `dotnet restore/build/test MUD.sln` on `ubuntu-latest` with `setup-dotnet` `8.0.x`; it installs **no workload**.
+CI (`.github/workflows/ci.yml`): `ubuntu-latest`, `setup-dotnet 8.0.x`, `dotnet restore/build/test MUD.sln`, no workload.
+Deploy: `scripts/deploy.sh` runs `dotnet publish MUD.Web/MUD.Web.csproj -c Release -o <release>/web` and checks `web/MUD.Web.dll`;
+unit `planar-realms-web.service` runs `current/web/MUD.Web` on `127.0.0.1:5080`.
 
-### 1.4 Environment facts
+### 1.4 Environment
 
-- `MUD.Web` is `Microsoft.NET.Sdk.Web`, net8.0, references `MUD.Data` and `MUD.Contracts`, package `Grpc.Net.Client`.
-- **`MUD.Data` references `MongoDB.Driver` and `MongoDB.Bson`.** `MUD.Web` uses it only for `RoomRules`. The WASM client
-  must not reference `MUD.Data` (it would ship the Mongo driver to the browser and break the "no database" rule in spirit).
-  See section 3.2.
-- Local SDK: `dotnet` resolves to `/usr/local/bin/dotnet -> /usr/share/dotnet/dotnet`, SDK `8.0.128`. `dotnet workload list`
-  there shows **`wasm-tools 8.0.28/8.0.100` installed (FileBased)**; the packs (Mono browser-wasm runtime, AOT cross
-  compiler, Emscripten 3.1.34, `MonoAOTCompiler.Task`, `WebAssembly.Sdk`) are present under `/usr/share/dotnet/packs`.
-  `/usr/bin/dotnet` is a broken symlink to `/usr/lib/dotnet` (running it gives `libhostfxr.so not found`); use the
-  `/usr/local/bin` one. NuGet cache already holds `Microsoft.AspNetCore.Components.WebAssembly` and `.DevServer`.
-  No compile of a WASM project was done in this card **[verify]**.
-- CI: `setup-dotnet 8.0.x` resolves the newest 8.0 SDK on the runner (feature band 8.0.4xx today). Workload manifests are
-  per feature band, so the local `8.0.100`-band install does not tell us what CI needs. CI has no `wasm-tools`.
-- Deploy: `scripts/deploy.sh` does `dotnet publish MUD.Web/MUD.Web.csproj -c Release -o <release>/web` and checks for
-  `web/MUD.Web.dll`. Unit `planar-realms-web.service` runs `current/web/MUD.Web` on `127.0.0.1:5080`.
+Local `dotnet` is `/usr/local/bin/dotnet` (SDK 8.0.128 under `/usr/share/dotnet`); `/usr/bin/dotnet` is a broken symlink to a missing
+`/usr/lib/dotnet` (housekeeping, Open question 14). Blazor Server needs **no workload**: the local `wasm-tools` install is not used
+and CI needs no extra step. The NuGet cache has no Fluent UI or bUnit package, so the first restore needs network; not exercised here.
 
 ## 2. Hosting model
 
-Hosted WebAssembly, three web projects plus the existing contract:
+One project. `MUD.Web` (`Microsoft.NET.Sdk.Web`, net8.0) becomes a Blazor Web App with interactive **server** rendering only:
 
+```csharp
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+builder.Services.AddFluentUIComponents();
+builder.Services.AddRazorPages();                       // until the cutover card removes it
+app.UseStaticFiles(); app.UseAuthentication(); app.UseAuthorization(); app.UseAntiforgery();
+app.MapRazorPages();                                    // until cutover
+app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 ```
-MUD.Web.Shared   (net8.0 class library, no ASP.NET, no gRPC, no Mongo)   DTOs, enums, fixed messages, validation rules, pure layout
-MUD.Web.Client   (net8.0, Microsoft.NET.Sdk.BlazorWebAssembly)           Razor components, client services, Fluent UI
-MUD.Web          (net8.0, Microsoft.NET.Sdk.Web)                         host: JSON API, session auth, IAdminClient, serves the client
-MUD.Contracts    (unchanged)                                             gRPC contract; referenced by MUD.Web only
-```
 
-Reference graph: `MUD.Web -> MUD.Web.Client` (so publish carries the client), `MUD.Web -> MUD.Web.Shared`,
-`MUD.Web.Client -> MUD.Web.Shared`, `MUD.Web -> MUD.Contracts`. **Forbidden**: `MUD.Web.Client` or `MUD.Web.Shared` referencing
-`MUD.Contracts`, `Grpc.*`, `Google.Protobuf`, `MUD.Data`, `MUD.Core`, or any MongoDB package. Enforced by a test (9.4).
+Project changes: add `Microsoft.FluentUI.AspNetCore.Components` (4.x line, pinned exact version **[verify net8.0 support]**). Nothing else is
+added to `MUD.Web.csproj`; no new project in `MUD.sln` except the optional component-test project (9.1).
 
-Decision: standalone WASM client served by the existing host (`Microsoft.AspNetCore.Components.WebAssembly.Server`,
-`UseBlazorFrameworkFiles`, `MapFallbackToFile("index.html")`), **not** the .NET 8 "Blazor Web App" with per-page
-interactivity. Reasons: the owner asked for WASM; there is no SEO or prerender need (every page except `/login` is behind
-sign-in); prerender would run component code on the server with the user's claims and add a second auth path; the WASM-only
-shape keeps the host a plain API. Cost: first load shows a loading splash (section 8.3). The alternative is in Open questions.
+### 2.1 Render modes
 
-Host responsibilities after the change:
+- Everything is **InteractiveServer with prerendering off** (`new InteractiveServerRenderMode(prerender: false)`). Reasons: prerender would run
+  every component's load twice (once static, once on circuit start) and so call core twice; the first paint is a loading skeleton either way; no SEO need.
+- **Login is static SSR** (not interactive): it must set the cookie, which only a normal HTTP response can do. It carries `[ExcludeFromInteractiveRouting]`
+  and `App.razor` picks the render mode per page (`HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null`), so the rest of the app
+  navigates inside one circuit without full page loads. **[verify]** this .NET 8 pattern in the spike.
+- Logout is a **minimal endpoint** `POST /logout` with antiforgery (`app.MapPost("/logout", ...)`) that calls `IAdminClient.LogoutAsync`, deletes the cookie
+  and redirects to `/login`. `GET /logout` redirects to `/` (as today). The nav's Log out is an HTML `<form method="post" action="/logout">`
+  with `<AntiforgeryToken />`, a real browser POST rather than a circuit event. **[verify]** that the token component works on an interactive page in .NET 8; fallback:
+  a button that first calls `LogoutAsync` in the circuit and then navigates with `forceLoad` to a `/logout/done` endpoint that only deletes the cookie (POST-only property then lost; Open question 8).
+- `/` is a static endpoint redirect (as today `Index`). `/access-denied` is a routable component (no status-code change, see 8.3).
+- Static assets of Fluent UI are served from the host (`_content/Microsoft.FluentUI.AspNetCore.Components/...`); **no CDN** (keeps the "no external requests" rule).
+  The Blazor script `_framework/blazor.web.js` is served by the host too.
 
-- `app.MapGroup("/api")` endpoints (section 4), all `RequireAuthorization` with the existing policies unless stated.
-- Static files + Blazor framework files; fallback to `index.html` for non-`/api` GETs so deep links
-  (`/creator/rooms/a.b`) and refreshes work.
-- Session authentication and antiforgery (section 5).
-- Still binds `MUD_WEB_URL` (default `http://127.0.0.1:5080`); no new setting is required. Core socket settings unchanged.
+### 2.2 Side by side until cutover
 
-No prerendering, no SignalR, no Blazor Server. The host opens no new listener.
+Razor Pages own the final URLs now. Blazor components therefore live under a temporary prefix **`/next`** (`@page "/next/character"`, ...) and all
+internal links are built from one `Routes` constants class (`Routes.Character`, `Routes.RoomEdit(key)`), whose prefix is `"/next"` during migration and `""` at cutover.
+Both UIs share the same cookie, the same `IAdminClient` and the same policies, so a user can use either. The cutover card changes the prefix constant and every `@page`
+(they use `@page Routes.X` constants where Razor allows, else a find/replace guarded by a route-table test), removes Razor Pages and deletes `_Layout`.
+Per-page cutover (delete a Razor page and take its URL in the same PR) is allowed too (Open question 10).
 
-### 2.1 Where code lives (summary of the move)
+## 3. Authentication and authorisation
 
-| Today | After |
+### 3.1 Request vs circuit
+
+The initial HTTP request (and the SignalR negotiate request) is authenticated by the existing `SessionAuthenticationHandler` (cookie -> `GetSession`).
+A circuit lives longer than a request and has no `HttpContext` after start, so:
+
+- `CircuitSession` (scoped; one per circuit) holds `Token`, `RemoteKey` (caller IP for `LoginThrottle`) and is filled once, at the start of the circuit, from
+  `HttpContext` (cascading parameter of `App.razor`, or an `IHttpContextAccessor` read in a circuit handler during connection) **[verify]**. The token never reaches the browser's JS, and is not
+  stored in component state that is rendered; components get it only through `CircuitSession`.
+- `SessionAuthenticationStateProvider : RevalidatingServerAuthenticationStateProvider` (replaces the default). Initial state is the principal the handler built.
+  `RevalidationInterval = 30 s` (**[verify]** choice). `ValidateAuthenticationStateAsync` calls `IAdminClient.GetSessionAsync(token)`:
+  - null (logout, retire, demote, core restart): state becomes anonymous; components redirect to `/login` with `forceLoad` (D31, same as a stale cookie today).
+  - role differs: state is rebuilt with the CURRENT role, so a lowered role removes creator/admin UI and policies within one interval;
+  - `CoreUnavailableException`: keep the last state (do not sign the user out because core is restarting), mark `CoreStatus.Unavailable` for the shell banner.
+  The existing request behaviour (core down means anonymous request, cookie kept) is unchanged for plain HTTP requests.
+- Every core call that throws `CoreRefusedException` has the same effect as a failed revalidation (`SessionEnded`) or shows the "not allowed" view (role too low), and triggers an immediate revalidation.
+- Core still re-checks the caller's current role on every call; the UI checks are for navigation only.
+
+### 3.2 Authorisation per component
+
+`AddCascadingAuthenticationState()`; `Routes.razor` uses `AuthorizeRouteView` with `NotAuthorized` showing the access-denied view (signed in) or redirecting to
+`/login?ReturnUrl=...` (anonymous). Policies are the existing ones; `WebPolicies.CreatorOrAdmin` moves out of `Program.cs`'s top-level file so tests can reference it.
+
+| Component | Attribute |
 |---|---|
-| `*.cshtml` + `*.cshtml.cs` | `MUD.Web.Client/Pages/*.razor` (UI + client state) and `MUD.Web/Api/*Endpoints.cs` (handler logic) |
-| `IAdminClient`, `GrpcAdminClient`, `CoreSocket`, session handler, `LoginThrottle`, `RoomCreationService` | unchanged, in `MUD.Web` |
-| `RoomMapLayout`, `RoomRecord`, `PlayerRules`, `AccountRole`, room/feature/exit validation | `MUD.Web.Shared` |
-| Page error/notice sentences (`LoginModel.GenericError`, `RoomEditModel.RegenWarning`, ...) | `MUD.Web.Shared/Messages.cs` as constants, unchanged text |
-| `TempData["Notice"]` | client `NoticeService` (section 8.2) |
+| Character, Password | `[Authorize]` |
+| Creator, CreatorMap, RoomEdit, PlayerList, PlayerEdit, Modules, TerrainList, TerrainEdit | `[Authorize(Policy = WebPolicies.CreatorOrAdmin)]` |
+| Module Start/Stop/Restart buttons | rendered in `<AuthorizeView Roles="Admin">`, and the handler re-checks the role (defence in depth; core is authoritative) |
+| Login, access-denied | anonymous |
 
-## 3. Shared project and DTOs
+### 3.3 Login, logout, cookie
 
-### 3.1 DTO rules
+Unchanged mechanism and cookie (`mud.session`, HttpOnly, SameSite=Lax, Secure on HTTPS, browser-session). `Login.razor` is a static page with `<EditForm Model=... FormName="login" method="post">`
+(`[SupplyParameterFromForm]`, antiforgery enforced by `UseAntiforgery`); its handler is `LoginModel.OnPostAsync` logic moved verbatim: remote IP from the connection, `WebAuthenticate`,
+`AuthOk` appends the cookie and redirects (`NavigationManager.NavigateTo` in static SSR issues a redirect), `AuthRetired`, `AuthTryAgainLater` / core down, generic error after the 500 ms delay. The first interactive
+request after login starts the circuit and reads the new cookie. Because the circuit captured the previous identity, a login or logout always ends in a **full page load** (redirect, not enhanced navigation) so no circuit
+ever carries the previous user. Enhanced form handling is disabled on these forms (`data-enhance="false"`, default off) **[verify]**.
 
-- Hand-written C# `record`s in `MUD.Web.Shared`, serialised with `System.Text.Json` (web defaults, camelCase). The protobuf
-  types never cross the API (keeps `Google.Protobuf` and gRPC out of the download, and decouples the browser from core's contract).
-- The host owns one mapping layer `MUD.Web/Api/Mappers.cs` (proto <-> DTO). It replaces the proto-touching parts of every
-  PageModel. Unit tested field by field.
-- Optional coordinates stay `int?`: `null` is unplaced, never 0 (WEB.md). Mappers must preserve this (a test per DTO with X/Y/Z).
-- No DTO carries a password except the three request DTOs that must (`LoginRequest`, `ChangePasswordRequest`); no response DTO
-  has any password field; `PlayerDetail` never had one.
-- Domain results travel as an envelope (section 4.1), not as HTTP status codes, because core's reply enums (`Ok`, `NoChange`,
-  `Invalid`, `NotFound`, `AlreadyExists`, `Refused`, `AuditFailed`, `Forbidden`, `LastAdmin`, `Failed`) map 1:1 onto the page messages
-  that already exist.
+Plaintext password caveat (WEB.md) is unchanged: passwords exist only in the login and change-password forms, are never put in URLs, logs or component state beyond the submit, inputs carry `autocomplete` hints and never a value. Over plain HTTP they still cross the network
+unencrypted, so the localhost bind stays; the password page runs over the SignalR circuit, so its content is subject to the same caveat. Antiforgery covers the plain-HTTP posts (login, logout); circuit events need no antiforgery token (they are not browser form posts and only the page's own scripts can reach the circuit; **no CORS and no cross-origin hub access are added**).
 
-### 3.2 Validation rules in the client
+## 4. Component structure and mapping of existing logic
 
-Room, feature and exit validation (`MUD.Data.RoomRules`: key/area patterns, 100/4000 length caps, control characters,
-direction pattern, max 32 exits / 64 features) is needed in the browser for immediate feedback and on the host as the first
-server check (core still re-validates and remains the authority). The client cannot reference `MUD.Data`.
+### 4.1 Pattern: logic classes plus thin components
 
-Decision (needs owner/implementer confirmation, Open question 3): extract `RoomRules` into a dependency-free project
-**`MUD.Rules`** referenced by `MUD.Data` (compat shim or type forward), `MUD.Core`, and `MUD.Web.Shared`. Checked: `MUD.Data/RoomRules.cs` uses only `System.*` namespaces (collections, Linq, Regex), so it has no Mongo-typed members and extraction is mechanical. This is a prerequisite card, independent of Blazor. Fallback if rejected:
-link the source file into `MUD.Web.Shared` (`<Compile Include="..\MUD.Data\RoomRules.cs" Link=...>`), which keeps one source of
-truth but needs the file to stay dependency-free.
+To keep the existing tests useful, each PageModel's logic moves into a plain scoped class with no `HttpContext`, `ModelState`, `TempData` or `IActionResult`, and the component only binds and renders.
+Naming: `<Page>Presenter` in `MUD.Web/Pages/`. Each takes `IAdminClient` and `CircuitSession`, exposes the same state the page model had (form fields, `Error`, `Notice`, `Rows`, flags), and returns an `Outcome` enum
+(`Ok`, `NoChange`, `Invalid`, `NotFound`, `Denied`, `Unavailable`, `SignedOut`, ...) instead of an `IActionResult`. Message sentences move **verbatim** into `Messages.cs` constants (`LoginModel.GenericError`, `RetiredError`, `UnavailableError`, `RoomEditModel.RegenWarning`, ...).
 
-## 4. JSON API surface
+| PageModel | New components | Notes |
+|---|---|---|
+| `Login` | `Login.razor` (static SSR) | uses `LoginPresenter`; only page that is not interactive |
+| `Character` | `Character.razor` | greeting from `AuthenticationState`, HTML-encoded by Razor as today |
+| `Password` | `Password.razor` + `PasswordPresenter` | throttle check, delay, confirmation; fields cleared after each submit |
+| `Creator` | `Creator.razor` + `CreatorPresenter` + `ExitRows.razor` | area suggestions via `FluentAutocomplete`; on success `NavigateTo(Routes.RoomEdit(key))` |
+| `CreatorMap` | `CreatorMap.razor` + `RoomMap.razor` (SVG + JS interop) + `MapToolbar.razor` | `?area=&z=` as `[SupplyParameterFromQuery]`; layout by unchanged `RoomMapLayout` |
+| `RoomEdit` | `RoomEdit.razor` split into `RoomBasics`, `ExitRows` (shared with Creator), `FeatureRows`, `RoomMoveSection`, `RoomGeneratedSection`, `RoomDeleteSection` + `RoomEditPresenter` | add/remove/move rows are local state changes (no write, never leave the circuit) |
+| `PlayerList` | `PlayerList.razor` + `ResponsiveList<T>` | filter / sort / page via query parameters |
+| `PlayerEdit` | `PlayerEdit.razor` + `PlayerEditPresenter` | `PlayerRules` unchanged |
+| `Modules` | `Modules.razor` + `ModulesPresenter` | `TempData["Notice"]` becomes `NoticeService` |
+| `TerrainList` | `TerrainList.razor` + `TerrainListPresenter` | kind + id from route/query only |
+| `TerrainEdit` | `TerrainEdit.razor` + `TerrainEditPresenter` | the presenter has no settable `Kind` or stored id (replaces the "exact bound-property list" test) |
+| `AccessDenied` | `AccessDenied.razor` | same text |
+| `_Layout` | `MainLayout.razor`, `NavShell.razor`, `ReconnectBanner.razor`, `NoticeHost.razor` | section 6 |
 
-All under `/api`, JSON, host-side only. One endpoint set per `IAdminClient` capability the pages use. Names below are the
-decision; request/response DTOs mirror the fields the page models bind today.
+Shared UI: `ResponsiveList<T>` (grid >= 600px, card list below), `StickyActionBar`, `PageState` (loading / error / not found wrapper), `ConfirmDialog` (replaces the browser `confirm(...)` of Regen with the same text), `NoticeService` (scoped, lives with the circuit, shows once; lost on a full reload, unlike `TempData`, which is acceptable).
 
-### 4.1 Conventions
+### 4.2 Rules that must not regress
 
-- **Auth**: every endpoint but the three marked "anon" requires the existing session authentication; policy shown in the
-  table. Authorisation is enforced on the host per endpoint (`RequireAuthorization(WebPolicies.CreatorOrAdmin)` etc.);
-  hiding things in the client is cosmetic only.
-- **Antiforgery**: every non-GET endpoint (and `login`) validates the antiforgery header (section 5.3).
-- **Status codes**: `200` with envelope for any answer core gave (including refusals of a domain nature); `401` session absent
-  or ended (`CoreRefusedException.SessionEnded` = true; the host also deletes the cookie); `403` role too low
-  (`CoreRefusedException` otherwise, or failed policy; replaces the old redirect to `/access-denied`); `404` for reads whose
-  entity does not exist (`GetRoom`, `GetPlayer`, library `Get`); `400` for malformed JSON/route values; `503` with
-  `{ "result": "Unavailable" }` when `CoreUnavailableException`. **No endpoint ever returns a redirect, HTML or an exception
-  message**; unhandled errors give `500` with a fixed body (ProblemDetails with no detail text).
-- **Envelope** for writes: `{ "result": "Ok|NoChange|Invalid|NotFound|AlreadyExists|Refused|AuditFailed|Forbidden|LastAdmin|Failed",
-  "message": string?, "errors": [ { "field": string, "message": string } ], "data": <typed payload or null> }`.
-  `message` is only filled with core text where WEB.md already shows core's text (module refusal wording, delete-room sentence,
-  generation counts); all other sentences are chosen client-side from `result` using `Messages.cs`. Core's text and exception text are never otherwise echoed
-  (existing rule).
-- Route values are URL-encoded; room keys contain `.` and are passed as a single segment (`RoomRules.PrefixPattern` is `^[a-z0-9_]+(\.[a-z0-9_]+)*$`, so keys never contain `/`).
-- `Cache-Control: no-store` on all `/api` responses.
+- Route/query values are the only source of the room key, name key, kind and id (presenters have no setters for them; a reflection test pins this).
+- Blank X/Y/Z is `null`, never 0. `UpdateRoom` still sends the whole form with `features_present`. Delete / Move / Regen / Update still take the route's key only.
+- Last write wins (D30); no revision field. Dangling-exit confirmation, 32 exit / 64 feature caps, feature error prefix "Feature N:" unchanged.
+- Admin calls still go to core which writes audit rows first; the web adds none.
+- No exception text or submitted values are rendered; unhandled exceptions are caught by an `ErrorBoundary` per page (8.2).
 
-### 4.2 Endpoint table
+## 5. Layout, navigation and responsive design (Fluent UI)
 
-| Endpoint | `IAdminClient` call | Policy | Replaces page handler |
-|---|---|---|---|
-| `GET /api/antiforgery` (anon) | none (framework) | anon | the hidden `__RequestVerificationToken` fields |
-| `GET /api/auth/session` (anon) | none: reads claims the handler built (`GetSession` already ran in authentication) | anon, returns `{name, role}` or `401` | `_Layout` nav checks, `Index` redirect, `Login` GET redirect |
-| `POST /api/auth/login` (anon) | `WebAuthenticateAsync(name, password, remoteKey)` | anon | `Login.OnPost` |
-| `POST /api/auth/logout` | `LogoutAsync(token)` | any (idempotent: succeeds also when anonymous or core down) | `Logout.OnPost` |
-| `POST /api/auth/password` | `ChangePasswordAsync` | signed in | `Password.OnPost` |
-| `GET /api/rooms` | `ListRoomsAsync` | CreatorOrAdmin | `Creator.OnGet` (area suggestions), `CreatorMap` |
-| `GET /api/rooms/{key}` | `GetRoomAsync` | CreatorOrAdmin | `RoomEdit.OnGet` |
-| `POST /api/rooms` | `CreateRoomAsync` (via `RoomCreationService`) | CreatorOrAdmin | `Creator.OnPost` |
-| `PUT /api/rooms/{key}` | `UpdateRoomAsync` (whole form incl. `features_present`) | CreatorOrAdmin | `RoomEdit.OnPostSave` |
-| `DELETE /api/rooms/{key}` | `DeleteRoomAsync` | CreatorOrAdmin | `RoomEdit.OnPostDelete` |
-| `POST /api/rooms/{key}/move` | `MoveRoomAsync(key, newArea, newLocalKey)` | CreatorOrAdmin | `RoomEdit.OnPostMove` |
-| `POST /api/rooms/{key}/regenerate` | `RegenerateRoomsAsync(key)` | CreatorOrAdmin | `RoomEdit.OnPostRegen` |
-| `POST /api/rooms/{key}/update-generated` | `UpdateRoomsAsync(key)` | CreatorOrAdmin | `RoomEdit.OnPostUpdate` |
-| `GET /api/terrain/colors` | `ListTerrainColorsAsync` | CreatorOrAdmin | `CreatorMap` colour lookup |
-| `GET /api/players?q=&sort=&page=` | `ListPlayersAsync(filter, descending, page, 50)` | CreatorOrAdmin | `PlayerList.OnGet` |
-| `GET /api/players/{nameKey}` | `GetPlayerAsync` | CreatorOrAdmin | `PlayerEdit.OnGet` |
-| `PUT /api/players/{nameKey}` | `UpdatePlayerAsync` | CreatorOrAdmin | `PlayerEdit.OnPost` |
-| `GET /api/modules` | `ListModulesAsync` | CreatorOrAdmin | `Modules.OnGet` |
-| `POST /api/modules/{name}/start` \| `stop` \| `restart` | `Start/Stop/RestartModuleAsync` | **Admin** (core re-checks; host also requires `Role=Admin`, see 4.4) | `Modules.OnPostStart/Stop/Restart` |
-| `GET /api/library/{kind}` | `List{Fragments,FeatureTemplates,NeighborPhrases}Async` | CreatorOrAdmin | `TerrainList.OnGet` |
-| `GET /api/library/{kind}/{id}` | `Get...Async` | CreatorOrAdmin | `TerrainEdit.OnGet` |
-| `POST /api/library/{kind}` | `Create...Async` | CreatorOrAdmin | `TerrainEdit.OnPostSave` (no id) |
-| `PUT /api/library/{kind}/{id}` | `Update...Async` | CreatorOrAdmin | `TerrainEdit.OnPostSave` (id) |
-| `DELETE /api/library/{kind}/{id}` | `Delete...Async` | CreatorOrAdmin | `TerrainList.OnPostDelete` |
+Package components used (confirm each in the pinned version **[verify]**): `FluentLayout`, `FluentHeader`, `FluentBodyContent`, `FluentNavMenu`/`FluentNavLink`, `FluentDialog`, `FluentMessageBar`,
+`FluentProgressRing`, `FluentSkeleton`, `FluentCard`, `FluentDataGrid`, `FluentTextField`/`FluentTextArea`/`FluentSelect`/`FluentCheckbox`/`FluentAutocomplete`, `FluentAccordion`, `FluentButton`, `FluentToast`, and the `Fluent*Provider` components in `MainLayout`.
 
-`{kind}` is `fragments`, `features` or `phrases`; the host's kind switch is the only place that picks one of the 15 library
-calls. The kind and id come only from the route, never from the body (this keeps the existing guarantee that a form cannot
-redirect a write to another entity; the body DTO has no `kind` and no stored `id`).
-
-Not exposed because no page uses them: `ListAudit`, `RegenerateMap`, `GetSession` as its own endpoint. The audit viewer
-and map regeneration remain out of scope.
-
-### 4.3 Per-page behaviour that must survive in the handler
-
-- **Login**: `remoteKey` is `HttpContext.Connection.RemoteIpAddress` as today (host only; the client cannot choose it).
-  `AuthOk` sets the cookie (`Set-Cookie` on the response, same `CookieOptionsFor`); `AuthRetired` returns the retired message;
-  `AuthTryAgainLater` and core-down return the unavailable message; every other result returns the generic message after the
-  500 ms delay. Bad credentials and throttled address stay indistinguishable. Response body never contains the token.
-- **Password**: the `LoginThrottle` check (locked-out IP sees the generic error and core is not asked), failure counting and the
-  500 ms delay stay in the handler. Success keeps the session and returns the confirmation. Client clears all three fields after
-  any response.
-- **Rooms save**: the handler sends the whole form and the cookie token; `NO_CHANGE`, `INVALID` (field errors, including
-  `Features[i].*` prefixed "Feature N:" 1-based), `NOT_FOUND`, `AUDIT_FAILED`, `FORBIDDEN` map as WEB.md lists. The reply carries the
-  room as it is now (`data`). No revision, last write wins (D30).
-- **Dangling exits**: stays a host check in `RoomCreationService`/save handler plus the client checkbox, same text.
-- **Map**: `GET /api/rooms` returns definition fields only (short, area, X/Y/Z, exits, `gen`). Colours are fetched only when
-  the visible level contains a generated room; the host validates `#RRGGBB` before returning them (the check moves from
-  `CreatorMapModel.FillFor` to the endpoint, with the client re-checking before putting it into an SVG attribute).
-- **Players**: list filter cut to 64 characters server-side; sort `name` / `-name`; 50 per page; "Online" stays `unknown`.
-  Role change and retire controls are hidden by `PlayerRules` in the client; core stays the authority and its result
-  (`Forbidden`, `LastAdmin`, ...) is shown.
-- **Modules**: `Restart` default notice wording unchanged; results `Ok`/`NoChange`/`NotFound`/`Refused` show the notice, `Forbidden` and
-  others the fixed message.
-- **Library**: `Ok` returns the entity (new id on create) so the client can navigate to the edit view with the "Saved." notice;
-  `Invalid` carries field errors; feature version is core's (client shows the version text from the loaded entity).
-
-### 4.4 Authorisation on the host
-
-`WebPolicies.CreatorOrAdmin` is reused unchanged. Admin-only module actions today rely on core's check plus UI hiding; the host
-adds `RequireAuthorization(p => p.RequireClaim(ClaimTypes.Role, "Admin"))` as defence in depth. This is a deliberate small
-tightening; the end behaviour (403 for a creator) is identical to the current "forged POST from a creator is refused".
-
-## 5. Auth, cookie and antiforgery flow
-
-### 5.1 Session
-
-Unchanged mechanism: opaque core token in cookie `mud.session` (HttpOnly, SameSite=Lax, `Secure` when HTTPS, session cookie,
-Path `/`). The browser JS and the WASM code never see the token (HttpOnly). The client's `HttpClient` calls same-origin `/api/...`
-with default credentials (the browser attaches the cookie); the client is served from the same origin, so no CORS is configured
-and **none may be added** (a CORS policy would be a new attack surface). `SessionAuthenticationHandler` still calls core
-`GetSession` on every API request, so a demotion or retirement applies on the next call.
-
-Handler changes: for requests whose path starts with `/api`, `HandleChallengeAsync` returns `401` and `HandleForbiddenAsync`
-returns `403` instead of redirecting to `/login?ReturnUrl=` and `/access-denied`. Non-API paths do not need the redirect any
-more (the fallback serves `index.html`; the client routes).
-
-### 5.2 Client auth state
-
-`SessionAuthStateProvider : AuthenticationStateProvider` in the client calls `GET /api/auth/session` at startup and after login,
-logout and any `401`. It builds a `ClaimsPrincipal` with `Name` and `Role` for `<AuthorizeView>` and `[Authorize(Policy="CreatorOrAdmin")]`
-(the same policy name and rule registered client-side via `AddAuthorizationCore`). This drives navigation and redirects only.
-
-- Anonymous on a protected route: client redirects to `/login?ReturnUrl=<path+query>` (same shape as today); after login it goes
-  to `ReturnUrl` if it is a local path, else `/character`. `ReturnUrl` must be validated as a local relative path
-  (new code; the Razor version never honoured it after login, so honouring it is **new behaviour**, see Open question 6).
-- Signed in without role: client shows the access-denied view at `/access-denied` (same text as `AccessDenied.cshtml`) and the
-  URL is kept so there is no redirect loop.
-- Any API `401` anywhere: clear the cached state and go to `/login` with the `ReturnUrl`; any `403`: show access-denied.
-- `/` redirects to `/character` or `/login` (client route).
-
-### 5.3 Antiforgery
-
-Cookie-authenticated JSON endpoints need CSRF protection; SameSite=Lax is a mitigation, not the control. Design:
-
-1. Host: `builder.Services.AddAntiforgery(o => o.HeaderName = "X-XSRF-TOKEN")`, and `app.UseAntiforgery()` with the validation
-   applied through an endpoint filter on every non-GET `/api` endpoint (`login` included).
-2. `GET /api/antiforgery` (anon) calls `IAntiforgery.GetAndStoreTokens(ctx)`; the antiforgery cookie is set by the framework
-   (HttpOnly), the response body is `{ "headerName": "...", "requestToken": "..." }`.
-3. Client: a `DelegatingHandler` on the typed `HttpClient` fetches the token once (lazily), adds `X-XSRF-TOKEN` to every non-GET
-   request, and on a `400` with antiforgery failure refetches once and retries the idempotent request, otherwise surfaces the
-   "reload the page and try again" message (new fixed sentence). The token is refreshed after login and logout (the identity
-   changes).
-4. Same-origin only: no `Access-Control-Allow-*` headers; JSON `Content-Type` is required (a plain HTML form POST cannot send it).
-
-Logout stays POST-only. `GET /logout` as a URL is served by the client route and does nothing but redirect to `/`, as today.
-
-### 5.4 Not changed
-
-Plaintext password caveat (WEB.md): passwords are sent in the body of `POST /api/auth/login` and `/password` only, never in a
-URL, query string or response, never logged, never stored in client state past the request; inputs use
-`autocomplete="current-password"` / `"new-password"`. Over plain HTTP they still cross the network unencrypted, so the localhost
-bind stays and HTTPS/reverse proxy is still the precondition for anything wider. No-token/handshake on `frontends.sock` (P7-1)
-remains an open point in ADMIN_API.md and is unaffected.
-
-## 6. Mapping existing logic and tests
-
-### 6.1 PageModel logic
-
-| PageModel responsibility | New home |
-|---|---|
-| Auth attributes (`[Authorize]`, policy) | endpoint `RequireAuthorization` (host) + `<AuthorizeView>`/`@attribute [Authorize]` (client, cosmetic) |
-| Calling `IAdminClient`, try/catch `CoreUnavailable`/`CoreRefused`, result switch | endpoint handler `MUD.Web/Api/<Area>Endpoints.cs` (one static class per area; thin, calls mapper, returns envelope) |
-| Proto <-> view model conversion | `Mappers.cs` |
-| Message sentences | `Messages.cs` (Shared); selected by result code in the client |
-| Bound form properties, field-level display, add/remove/move exit and feature rows | component state in the page `.razor` (+ `@code`); the no-write round trips become local list edits, no network call |
-| `TempData["Notice"]` | `NoticeService` |
-| `RoomMapLayout`, `PlayerRules`, validation | unchanged code in `MUD.Web.Shared` |
-| `RoomEdit.RegenWarning` + browser `confirm(...)` | a Fluent confirmation dialog with the same text |
-| Client-state invariants (name key from route only, kind/id from route only, provenance read-only) | request DTOs simply do not have those fields |
-
-### 6.2 Client services (`MUD.Web.Client/Services`)
-
-- `ApiClient` (typed `HttpClient`): one method per endpoint, returns `ApiResult<T>` (`Ok`, status, envelope) and maps `401/403/503/network error`
-  to `ApiOutcome.SignedOut | Denied | Unavailable | NetworkFailed`; never throws for these.
-- `SessionAuthStateProvider`, `AntiforgeryHandler`, `NoticeService`, `ViewportService` (breakpoint, via `matchMedia` JS interop).
-- No client service holds a token or talks gRPC.
-
-## 7. Layout, navigation and responsive design (Fluent UI)
-
-Package: `Microsoft.FluentUI.AspNetCore.Components` (**[verify]** the 4.x line as the one that supports net8.0 and pin an exact version),
-registered with `AddFluentUIComponents()`; its static web assets are served from the host (`_content/...`), **no CDN** (matches the
-current "no external requests" rule). Components used: `FluentLayout`, `FluentHeader`, `FluentBodyContent`, `FluentNavMenu`/`FluentNavLink`,
-`FluentDialog`, `FluentMessageBar`, `FluentProgressRing`, `FluentSkeleton`, `FluentCard`, `FluentDataGrid`, `FluentTextField`/`FluentTextArea`/
-`FluentSelect`/`FluentCheckbox`/`FluentAutocomplete`, `FluentTabs`, `FluentButton`, `FluentToast`/`FluentToastProvider`. Names are the design intent; confirm each
-exists in the pinned version.
-
-### 7.1 Breakpoints
+### 5.1 Breakpoints
 
 | Class | Width | Layout |
 |---|---|---|
-| Phone | < 600px | single column; **bottom tab bar** (max 4 slots) + **drawer** for the rest; top bar shows page title and, when applicable, a back button |
-| Tablet | 600-1023px | top bar + collapsible left rail (icons) that expands as an overlay drawer |
-| Desktop | >= 1024px | permanent left nav, content max-width 1100px (map and tables use the full width) |
+| Phone | < 600px | one column; **bottom tab bar** (max 4 slots) + **drawer** for the rest; top bar shows title (+ back) |
+| Tablet | 600-1023px | top bar + icon rail that expands as an overlay drawer |
+| Desktop | >= 1024px | permanent left nav, content max-width 1100px (map and tables full width) |
 
-Design baseline is 360x640 (the owner's width). Anything that works at 360px works wider; wide layouts are enhancements.
+Design baseline 360x640. Breakpoints are decided in CSS (`@media`) wherever possible, so layout never depends on a circuit round trip; where the markup itself must differ (grid vs card list) a `ViewportService`
+reads `matchMedia` once through JS interop and subscribes to changes. Alternative that needs no interop: render both and hide one with CSS; chosen only for small lists (Open question 12).
 
-### 7.2 Navigation
+### 5.2 Navigation
 
-Items and visibility (same as today's `_Layout`): Character, Change password (signed in); Creator, Map, Players, Modules, Terrain
-(CreatorOrAdmin); Log out (a button that POSTs, never a link). Anonymous users see no nav, just the login page.
+Same items and visibility as today's `_Layout`: Character, Change password (signed in); Creator, Map, Players, Modules, Terrain (CreatorOrAdmin); Log out (a POST form, never a link). Anonymous users see no nav.
 
-- Phone, creator/admin: bottom bar = Map, Creator, Players, **More**. More opens a bottom-sheet drawer with Modules, Terrain, Character,
-  Change password, Log out. Phone, plain player: bottom bar = Character, Password, Log out (3 slots).
-- Tablet/desktop: left nav lists all items; Log out sits at the bottom of the nav.
-- Active item is marked by text weight and an icon state, not colour alone. Nav has a "skip to content" link and proper `nav`/`aria-current`.
-- Drawer closes on navigation and on Escape/backdrop tap; focus returns to the opener. The bottom bar respects `env(safe-area-inset-bottom)`.
-- Page title is set per page (`<PageTitle>`), format `<Title> - Planar Realms` as today.
+- Phone creator/admin: bottom bar = Map, Creator, Players, **More** (bottom-sheet drawer: Modules, Terrain, Character, Change password, Log out). Phone player: Character, Password, Log out.
+- Tablet/desktop: left nav lists all; Log out at the bottom.
+- Active item marked by weight and icon, not colour alone; skip-to-content link; `nav` landmark and `aria-current`. Drawer closes on navigation, Escape and backdrop tap, and returns focus. Bottom bar respects `env(safe-area-inset-bottom)`.
+- `<PageTitle>` per page, `<Title> - Planar Realms`.
 
-### 7.3 Global rules (acceptance for phone)
+### 5.3 Global phone rules (acceptance)
 
-1. `<meta name="viewport" content="width=device-width, initial-scale=1">` (as in the current layout, kept in `index.html`).
-2. Every interactive element (buttons, links in nav and tables, checkboxes, selects, row actions) has a hit area of at least
-   **44 x 44 CSS px** (padding or `min-height/min-width`); Fluent's default control height is smaller **[verify]**, so a global stylesheet
-   `mobile.css` raises it via control height tokens or `::part` rules. At least 8px between adjacent targets.
-3. **No horizontal page scroll at 360px**: `html,body {max-width:100%; overflow-x:hidden}` is NOT the fix (it hides bugs); every
-   component must fit. Long unbroken tokens (room keys, handles) use `overflow-wrap:anywhere`. Only the map canvas may scroll/pan internally.
-4. Body text 16px minimum (prevents iOS zoom on input focus); inputs use `font-size:16px`; line-height 1.4+.
-5. One primary action per screen, reachable at the bottom: forms end in a **sticky action bar** (Save / Cancel) above the bottom nav,
-   full width on phone. Destructive actions (Delete, Regen, Move) live in a separate "Danger zone" section, never next to Save.
-6. Long pages use collapsible sections (`FluentAccordion`) so the user can jump to Exits or Features without scrolling the room text.
-7. Respect `prefers-reduced-motion` and `prefers-color-scheme`? Colour scheme is an open question (8); contrast must meet WCAG AA either way.
+1. `<meta name="viewport" content="width=device-width, initial-scale=1">` in `App.razor`.
+2. Every interactive element has a hit area >= **44 x 44 CSS px** and >= 8px spacing. Fluent's default control height is smaller **[verify]**; a global `mobile.css` raises it through control height tokens / `::part`.
+3. **No horizontal page scroll at 360px.** `overflow-x:hidden` on body is not the fix; components must fit. Long tokens (keys, handles) use `overflow-wrap:anywhere`. Only the map canvas pans internally.
+4. Body text >= 16px; inputs 16px (no iOS zoom on focus).
+5. Forms end in a **sticky action bar** (Save / Cancel) above the bottom nav, full width on phone; destructive actions (Delete, Regen, Move) are in a separate "Danger zone" section.
+6. Long pages use collapsible sections (`FluentAccordion`).
+7. **Latency discipline** (server rendering means each event is a round trip): text inputs bind on `change` (blur), not `input`; only the player filter uses `input` with a 300 ms debounce; no per-frame or per-keystroke events; map gestures run in JS (below).
+8. WCAG AA contrast; `prefers-reduced-motion` respected; colour scheme is Open question 9.
 
-### 7.4 Patterns per page type
+### 5.4 Patterns per page type
 
-**Form (login, password, create room, player edit, terrain edit, room edit sections)**: single column labelled fields on phone
-(label above input, never placeholder-only), two columns only from 600px up for short fields (X/Y/Z, race/class/gender). Field errors
-appear directly under the field and in a `FluentMessageBar` summary at the top (same messages; the summary is focused and announced
-`role="alert"` after a failed save). Numeric inputs use `inputmode="numeric"`; text with autocomplete keeps suggestions via `FluentAutocomplete`
-(area prefixes). Password fields have `autocomplete` hints and no pre-filled value ever.
+**Form** (login, password, create room, player edit, terrain edit, room sections): labels above inputs, single column on phone, two columns from 600px only for short fields (X/Y/Z, race/class/gender). Field errors under the field and a `FluentMessageBar` summary at the top, focused and `role="alert"` after a failed save. `inputmode="numeric"` for numbers. Password inputs carry `autocomplete` hints and no value.
 
-**Repeating rows (exits, features)**: each row is a card with labelled fields; Move up / Move down / Remove are 44px buttons in the card
-footer. Add exit/feature buttons sit after the list; the Save bar is sticky. Counts shown ("3 of 32 exits"). Handles/adjectives/plurals keep the "separated by commas or spaces" help text.
+**Repeating rows** (exits, features): each row is a card with labelled fields; Move up / Move down / Remove are 44px buttons in the card footer; Add buttons after the list; "3 of 32 exits" counters; the "separated by commas or spaces" help text stays.
 
-**List / table (players, modules, terrain library, unplaced rooms, map mismatches)**: `FluentDataGrid` at >= 600px. Below 600px the
-same data renders as a **card list** (one card per row: title line, key facts as label/value pairs, actions in a footer), driven by
-`ViewportService`; both render from the same view model so the tests cover one source. Sort and filter controls collapse into a
-single "Filter" row (text field + sort select) above the list. Paging is Previous/Next buttons with "Page N" text (50 per page,
-unchanged) at the bottom. Terrain tabs become a horizontally scrollable segmented control only if it cannot fit; the preferred phone form
-is a `FluentSelect` for the tab plus the count. Status that used colour (online, running, required) keeps words with the existing
-`[+]`/`[-]`/`[!]` text prefixes.
+**List / table** (players, modules, terrain library, unplaced rooms, map mismatches): `FluentDataGrid` from 600px; below that `ResponsiveList<T>` renders one card per row (title, label/value pairs, actions in a footer) from the same view model. Sort and filter collapse into one filter row; paging is Previous / Next with "Page N" (50 per page, unchanged). Terrain tabs become a `FluentSelect` plus count on phone. Status keeps words with the `[+]`/`[-]`/`[!]` prefixes (never colour alone).
 
-**Map (`/creator/map`)**: SVG rendered from `RoomMapLayout` (unchanged geometry). Container `touch-action: none` with pointer-event handling
-(pan with one pointer, pinch zoom with two, wheel/trackpad zoom, double-tap to zoom in) implemented as a **small JS module**
-`map-interop.js` that updates the SVG `viewBox`/transform; C# keeps layout and click handling. This replaces the "no JavaScript" property
-of the Razor map, which WASM makes moot. Because WASM-to-JS gesture round trips are too chatty for smooth pinch, the transform is applied in JS and C# is told only on gesture end.
-Controls (all 44px): zoom in, zoom out, reset/fit, and the Area and Level selectors in a collapsible toolbar above the map (collapsed to an
-icon on phone so the map gets the screen). A room tap goes to `/creator/rooms/{key}`; a tap target smaller than 44px at the current zoom
-falls back to selecting the nearest room within a 22px radius and showing a bottom sheet with "Open room" (so dense maps stay usable).
-The Unplaced list and Mismatches list render below the map as card lists. Keyboard: arrow keys pan, +/- zoom (desktop).
-Legend/terrain text stays in the room title and the bottom sheet (colour is never the only signal).
+**Map**: SVG from unchanged `RoomMapLayout`, rendered by the server. Room squares stay real `<a href>` links so a tap navigates even if JS fails. A small JS module `roommap.js` (imported through `IJSRuntime`, `touch-action:none` container) does pan (one pointer), pinch zoom (two), wheel/trackpad zoom and double-tap zoom by editing the SVG `viewBox`
+entirely in the browser; **no event goes to the server during a gesture**. Toolbar (44px): zoom in/out, fit, Area and Level selectors (collapsible to an icon on phone). If a room square is under 44px at the current zoom, a tap selects the nearest room within 22px and shows a bottom sheet with "Open room". Unplaced and mismatch lists below as card lists. Keyboard: arrows pan, +/- zoom. Terrain colour stays in the hover title and the sheet text. Generated-room fill rules (exact `#RRGGBB` only, neutral grey fallback, colours fetched only when the level has a generated room) move unchanged from `CreatorMapModel`.
 
-### 7.5 Per-page layout notes
+### 5.5 Per-page layout notes
 
 | Page | Phone | Tablet/desktop |
 |---|---|---|
-| Login | centred card, name/password stacked, full-width button | same, card max 420px |
+| Login | centred card, stacked, full-width button | card max 420px |
 | Character | greeting card | same |
-| Password | stacked fields + sticky Save | same |
-| Creator | stacked fields; exits as cards; Save sticky | X/Y/Z in one row; exits 2-up |
-| Map | full-bleed map, collapsible toolbar | toolbar on top, unplaced/mismatch panels to the side |
-| Room edit | accordion: Basics, Exits, Features, Generated (if any), Move, Delete; sticky Save | two-column: form left, summary right |
-| Players | filter row + card list | grid |
-| Player edit | stacked; role and retire controls only when allowed | two columns |
-| Modules | module cards, action buttons full width (admin) | grid with Actions column |
-| Terrain list | tab select + filters + card list | tabs + grid |
-| Terrain edit | stacked; terrain checkboxes in a scrollable fieldset max 40vh | two columns |
+| Password | stacked + sticky Save | same |
+| Creator | stacked; exits as cards; sticky Save | X/Y/Z one row; exits 2-up |
+| Map | full-bleed, collapsible toolbar | toolbar on top, unplaced/mismatch side panels |
+| Room edit | accordion: Basics, Exits, Features, Generated (if any), Move, Delete; sticky Save | two columns: form + summary |
+| Players | filter row + cards | grid |
+| Player edit | stacked; role/retire only if allowed | two columns |
+| Modules | cards, full-width action buttons (admin) | grid with Actions column |
+| Terrain list | tab select + filters + cards | tabs + grid |
+| Terrain edit | stacked; terrain checkboxes in scrollable fieldset max 40vh | two columns |
 
-## 8. Error and loading states
+## 6. Dropped connections and lost circuits
 
-### 8.1 Loading
+Mobile connections drop (screen lock, network change, tab backgrounded). A Blazor Server circuit holds the component state in server memory: if the same circuit reconnects, state is intact; if it was evicted, everything unsaved is gone.
 
-- First app load: a CSS-only splash in `index.html` (logo text "Planar Realms", a progress bar fed by `--blazor-load-percentage`
-  Blazor sets) so the user sees something before WASM starts. No dependence on Fluent or WASM for the splash.
-- Page data: a `LoadState<T>` (`Loading | Loaded | NotFound | Denied | Unavailable | Failed`) used by every page; `Loading` shows
-  `FluentSkeleton` shaped like the content (after 150 ms, to avoid flicker), writes `aria-busy`. Buttons that submit show a spinner and are
-  disabled until the response (prevents double submit); the sticky bar stays visible.
-- Map: skeleton rectangle while rooms load; colours load afterwards and the map re-fills without moving.
+Decisions:
 
-### 8.2 Errors and notices (all existing sentences preserved)
+1. **Retention**: `CircuitOptions.DisconnectedCircuitRetentionPeriod = 20 minutes` (default 3), `DisconnectedCircuitMaxRetained = 50` (default 100); a handful of users makes memory a non-issue. **[verify]** exact option names in .NET 8.
+   SignalR: `ClientTimeoutInterval` 60 s (default 30) and `KeepAliveInterval` 15 s so a brief radio stall does not drop the circuit; `HandshakeTimeout` unchanged. WebSockets with long-polling fallback stay enabled (a future reverse proxy must pass WebSockets).
+2. **Reconnect UI**: replace the default modal with `ReconnectBanner` using the `components-reconnect-*` states: *retrying* shows a non-blocking bar "Connection lost, reconnecting..." and **disables Save and Delete** buttons (so a click cannot queue); *failed* shows "Could not reconnect." with a 44px Retry button; *rejected* (circuit gone) shows "This page's session was lost. Reload to continue." with a Reload button, plus "Your unsaved edits were kept as a draft on this device" when a draft exists. The banner is styled in `mobile.css`, never hides the sticky bar, and respects safe-area insets. Auto reload on *rejected* is **not** done (it would discard the draft prompt); the user taps Reload.
+3. **State in components**: all form state is component/presenter state (never static, never singleton), so reconnect to a retained circuit loses nothing. Row edits (exits, features) are local and cost no round trip, so they are not lost by a drop except when the circuit is gone.
+4. **Local draft (for editors only)**: room edit, create room, player edit and terrain edit write their form state as JSON to browser `localStorage` (key `draft:<user>:<route>`, JS interop, debounced 2 s after the last change, plus on `visibilitychange` hidden, which is what fires when the phone is locked). Never stored: any password or login field. On load, if a draft exists and differs from what core returned, the page offers "Restore unsaved changes? / Discard". The draft is removed on successful save, on Discard and on logout; it expires after 24 h; it never overrides core's data without the user's choice. Last write wins (D30) still applies when the restored form is saved; the restore banner says the data may have changed in the meantime. Drafts are device-local plain text of data the user can already see; no secrets are in them.
+5. **Session ended while disconnected**: revalidation (3.1) runs on reconnect; an ended session sends the user to `/login` with a `ReturnUrl`.
+6. **Server restart (deploy)**: every circuit is lost; clients see *rejected*, and the draft mechanism covers the edit forms. The deploy script's restart is therefore visible to signed-in users; it is acceptable and already true of the Razor site's session loss on core restart.
+7. **Concurrency**: one circuit per tab; two tabs are two circuits (each re-validates independently).
+
+## 7. Error and loading states
+
+### 7.1 Loading
+
+- First load: a CSS-only splash in `App.razor` until the circuit connects (no WASM download; size is small, section 10.3).
+- Data pages: `PageState` shows `FluentSkeleton` shaped like the content after 150 ms (avoid flicker), with `aria-busy`. Submit buttons show a spinner and are disabled while a call is in flight (prevents double submit; also protects against the round-trip delay). The sticky bar stays visible.
+- Map: skeleton first, colours fill in afterwards without moving the map.
+
+### 7.2 Errors and notices (every existing sentence preserved verbatim in `Messages.cs`)
 
 | Situation | Behaviour |
 |---|---|
-| Core down (`503`/`Unavailable`) | the existing "game is not reachable" sentence; page-level message bar with a Retry button (reads), or an inline error that keeps form input (writes); was a 503 page |
-| Network failure to the host | new fixed sentence "Could not reach the website. Check your connection and try again." (no existing equivalent; WASM can lose the host) |
-| `401` | session expired: go to `/login` with `ReturnUrl`; unsaved form input is lost except that room/player/terrain editors keep the draft in memory for the in-page re-login prompt (**optional**, Open question 9) |
-| `403` | access-denied view (was 403 page / redirect) |
-| `404` (`NotFound`) | not-found view with a link back to the list (was 404 page) |
-| `Invalid` | field errors in the form + summary; user input kept (as today) |
-| `NoChange`, `AlreadyExists`, `Refused`, `AuditFailed`, `Forbidden`, `LastAdmin`, `Failed` | the existing fixed sentences from `Messages.cs`, shown as a message bar (error/warning/info per intensity) |
-| Success | `Ok` shows the existing notice ("Saved.", module notice, generation counts) in a toast/message bar that persists across the navigation that follows (`NoticeService` holds it until shown once; replaces `TempData`, so unlike TempData it is lost on a hard reload, which is acceptable) |
-| Unhandled exception in a component | `ErrorBoundary` per page shows "Something went wrong. Reload the page." and logs to the browser console only; no exception text is rendered |
-| WASM fails to start (old browser, blocked) | `index.html` `<noscript>` and the Blazor `#blazor-error-ui` strip say the site needs a current browser with WebAssembly and JavaScript enabled |
+| Core down (`CoreUnavailableException`) | the existing "game is not reachable" sentence; page-level message bar with Retry for reads, inline error with input kept for writes |
+| `CoreRefusedException` session ended | revalidate and go to `/login` (forced full load) |
+| `CoreRefusedException` role too low / policy fails | the existing "not allowed" view / sentence |
+| Entity not found | the existing not-found view with a link back to the list |
+| `Invalid` | core's field errors in the form and summary; input kept (as today) |
+| `NoChange`, `AlreadyExists`, `Refused`, `AuditFailed`, `Forbidden`, `LastAdmin`, `Failed` | existing fixed sentences |
+| Success | existing notices ("Saved.", module notice, generation counts) via `NoticeService`, shown once after the navigation that follows |
+| Unhandled exception in a component | `ErrorBoundary` per page: "Something went wrong. Reload the page." with Reload; details only in the server log (detailed circuit errors stay off; no exception text rendered) |
+| Browser without JavaScript | the Blazor Server UI cannot work; `<noscript>` says the site needs JavaScript. Login still works (static) |
 
-User-visible messages from the existing page models are moved verbatim to `Messages.cs`; a test (9.3) pins the strings so a
-reword is a conscious change.
+### 7.3 Behaviour changes to accept (stated, not hidden)
 
-### 8.3 Unsaved changes
+- **HTTP status codes**: today a missing room, a refused role and an unreachable core produce 404 / 403 / 503 pages. In an interactive circuit the page is already streamed or rendered over SignalR, so these become in-page views with HTTP 200 (the access-denied route still shows its page). Behaviour users see is the same; scripted callers would notice. Only static endpoints (login, logout, `/`) keep real redirects/status.
+- `TempData` notices do not survive a hard reload.
+- Two actions that used to be page round trips are now in-circuit events: a user can see a different "Online"/data state without a navigation; data is still loaded fresh by each page.
+- The Regen browser `confirm()` becomes a Fluent dialog with the same text.
 
-Leaving a dirty editor (room, player, terrain, creator) prompts with a Fluent dialog (new behaviour; the Razor site had none, but
-client-side navigation makes accidental loss much easier, especially on phones with a back gesture). Out-of-scope if the owner declines (Open question 9).
+## 8. Test strategy
 
-## 9. Test strategy
+### 8.1 Projects
 
-### 9.1 Projects
+Existing `MUD.Web.Tests` keeps xunit and the `FakeAdminClient`. Add **bUnit** (`bunit`, net8-compatible **[verify]**; it supports xunit 2.x) there rather than a new project if package versions allow;
+otherwise a new `MUD.Web.Components.Tests`. Fluent components need `Services.AddFluentUIComponents()` and `JSInterop.Mode = Loose` **[verify]**.
 
-| Project | Contents | Needs |
-|---|---|---|
-| `MUD.Web.Tests` (existing) | host: API handler tests, mapper tests, session handler, policy, throttle, `GrpcAdminClient` over UDS, no-database tests, `FakeAdminClient` | `Microsoft.AspNetCore.Mvc.Testing` (WebApplicationFactory) |
-| `MUD.Web.Shared.Tests` (new, or a folder in `MUD.Web.Tests`) | `RoomMapLayout`, `PlayerRules`, validation, `Messages`, DTO (de)serialisation | none |
-| `MUD.Web.Client.Tests` (new) | bUnit component tests | `bunit` (net8-compatible **[verify]**) |
+### 8.2 PageModel tests port to presenter tests
 
-### 9.2 API handler tests replace PageModel tests
+Because logic moves into `*Presenter` classes (4.1) that take `IAdminClient` and `CircuitSession`, the existing PageModel tests port by replacing the page-model construction, `ModelState`, `TempData` and `IActionResult`
+assertions with presenter state and `Outcome` assertions; the arrangement over `FakeAdminClient` and the expectations (messages, calls made, "core not asked when locked out") stay. Each of the 253 tests is ported, kept, moved to bUnit, or deleted with a reason in the PR description. Required additions:
 
-`WebApplicationFactory<Program>` over the real pipeline (auth handler, antiforgery, policies, JSON) with `IAdminClient` replaced by the
-existing `FakeAdminClient`. This needs `public partial class Program` (or an `InternalsVisibleTo`) and moving `WebPolicies` out of the top-level-statement file.
-Each existing PageModel test becomes an HTTP-level test of the corresponding endpoint with the same arrangement and expectations
-(result -> envelope + status instead of result -> page model state). Mapping of the 253 existing tests by area is in 1.3; every old test
-is either ported, moved to Shared, kept, or explicitly deleted with a reason in the card's PR description. Required additional tests:
+- `SessionAuthenticationStateProvider`: revalidation returns anonymous for a null session, rebuilds the principal on a role change, keeps state when core is unavailable, and calls `GetSession` with the circuit's token;
+- `CircuitSession` is filled once and never shared across circuits;
+- login (static) handler: cookie attributes, generic message for bad credentials and throttled address, delay path, retired and unavailable messages; logout endpoint POST-only, antiforgery required, GET redirects;
+- a route table test: every component route and its authorisation attribute (so a page cannot be added unprotected);
+- a `Messages` pin test (every user-visible sentence), replacing the strings that used to sit in page models.
 
-- every endpoint: anonymous -> 401, creator-only endpoint as plain player -> 403, admin-only module action as creator -> 403;
-- every non-GET endpoint: missing/invalid antiforgery -> 400 and `IAdminClient` never called;
-- `401` for `CoreRefusedException.SessionEnded` (cookie deleted), `403` otherwise, `503` for `CoreUnavailableException`, with no exception text in the body;
-- login: cookie attributes (HttpOnly, SameSite=Lax, Secure under HTTPS), generic message for bad credentials and throttled address, 500 ms delay path, token absent from body;
-- password: throttle behaviour and "core not asked when locked out" (existing assertions);
-- a route-table test asserting the exact set of `/api` endpoints and the policy on each (so an endpoint cannot be added unprotected);
-- room save: null vs 0 coordinates round trip, `features_present` true with an empty list, whole-form payload, field-error prefix;
-- the "request DTOs have no `kind`/`id`/`nameKey`/`gen*` field" guarantees (reflection test, replacing `TerrainEditModel` bound-property list).
+### 8.3 bUnit component tests (fits)
 
-### 9.3 Client tests (bUnit)
+Rendering with a fake auth state: nav items per role (phone and desktop variants), role-conditional controls (admin-only module buttons, `PlayerRules`), grid vs card switch with a fake viewport, add/remove/move exit and feature rows, `PageState` transitions, reconnect banner state texts, confirm dialog on Regen, draft restore prompt (fake JS interop), notice shown once.
+bUnit does **not** cover pixel layout, 44px targets, horizontal scroll or touch gestures: those are the manual checklist (Appendix A). Playwright would automate them but adds a browser download to CI (Open question 11).
 
-bUnit fits for: message selection by result code, form validation display, exit/feature row add/remove/move (pure state), breakpoint card/grid switch
-(fake `ViewportService`), conditional controls by role (`PlayerRules`, admin-only module buttons), nav items per role, `LoadState` rendering, `ApiResult`
-mapping (fake `HttpMessageHandler`). Fluent components need `Services.AddFluentUIComponents()` and loose JS interop in bUnit **[verify]**.
-bUnit does **not** cover pixel layout, touch-target size, horizontal scroll or pinch zoom; those are the manual/E2E checks below. A test pins every string in `Messages.cs`.
+### 8.4 Guard tests
 
-### 9.4 Guard tests
+`NoDatabaseAccessTests` keeps its four checks and **must be extended to scan `*.razor` files** (its current pattern `*.cs*` does not match them) for `MUD_MONGO_URI`, `MongoDB`, `IMongoClient`. The service-unit check stays.
 
-`NoDatabaseAccessTests` keeps its four checks and gains: `MUD.Web.Client.csproj` and `MUD.Web.Shared.csproj` have no `MongoDB*`,
-`Grpc*`, `Google.Protobuf` package and no `ProjectReference` to `MUD.Contracts`, `MUD.Data`, `MUD.Core`; their assemblies reference none; sources contain no `MUD_MONGO_URI`/`MongoDB`.
-The unit-file check on `planar-realms-web.service` stays.
+### 8.5 Not run
 
-### 9.5 Not automated (stated, not hidden)
+No Mongo and no browser here: nothing in this design was exercised against a live core or a real phone. The map gesture module and the reconnect behaviour can only be verified on a device.
 
-No browser is available to CI, so phone behaviour (360px, 44px targets, no horizontal scroll, drawer, pinch) is verified by a manual checklist
-(Appendix A) on a real phone or Chrome device emulation, performed by the migration card that builds the layout and again at cutover. Adding Playwright
-(headless Chromium + `dotnet test`) is the way to automate it; it is an Open question because it adds a browser download to CI. Nothing here has been
-run against core/Mongo (no Mongo in the sandbox), same as today.
+## 9. CI and deploy impact
 
-## 10. CI and deploy impact
+- **wasm-tools / workload**: not needed. The earlier WASM idea would have; this design removes the question. CI stays `setup-dotnet 8.0.x` + restore/build/test; no workflow change except bUnit/Fluent packages restoring from NuGet (network at restore, as for existing packages).
+- **Publish**: `scripts/deploy.sh` is unchanged: `dotnet publish MUD.Web -o <release>/web`; Fluent's static web assets land in `web/wwwroot/_content/...` via the publish manifest. Add one sanity line to the script
+  (check `web/wwwroot/_content/Microsoft.FluentUI.AspNetCore.Components` exists, **[verify]** path) in the cutover or shell card. Unit, port, env files unchanged.
+- **Runtime**: the host now holds a SignalR hub (`/_blazor`) and per-circuit memory (a few hundred KB each); with the user count here that is negligible. A future reverse proxy must forward WebSockets (and `Upgrade` headers).
+- **Size / first load**: no framework download; first load is the Fluent CSS/JS bundle plus `blazor.web.js` (estimate well under 1 MB compressed **[verify]**). Targets, to be measured in the spike: first load <= 1.5 MB transferred, interactive in <= 3 s on a mid-range phone on 4G, repeat load <= 200 KB. Each interaction costs a round trip; on a phone the budget is therefore latency-bound (aim for <= 150 ms per event at the server, network excluded).
+- `MUD.sln` gets no new web project (and one test project only if 8.1 requires).
 
-### 10.1 wasm-tools
+## 10. Migration order
 
-- **When it is required**: a plain Blazor WASM `dotnet build`/`publish` (no AOT, default trimming) uses the prebuilt runtime from the
-  `Microsoft.NETCore.App.Runtime.Mono.browser-wasm` / `Microsoft.AspNetCore.Components.WebAssembly` packs, downloaded from NuGet; the `wasm-tools` workload is needed for
-  AOT, native relinking (`WasmBuildNative`) and some trimming-size options **[verify]**. Decision: **first release is JIT/interpreter, no AOT**, so the workload
-  is not a hard requirement. AOT is a later optimisation if first-load or CPU use disappoints.
-- **Local machine** (`/usr/local/bin/dotnet`, root install at `/usr/share/dotnet`, SDK 8.0.128): `wasm-tools 8.0.28/8.0.100` is already installed with packs, so
-  AOT could build here. Use `/usr/local/bin/dotnet`, not `/usr/bin/dotnet` (broken symlink). Not exercised in this card **[verify]**.
-- **CI**: add to the workflow, after `setup-dotnet` and before `Restore`:
-  `dotnet workload install wasm-tools` (idempotent; install as the job's user, no sudo needed for the runner's tool cache install **[verify]**; if the runner SDK path is root-owned the step needs `sudo`).
-  Optionally cache `~/.dotnet`/`~/.nuget/packages`. If we stay non-AOT this step is belt-and-braces; the owner's instruction is to make CI build it, so it is included, and
-  removable if it costs more than it earns (it downloads several hundred MB; **[verify]** the time cost).
-- Pin the SDK with a `global.json` (`rollForward: latestFeature` within 8.0.x) so the local 8.0.1xx band and CI's 8.0.4xx band do not
-  disagree about workload manifests **[verify]** — if CI and local bands cannot be reconciled, report the blocker rather than shipping AOT.
-- `MUD.sln` gains the two new web projects and the two new test projects; the existing `Restore/Build/Test` steps stay; the "Core does not reference the telnet project" guard stays.
+Each step is its own card/PR with tests; Razor Pages stay default and working until step 7.
 
-### 10.2 Publish and deploy
+0. **Spike**: add the Fluent package and bUnit on a branch; confirm every **[verify]** (net8 versions, per-page render mode with a static login, `AntiforgeryToken` in an interactive layout, circuit token capture, `RevalidatingServerAuthenticationStateProvider`, circuit options names, 44px token overrides, `matchMedia` interop); measure first-load size; record results in this file. Gate for step 1.
+1. **Shell**: `App.razor`, `Routes.razor`, `MainLayout`, nav shell (phone/tablet/desktop), `CircuitSession`, auth state provider with revalidation, `ReconnectBanner`, `NoticeService`, `PageState`, `ConfirmDialog`, `Messages.cs`, `Routes` prefix `/next`, `mobile.css`, route-table test. Touches `Program.cs` and `MUD.Web.csproj` (collision hotspots: do not run in parallel with other web cards).
+2. **Account pages**: Login (static), logout endpoint, Character, Password, AccessDenied.
+3. **Read pages**: Modules, PlayerList, CreatorMap with `roommap.js`.
+4. **Forms**: Creator, PlayerEdit, TerrainList, TerrainEdit; draft save component (6.4) lands with the first editor.
+5. **RoomEdit** (largest: 463-line model, five forms).
+6. **Review gate**: manual phone checklist (Appendix A) on a device, soak period decided by the owner.
+7. **Cutover**: change the prefix constant / `@page` routes to the real URLs; remove `AddRazorPages`, `MapRazorPages`, `Pages/*.cshtml*`, `_Layout`, and the Razor page tests; update WEB.md and DEPLOYMENT.md; run the checklist again. Razor deletion is its own PR, merged only after the soak.
+8. Follow-ups (not in scope): Playwright, HTTPS, offline/PWA.
 
-- `scripts/deploy.sh` keeps one `dotnet publish MUD.Web ... -o <release>/web`; because the host references the client project, the publish output contains `web/wwwroot/_framework/*`
-  and `web/wwwroot/_content/*`. The only script change: add a sanity check `[ -f "$RELEASE_DIR.partial/web/wwwroot/_framework/blazor.webassembly.js" ] || die ...`
-  (name **[verify]**; in .NET 8 the file is `blazor.webassembly.js`, possibly fingerprinted). No change to the units, ports or env files.
-- The WASM publish step is slower than the Razor one (trimming/relink; design expectation 1-3 minutes without AOT, several more with AOT **[verify]**); `deploy.sh` runs on the maintainer's machine, so only time is affected.
-- Release directory size grows (client assets add roughly 10-20 MB uncompressed plus precompressed `.br`/`.gz` copies **[verify]**); `MUD_KEEP_RELEASES` (default 5) bounds the disk use.
-- The host must serve pre-compressed `.br` files (`UseBlazorFrameworkFiles` + static file content negotiation does this for the published assets **[verify]**), otherwise first load is several times larger.
+Steps 2-5 can partly parallelise after step 1 (distinct files); presenter/service extraction happens inside each page's card.
 
-### 10.3 Size and first-load budget (targets, to be measured, not promises)
+## 11. Rollback plan
 
-| Metric | Target | Measured by |
-|---|---|---|
-| Transferred on first load (Brotli, empty cache) | <= 4 MB (runtime ~1.5-2 MB, app + Fluent ~1-2 MB estimated) | browser network panel against the published site |
-| Repeat load (cached framework files) | <= 300 KB and interactive in <= 1.5 s on a mid-range phone | same |
-| Time to interactive, first load, mid-range phone on 4G over localhost/LAN | <= 6 s; splash visible in <= 1 s | Chrome device emulation with throttling |
-| Publish output (uncompressed) | <= 25 MB | `du` on the `web/` directory in the migration card |
+- **Before cutover**: Razor Pages are still the default URLs; rolling back is not using `/next` (nothing to redeploy). A bad shell merge is reverted via `git revert` on `hermes`.
+- **At and after cutover**: `scripts/deploy.sh --rollback` switches `current` to the previous release (which has the Razor UI) and restarts the units. Keep at least the last Razor-era release (`MUD_KEEP_RELEASES` >= 3 around cutover). The restart is the operator's action at that time, not this card's.
+- **After Razor deletion**: `git revert` of the deletion PR plus a redeploy, or `--rollback`.
+- No change to core, the gRPC contract, units, ports or env files, so a web rollback never affects the game or telnet. The cookie name and format do not change, so sessions survive a rollback in either direction (core owns the session).
 
-Levers if the budget is missed, in order: trim unused Fluent icon/emoji packages (import only used icons), enable `InvariantGlobalization` and
-`BlazorEnableTimeZoneSupport=false`, `PublishTrimmed` with a trim-safe `System.Text.Json` source generator (DTOs get a `JsonSerializerContext`), lazy-load the
-rarely used pages (terrain, modules) as separate assemblies, then AOT (needs wasm-tools; larger download, faster run). The budget is an Open question for the owner to ratify.
+## 12. Out of scope (separate work)
 
-Because the site is localhost-bound the network is not the bottleneck on the same machine; the budget matters for the phone use case, which means the host must be reachable from the phone
-(LAN, VPN, tunnel). That access path is out of scope and conflicts with "bind localhost only" (Open question 1).
+Password hashing; HTTPS / reverse proxy; the `frontends.sock` token (P7-1); a game-output page; audit log viewer; player self-retire; offline/PWA; sample-room preview in the terrain editor; reverse-exit creation; any change to `admin.proto` or core.
 
-## 11. Migration order
+## 13. Open questions
 
-Strangler approach so `hermes` always has a working site. A host setting `MUD_WEB_UI=razor|blazor` (env, read at start, default `razor` until cutover)
-chooses which UI the host maps; both compile in one host during migration; the `/api` is always mapped. Each step is its own card/PR, with tests.
+None of these was silently decided beyond the defaults named in the referenced sections.
 
-0. **Spike + prerequisites** (one card): create the three projects skeleton; prove `dotnet build` and `dotnet publish` of the hosted shape with Fluent on this machine and in CI; measure first-load size
-   for a hello page; extract `MUD.Rules` (3.2); add `global.json` and the CI workload step; confirm the **[verify]** items. Gate: spike results recorded here before step 1.
-1. **API foundation**: `MUD.Web.Shared` DTOs and `Messages`; host `/api` group, antiforgery, `/api/auth/*`, auth handler behaviour for `/api`; `Mappers`; `WebApplicationFactory` test harness; route-table test. Razor UI untouched and still default.
-2. **Shell**: client shell (layout, nav, auth state, antiforgery handler, `ApiClient`, notice/loading/error components, `mobile.css`), pages Login, Character, Change password, Access denied. Behind `MUD_WEB_UI=blazor`.
-3. **Read-only pages**: Modules (list; admin actions), Players list, Map (with touch gestures) and the room/colour endpoints.
-4. **Forms**: Creator (create room), Player edit, Terrain list + edit (3 library kinds).
-5. **Room edit** (largest, 463-line model): basics, exits, features, move, delete, regen/update.
-6. **Cutover**: default `MUD_WEB_UI=blazor`; run the manual phone checklist; update DEPLOYMENT/WEB docs; delete Razor pages, their tests, `Microsoft.AspNetCore.Mvc.RazorPages` usage and the flag after a soak period (the owner decides length).
-7. **Follow-ups** (separate, not in this spec's scope): AOT, Playwright E2E, offline/PWA, HTTPS.
+1. **Phone reachability vs localhost-only.** A phone cannot reach `127.0.0.1` on the server, and plaintext passwords must not cross a LAN over HTTP. What is the access path (VPN, SSH tunnel, LAN bind plus HTTPS reverse proxy that forwards WebSockets)? This spec keeps the bind unchanged and does not solve it.
+2. **Fluent UI version and components** (5.): which 4.x version supports net8.0 and has every named component; how to reach 44px targets (tokens vs CSS parts); license/telemetry terms. Resolved by the spike.
+3. **Prerender off** (2.1): confirm (avoids double core calls, shows a skeleton on first paint).
+4. **Revalidation interval and circuit retention** (3.1, 6.1): 30 s and 20 min / 50 circuits proposed; confirm or adjust.
+5. **Core down while a circuit is open**: this spec keeps the last identity and shows a banner rather than signing the user out (differs from the per-request "anonymous but cookie kept" only in that the page does not change). Confirm.
+6. **Draft storage** (6.4): `localStorage` for 24 h on the device (survives tab discard, but persists on a shared phone until logout/expiry) vs `sessionStorage`. Which drafts at all: the four editors only. Confirm.
+7. **`ReturnUrl` after login**: today ignored (always `/character`). Honour it (new; must be validated as a local path) or keep ignoring?
+8. **Logout mechanics** (2.1): POST form with antiforgery token (preferred) vs the fallback; confirm after the spike.
+9. **Colour scheme**: light only, system preference, or toggle (the current site has no styling).
+10. **Cutover style**: `/next` prefix then one cutover card (this spec) vs per-page cutover; and soak length.
+11. **Automated browser tests**: add Playwright to CI or accept the manual phone checklist only?
+12. **Grid/card switch**: JS-interop `ViewportService` vs rendering both and hiding one in CSS.
+13. **HTTP status codes** (7.3): accept that in-circuit 403/404/503 views are HTTP 200.
+14. **Broken `/usr/bin/dotnet` symlink** on the maintainer machine (housekeeping, not part of this work).
+15. **Which of the 253 tests may be dropped** as obsolete (page binding mechanics) vs must be ported: each decision to be listed in the porting PRs.
+16. **Deploy restarts** drop every circuit (6.6): acceptable for a localhost, few-user site?
 
-Steps 2-5 can partly parallelise after step 1 (distinct page files), except the shared shell in step 2 must land first. Steps 1 and 0 touch `MUD.Web.csproj`, `Program.cs` and `MUD.sln`, which are collision hotspots; do those serially.
+## Appendix A. Manual phone checklist (acceptance for layout cards)
 
-## 12. Rollback plan
-
-- **During migration (flag still present)**: set `MUD_WEB_UI=razor` in `~/.config/mud/web.env` and restart `planar-realms-web` — one setting, no redeploy. (Restarting services is for the operator at that time, not this card.)
-- **After deploy**: `scripts/deploy.sh --rollback` switches `current` to the previous release (which contains the Razor-only `web/`) and restarts units; it already tolerates releases without the other parts. Keep at least the Razor-era release among the retained ones (`MUD_KEEP_RELEASES` >= 3 around cutover).
-- **After the Razor code is deleted (step 6 end)**: rollback is the previous release via `--rollback`, or `git revert` of the deletion commit on `hermes` and a redeploy. For this reason the Razor deletion is its own PR, merged only after the soak.
-- **API is additive**: `/api` and the new projects do not alter core, the contract, units, ports or env files, so rolling back the web never affects the game or telnet.
-- Cookie compatibility: the cookie name and format do not change, so a rollback in either direction keeps users signed in (core owns the session).
-
-## 13. Out of scope (separate work)
-
-Password hashing; HTTPS/reverse proxy; the `frontends.sock` token (P7-1); a game-output/terminal page; the audit log viewer; player self-retire; offline/PWA; AOT; sample-room preview in the terrain editor (no admin call exists);
-reverse-exit creation; any change to `contracts/mud/admin.proto` or to core. No change to `MUD.Main`, `MUD.Core` (except consuming `MUD.Rules` if 3.2 is accepted), or the telnet host.
-
-## 14. Open questions
-
-Unresolved; none was silently decided beyond the defaults stated in the sections referenced.
-
-1. **Phone reachability vs localhost-only.** The owner wants phone use and also localhost-only binding with plain HTTP and plaintext passwords. A phone cannot reach `127.0.0.1` on the server. What is the access path (VPN, SSH tunnel, LAN bind, reverse proxy with HTTPS)? Sending plaintext passwords over a LAN needs HTTPS first. This spec keeps the bind unchanged and does not solve it.
-2. **Blazor flavour.** Standalone WASM served by the existing host (this spec) vs the .NET 8 Blazor Web App with `InteractiveWebAssembly` (prerendering, server-side auth for the first paint). Confirm the standalone choice.
-3. **`RoomRules` extraction.** Create `MUD.Rules` (touches `MUD.Data`, `MUD.Core`) or link the source file? (`RoomRules.cs` is confirmed to use only `System.*`.) Is a prerequisite card acceptable?
-4. **Fluent UI version.** Which package line/version (must support net8.0), and are the named components present? To confirm in the spike. Also Fluent's license/telemetry terms and CSS-variable approach for 44px targets.
-5. **First-load budget** (10.3): are the targets acceptable, and is AOT allowed if they are missed (which makes `wasm-tools` mandatory in CI and on the deploy machine)?
-6. **`ReturnUrl` after login.** The Razor login ignores `ReturnUrl` after sign-in (always `/character`). Honour it (new behaviour, small risk of open-redirect if not validated) or keep ignoring it?
-7. **`GET /api/auth/session` anonymous 401 vs 200 with null.** Cosmetic; 401 chosen (browsers log it as an error in the console). Confirm or switch to `200 {"signedIn":false}`.
-8. **Colour scheme.** Light only, system preference or a toggle; the current site has no styling at all.
-9. **Unsaved-changes prompt and in-page re-login after a 401.** New behaviours (8.2, 8.3); accept, defer or drop.
-10. **Host also serving a Razor fallback.** Is the `MUD_WEB_UI` flag and soak period acceptable, or is a hard cut preferred? And how long a soak?
-11. **Automated browser tests.** Add Playwright to CI (browser download) or accept the manual phone checklist only?
-12. **Admin-only host check for module actions** (4.4) is a small tightening beyond today's behaviour; accept.
-13. **CI workload step** (10.1): install `wasm-tools` even without AOT? Cost vs the owner's instruction; also whether a root-owned SDK path needs `sudo` on `ubuntu-latest`.
-14. **Broken `/usr/bin/dotnet` symlink** on the maintainer machine (`/usr/lib/dotnet` missing). Housekeeping; relevant because systemd or scripts that use `/usr/bin/dotnet` would fail. Not part of this work.
-15. **Tests count at cutover.** Which of the 253 existing tests may be dropped as obsolete (page binding mechanics) vs must be ported; this spec requires each decision to be listed in the PR.
-
-## Appendix A. Manual phone checklist (acceptance for the layout cards)
-
-At 360x640 (Chrome device emulation and one real phone), for every page: no horizontal scroll (also with long keys/names); all
-controls >= 44px and not touching; text readable without zoom; inputs do not trigger zoom on focus; bottom bar and drawer
-operate with one thumb; Save reachable without scrolling to the top; keyboard (on-screen) does not hide the focused field or the
-sticky bar; rotate to landscape without breakage; map: one-finger pan, two-finger pinch, double-tap zoom, zoom buttons,
-tap a room opens it, page itself does not scroll while panning the map; error states (core stopped) show the fixed sentences.
-Repeat at 768px and 1280px.
+At 360x640 (Chrome device emulation and one real phone), every page: no horizontal scroll (also with long keys and names); all controls >= 44px and not touching; text readable without zoom; inputs do not zoom on focus; bottom bar and drawer work with one thumb; Save reachable without scrolling to the top; the on-screen keyboard does not hide the focused field or the sticky bar; landscape works; map: one-finger pan, two-finger pinch, double-tap zoom, zoom buttons, tap a room opens it, the page does not scroll while panning;
+**connection tests**: lock the phone for 30 s and unlock (the edit form keeps its input), switch Wi-Fi to mobile data mid-edit, stop and start the web unit and confirm the "session was lost" banner and the draft restore prompt; error states (core stopped) show the fixed sentences. Repeat at 768px and 1280px.
