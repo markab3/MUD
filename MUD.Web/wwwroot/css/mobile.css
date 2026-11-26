@@ -105,3 +105,15 @@ h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
   .mud-table-wrap { display: block; }
   .mud-cards { display: none; }
 }
+
+/* Terrain library: tabs are links from 600px and one select below; the terrain tick list scrolls on a phone. */
+.mud-tabs { display: none; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.mud-tabselect { display: flex; }
+.mud-terrain-list { max-height: 40vh; overflow-y: auto; border: 1px solid #ccc; border-radius: 6px; padding: 4px 8px; margin-bottom: 8px; }
+.mud-pair { display: grid; grid-template-columns: 1fr; gap: 0 8px; }
+@media (min-width: 600px) {
+  .mud-tabs { display: flex; }
+  .mud-tabselect { display: none; }
+  .mud-terrain-list { max-height: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mud-pair { grid-template-columns: 1fr 1fr; max-width: 560px; }
+}

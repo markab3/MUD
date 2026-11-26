@@ -27,6 +27,10 @@ public static class WebRoutes
 
     public static string PlayerEdit(string nameKey) => Players + "/" + Uri.EscapeDataString(nameKey);
 
-    // Pages that are still Razor Pages (later cards port them). The shell links to the real URLs until then.
-    public const string LegacyTerrain = "/creator/terrain";
+    public const string Terrain = Prefix + "/creator/terrain";
+    public const string TerrainEditPage = Terrain + "/edit";
+
+    // kind and id travel in the query string only (an empty id means a new entry).
+    public static string TerrainEdit(string kind, string? id = null) =>
+        TerrainEditPage + "?kind=" + Uri.EscapeDataString(kind) + (string.IsNullOrEmpty(id) ? string.Empty : "&id=" + Uri.EscapeDataString(id));
 }
