@@ -51,11 +51,14 @@ namespace MUD.Core.GameObjects
 
         public string[] KnownCommands { get; set; }
 
-        public List<InventoryItem> Inventory { get; set; } = new List<InventoryItem>();
+        public List<InventoryItem> Inventory { get { return _inventory ?? (_inventory = new List<InventoryItem>()); } set { _inventory = value; } }
+        private List<InventoryItem> _inventory;
 
-        public List<InventoryItem> WornItems { get; set; } = new List<InventoryItem>();
+        public List<InventoryItem> WornItems { get { return _wornItems ?? (_wornItems = new List<InventoryItem>()); } set { _wornItems = value; } }
+        private List<InventoryItem> _wornItems;
 
-        public List<InventoryItem> HeldItems { get; set; } = new List<InventoryItem>();
+        public List<InventoryItem> HeldItems { get { return _heldItems ?? (_heldItems = new List<InventoryItem>()); } set { _heldItems = value; } }
+        private List<InventoryItem> _heldItems;
 
         // Game time before which this living may not act (see CommandQueue). Replaces the old IsBusy flag.
         [BsonIgnore]
