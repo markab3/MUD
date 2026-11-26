@@ -1,5 +1,9 @@
 # Web site (MUD.Web)
 
+> **Planned replacement:** the Razor Pages UI described below is to be replaced by Blazor Server components (Fluent UI,
+> phone-first) running in this host and calling core through `IAdminClient`. See [WEB_BLAZOR.md](WEB_BLAZOR.md). Until that is built, this file describes the
+> current behaviour, which the new design must preserve (routes, policies, messages, auth model, caveats).
+
 ASP.NET Core (Razor Pages, net8.0) site for logging in with the same character
 accounts the telnet game uses. It does not start the World or the telnet
 server and does not reference MUD.Core. It is a client of core's Admin service on `frontends.sock` and has no
