@@ -170,6 +170,24 @@ namespace MUD.Core.Administration
             return new SessionInfoReply { PlayerName = actor.Player.PlayerName, Role = ToContract(actor.Role) };
         }
 
+        /// <summary>The caller's own record (the player behind the token), read-only and without any credential.</summary>
+        public OwnPlayerReply GetOwnPlayer(TokenRequest request)
+        {
+            Actor actor = Authorize(request.Token, AdminRole.Player);
+            Player p = actor.Player;
+            return new OwnPlayerReply
+            {
+                Name = p.PlayerName ?? string.Empty,
+                Role = ToContract(actor.Role),
+                ShortDescription = p.ShortDescription ?? string.Empty,
+                LongDescription = p.LongDescription ?? string.Empty,
+                Race = p.Race ?? string.Empty,
+                Gender = p.Gender ?? string.Empty,
+                Class = p.Class ?? string.Empty,
+                Location = p.CurrentLocationId ?? string.Empty
+            };
+        }
+
         public ChangePasswordReply ChangePassword(ChangePasswordRequest request)
         {
             return Mutate(request.Token, AdminRole.Player, actor =>

@@ -37,12 +37,16 @@ Messages are fixed sentences. No token, password or stored value is put in a sta
 | Call | Role |
 |---|---|
 | `WebAuthenticate`, `Logout` | none |
-| `GetSession`, `ChangePassword` | any signed-in player |
+| `GetSession`, `GetOwnPlayer`, `ChangePassword` | any signed-in player |
 | `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListPlayers`, `GetPlayer`, `UpdatePlayer`, `ListModules` | creator or admin |
 | `ListAudit`, `StartModule`, `StopModule`, `RestartModule` | admin only |
 
 Not in this card: `GetRoomMap` (the map is laid out by the web from `ListRooms`, as `RoomMapLayout` does today), `GetStats` and `Flush` (sketched in
 CORE_API 7.2, not needed by any page). Each is a later addition if a page turns out to need it.
+
+## GetOwnPlayer (website player page)
+
+`GetOwnPlayer(TokenRequest) returns (OwnPlayerReply)`: read-only, any signed-in role. The player is the one behind the token; the request has no name, so a caller cannot ask for anyone else (`GetPlayer` stays creator-only). The reply: `name`, `role` (current), `short_description`, `long_description`, `race`, `gender`, `class`, `location` (current room key). It never carries a password, token, inventory or the retired flag. Token failures are `Unauthenticated` as for every call. Logic: `AdminApi.GetOwnPlayer`; tests in `AdminApiTests`.
 
 ## Rules (carried over from `specs/WEB_EDITING.md` section 15)
 

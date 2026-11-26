@@ -1,29 +1,45 @@
+@using Microsoft.JSInterop
+@implements IDisposable
 @inject IAuthorizationService Authz
-@* Same items and visibility as the Razor layout. Phone: bottom tab bar + a "More" sheet; tablet/desktop: left rail. Breakpoints are CSS. *@
+@* The one site chrome at every width (WEB_BLAZOR.md 5.2): a top bar (menu button, title, user name) and a pull-out menu from the left.
+   Anonymous visitors get the bar with the title only. The menu is a modal dialog around a nav; focus and the Tab trap are in wwwroot/js/app.js. *@
+<header class="mud-topbar">
+    <AuthorizeView>
+        <Authorized>
+            <button type="button" id="mud-menu-button" class="mud-menu-button" aria-label="Menu" aria-haspopup="dialog"
+                    aria-expanded="@(_menu.IsOpen ? "true" : "false")" aria-controls="mud-menu" @onclick="Toggle">
+                <span class="mud-burger" aria-hidden="true"></span>
+            </button>
+            <span class="mud-title">Planar Realms</span>
+            <a class="mud-username" href="@WebRoutes.Character">@context.User.FindFirstValue(ClaimTypes.Name)</a>
+        </Authorized>
+        <NotAuthorized>
+            <span class="mud-title">Planar Realms</span>
+        </NotAuthorized>
+    </AuthorizeView>
+</header>
 <AuthorizeView>
     <Authorized>
-        <nav class="mud-nav@(_open ? " mud-open" : "")" aria-label="Main">
-            <ul>
-                @if (_creator)
-                {
-                    <li><NavLink href="@WebRoutes.Map">Map</NavLink></li>
-                    <li><NavLink href="@WebRoutes.Creator" Match="NavLinkMatch.All">Creator</NavLink></li>
-                    <li><NavLink href="@WebRoutes.Players">Players</NavLink></li>
-                    <li class="mud-nav-extra"><NavLink href="@WebRoutes.Modules">Modules</NavLink></li>
-                    <li class="mud-nav-extra"><NavLink href="@WebRoutes.Terrain">Terrain</NavLink></li>
-                }
-                <li class="@(_creator ? "mud-nav-extra" : null)"><NavLink href="@WebRoutes.Character">Character</NavLink></li>
-                <li class="@(_creator ? "mud-nav-extra" : null)"><NavLink href="@WebRoutes.Password">Change password</NavLink></li>
-                <li class="mud-nav-extra mud-nav-logout">
-                    <form method="post" action="@WebRoutes.Logout">
-                        <input type="hidden" name="@Tokens.FormFieldName" value="@Tokens.RequestToken" />
-                        <button type="submit" class="mud-btn">Log out</button>
-                    </form>
-                </li>
-                <li class="mud-nav-more"><button type="button" class="mud-btn" aria-expanded="@_open.ToString().ToLowerInvariant()" @onclick="Toggle">More</button></li>
-            </ul>
-        </nav>
-        @if (_open) { <div class="mud-backdrop" @onclick="Toggle"></div> }
+        <div class="mud-drawer-wrap@(_menu.IsOpen ? " mud-open" : "")" @onkeydown="OnKeyDown">
+            <div class="mud-backdrop" @onclick="CloseAndReturnFocus"></div>
+            <div id="mud-menu" class="mud-drawer" role="dialog" aria-modal="true" aria-label="Main menu">
+                <button type="button" class="mud-btn mud-drawer-close" @onclick="CloseAndReturnFocus">Close menu</button>
+                <nav aria-label="Main">
+                    <ul>
+                        @foreach (var item in NavMenu.ItemsFor(_creator))
+                        {
+                            <li><NavLink href="@item.Href" Match="@(item.ExactMatch ? NavLinkMatch.All : NavLinkMatch.Prefix)" @onclick="CloseForNavigation">@item.Label</NavLink></li>
+                        }
+                        <li class="mud-nav-logout">
+                            <form method="post" action="@WebRoutes.Logout">
+                                <input type="hidden" name="@Tokens.FormFieldName" value="@Tokens.RequestToken" />
+                                <button type="submit" class="mud-btn">Log out</button>
+                            </form>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
     </Authorized>
 </AuthorizeView>
 
@@ -31,8 +47,11 @@
     [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
     [CascadingParameter] private AntiforgeryTokens Tokens { get; set; } = new(string.Empty, string.Empty);
     [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private IJSRuntime Js { get; set; } = default!;
+    private readonly NavMenu _menu = new();
     private bool _creator;
-    private bool _open;
+    private bool _wasOpen;
+    private bool _returnFocus;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -41,7 +60,40 @@
         _creator = user.Identity?.IsAuthenticated == true && (await Authz.AuthorizeAsync(user, WebPolicies.CreatorOrAdmin)).Succeeded;
     }
 
-    protected override void OnInitialized() => Navigation.LocationChanged += (_, _) => { _open = false; InvokeAsync(StateHasChanged); };
+    protected override void OnInitialized() => Navigation.LocationChanged += OnLocationChanged;
 
-    private void Toggle() => _open = !_open;
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+
+    // Navigation closes the menu; FocusOnNavigate then puts focus on the new page's heading, so focus is not sent back to the button.
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (_menu.Close()) { InvokeAsync(StateHasChanged); }
+    }
+
+    private void Toggle()
+    {
+        if (_menu.IsOpen) { CloseAndReturnFocus(); } else { _menu.Open(); }
+    }
+
+    private void CloseAndReturnFocus()
+    {
+        if (_menu.Close()) { _returnFocus = true; }
+    }
+
+    private void CloseForNavigation() => _menu.Close();
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") { CloseAndReturnFocus(); }
+    }
+
+    // Focus moves into the menu when it opens and back to the button when it is closed from the menu itself.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_menu.IsOpen == _wasOpen) { return; }
+        _wasOpen = _menu.IsOpen;
+        if (_menu.IsOpen) { await Js.InvokeVoidAsync("mudMenu.opened", "mud-menu"); }
+        else if (_returnFocus) { await Js.InvokeVoidAsync("mudMenu.closed", "mud-menu-button"); }
+        _returnFocus = false;
+    }
 }

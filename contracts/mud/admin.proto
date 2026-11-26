@@ -21,6 +21,8 @@ service Admin {
   // The player name and CURRENT role behind a token (the role is re-read from the player on every call).
   rpc GetSession(TokenRequest) returns (SessionInfoReply);
   rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordReply);
+  // The signed-in player's OWN record, read-only. The player is the one behind the token; no name is accepted (any signed-in player).
+  rpc GetOwnPlayer(TokenRequest) returns (OwnPlayerReply);
 
   // Creator or admin.
   rpc ListRooms(TokenRequest) returns (ListRoomsReply);
@@ -128,6 +130,18 @@ message WebAuthReply {
 message SessionInfoReply {
   string player_name = 1;
   AdminRole role = 2;
+}
+
+// What a player may see of themselves. Never a password, token, inventory or any other player.
+message OwnPlayerReply {
+  string name = 1;
+  AdminRole role = 2;
+  string short_description = 3;
+  string long_description = 4;
+  string race = 5;
+  string gender = 6;
+  string class = 7;
+  string location = 8;
 }
 
 message ChangePasswordRequest {

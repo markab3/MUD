@@ -66,3 +66,35 @@ window.mudDraft = (function () {
 document.addEventListener('submit', function (e) {
   if (e.target && e.target.action && /\/logout$/.test(e.target.action)) window.mudDraft.clearAll();
 }, true);
+
+// Pull-out menu (WEB_BLAZOR.md 5.2): focus moves into the dialog when it opens and back to the menu button when it closes, and Tab stays
+// inside the dialog while it is open. Open/close state itself lives in the NavShell component.
+window.mudMenu = (function () {
+  var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+  var active = null;
+  function items(menu) { return Array.prototype.slice.call(menu.querySelectorAll(FOCUSABLE)); }
+  function trap(e) {
+    if (e.key !== 'Tab' || !active) return;
+    var list = items(active);
+    if (!list.length) { e.preventDefault(); return; }
+    var first = list[0], last = list[list.length - 1];
+    if (!active.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+  return {
+    opened: function (menuId) {
+      active = document.getElementById(menuId);
+      if (!active) return;
+      document.addEventListener('keydown', trap, true);
+      var list = items(active);
+      if (list.length) list[0].focus();
+    },
+    closed: function (buttonId) {
+      document.removeEventListener('keydown', trap, true);
+      active = null;
+      var b = document.getElementById(buttonId);
+      if (b) b.focus();
+    }
+  };
+})();

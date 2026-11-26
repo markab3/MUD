@@ -7,6 +7,7 @@ public static class Messages
     public const string LoginGeneric = "Invalid name or password.";
     public const string LoginRetired = "This character has been retired and can no longer be played.";
     public const string Unavailable = "The game is not reachable right now. Please try again later.";
+    public const string CharacterRefused = "Your character details cannot be shown. Please log in again.";
 
     public const string PasswordWrongCurrent = "Your password could not be changed. Check your current password and try again.";
     public const string PasswordMismatch = "The new passwords did not match.";

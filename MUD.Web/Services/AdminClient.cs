@@ -20,6 +20,10 @@ public interface IAdminClient
 
     Task<ChangePasswordReply> ChangePasswordAsync(string token, string currentPassword, string newPassword, string confirmPassword, CancellationToken cancellation = default);
 
+    // The signed-in player's own record (any role); core picks the player from the token, so only the caller's own data comes back.
+    // Throws CoreUnavailableException when core could not answer and CoreRefusedException when it refused the token.
+    Task<OwnPlayerReply> GetOwnPlayerAsync(string token, CancellationToken cancellation = default);
+
     // Rooms (creator or admin). Core validates, audits and applies every edit; edits are last write wins (D30), so there is no revision.
     // Every room call throws CoreUnavailableException when core could not answer and CoreRefusedException when core refused the
     // token or the caller's current role.
@@ -220,6 +224,9 @@ public sealed class GrpcAdminClient : IAdminClient
             throw new CoreUnavailableException();
         }
     }
+
+    public Task<OwnPlayerReply> GetOwnPlayerAsync(string token, CancellationToken cancellation = default) =>
+        Call(() => _client.GetOwnPlayerAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
 
     public async Task<IReadOnlyList<RoomDetail>> ListRoomsAsync(string token, CancellationToken cancellation = default)
     {
