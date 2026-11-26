@@ -171,7 +171,7 @@ Introduce components (core-typed and module-schemaless), the `BehaviorRef` list 
 | The website reads roles from Mongo `_t` discriminators | `MUD.Web/Services/MongoAccountStore.cs:59-60`, `MongoPlayerEditStore.cs:64-66` (G30) |
 | YAML `properties:` and behavior registry | `MUD.Core/Import/AreaImporter.cs`, `AreaExporter.cs`; ROOM_FILES 4.5, 7 |
 | Startup import default true | `MUD.Core/WorldSettings.cs:15`, `MUD.Main/appsettings.json:10`, `World.ImportContent` (`World.cs:614`) |
-| 6 empty command files; `Food`/`Wand` (now behaviors, resolved) | see ARCHITECTURE_V2 section 11 |
+| 6 empty command files; `Food`/`Wand` (now behaviors, resolved) | see ARCHITECTURE_V2 section 11 | New: the `secretexit` room behavior (hidden button, timed secret exit) is a core in-process behavior, see ROOM_FILES 4.6.
 
 ### Cards (proposed; none created)
 

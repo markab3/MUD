@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using MUD.Core.Components;
+using MUD.Data;
 
 namespace MUD.Core.Events
 {
@@ -34,6 +35,9 @@ namespace MUD.Core.Events
         public string Hook { get; }
 
         public IReadOnlyList<EntitySnapshot> Snapshots { get; }
+
+        // The game clock the dispatcher runs on.
+        public IClock Clock { get { return _dispatcher.Clock; } }
 
         internal BeforeDelivery(EventDispatcher dispatcher, long deliveryId, GameEvent gameEvent, EventParty party, BehaviorRef entry, string hook, IReadOnlyList<EntitySnapshot> snapshots)
         {

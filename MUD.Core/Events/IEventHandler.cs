@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using MUD.Core.Components;
+using MUD.Data;
 
 namespace MUD.Core.Events
 {
@@ -42,6 +43,9 @@ namespace MUD.Core.Events
         public BehaviorRef Entry { get; }
 
         public string Hook { get; }
+
+        // The game clock the dispatcher runs on.
+        public IClock Clock { get { return _dispatcher.Clock; } }
 
         internal EventDelivery(EventDispatcher dispatcher, GameEvent gameEvent, EventParty party, BehaviorRef entry, string hook)
         {

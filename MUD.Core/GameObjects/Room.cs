@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using MongoDB.Bson.Serialization.Attributes;
@@ -56,6 +57,51 @@ namespace MUD.Core.GameObjects
 
         public List<Exit> Exits { get { return _exits ?? (_exits = new List<Exit>()); } set { _exits = value; } }
         private List<Exit> _exits;
+
+        // Runtime-only exits (a secret passage that opens for a while). They are never stored, exported or re-imported:
+        // a restart or reload starts without them, so none can be left open. Game thread only.
+        private sealed class TemporaryExit
+        {
+            public Exit Exit;
+            public DateTime ExpiresAt;
+            public Action<Room, Exit> OnClosed;
+        }
+
+        private readonly List<TemporaryExit> _temporaryExits = new List<TemporaryExit>();
+
+        // The stored exits followed by the temporary ones that are open now.
+        [BsonIgnore]
+        public IEnumerable<Exit> AllExits { get { return Exits.Concat(_temporaryExits.Select(t => t.Exit)); } }
+
+        public bool HasTemporaryExit(string name)
+        {
+            return _temporaryExits.Any(t => string.Equals(t.Exit.Name, name, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Opens an exit that closes by itself at expiresAt (see ExpireTemporaryExits). Returns false, changing nothing,
+        // when the room already has an exit of that name, stored or temporary.
+        public bool OpenTemporaryExit(Exit exit, DateTime expiresAt, Action<Room, Exit> onClosed = null)
+        {
+            if (exit == null || string.IsNullOrEmpty(exit.Name)) { return false; }
+            if (AllExits.Any(e => e != null && string.Equals(e.Name, exit.Name, StringComparison.OrdinalIgnoreCase))) { return false; }
+            _temporaryExits.Add(new TemporaryExit { Exit = exit, ExpiresAt = expiresAt, OnClosed = onClosed });
+            RebuildExitCommands();
+            return true;
+        }
+
+        // Closes every temporary exit whose time is up and runs its close callback. Returns how many were closed.
+        public int ExpireTemporaryExits(DateTime now)
+        {
+            List<TemporaryExit> due = _temporaryExits.Where(t => t.ExpiresAt <= now).ToList();
+            if (due.Count == 0) { return 0; }
+            foreach (TemporaryExit t in due) { _temporaryExits.Remove(t); }
+            RebuildExitCommands();
+            foreach (TemporaryExit t in due)
+            {
+                if (t.OnClosed != null) { t.OnClosed(this, t.Exit); }
+            }
+            return due.Count;
+        }
 
         [BsonIgnore]
         public CommandSource RoomCommandSource
@@ -145,7 +191,7 @@ namespace MUD.Core.GameObjects
         {
             _roomCommandSource = new CommandSource();
             string[] aliases;
-            foreach (Exit currentExit in Exits)
+            foreach (Exit currentExit in AllExits.ToList())
             {
                 var keywords = new string[] { currentExit.Name };
                 aliases = _exitAliases.FirstOrDefault(s => s.Contains(currentExit.Name.ToLower()));
@@ -331,17 +377,18 @@ namespace MUD.Core.GameObjects
         public override string Examine(Living examiner)
         {
             string exitLine;
-            if (Exits == null || Exits.Count == 0)
+            List<Exit> visibleExits = AllExits.ToList();
+            if (visibleExits.Count == 0)
             {
                 exitLine = "There are no obvious exits.";
             }
-            else if (Exits.Count == 1)
+            else if (visibleExits.Count == 1)
             {
-                exitLine = "There is one obvious exit: " + Exits[0].Name;
+                exitLine = "There is one obvious exit: " + visibleExits[0].Name;
             }
             else
             {
-                exitLine = string.Format("There are {0} obvious exits: {1}", Exits.Count.GetExactNumberText(), Exits.Select(e => e.Name).GetListText());
+                exitLine = string.Format("There are {0} obvious exits: {1}", visibleExits.Count.GetExactNumberText(), visibleExits.Select(e => e.Name).GetListText());
             }
             exitLine = string.Format("%^{0}%^{1}%^{2}%^", EFormatOptions.Green, exitLine, EFormatOptions.Reset) + "\r\n";
 

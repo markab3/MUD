@@ -346,15 +346,33 @@ namespace MUD.Core.Import
                 var paramsMap = Get(propMap, "params") as YamlMappingNode;
                 if (paramsMap == null) { _errors.Add(pctx + ": 'params' is required and must be a mapping."); result.Add(prop); continue; }
                 var sctx = pctx + " (search" + (id == null ? "" : " '" + id + "'") + ")";
-                CheckKeys(paramsMap, new[] { "target", "refresh_ms", "reward" }, sctx);
+                CheckKeys(paramsMap, new[] { "target", "refresh_ms", "reward", "discovery" }, sctx);
                 prop.Target = Scalar(paramsMap, "target", sctx, true);
                 prop.RefreshMs = Int(paramsMap, "refresh_ms", sctx) ?? 0;
                 if (Get(paramsMap, "refresh_ms") == null) { _errors.Add(sctx + ": 'refresh_ms' is required."); }
                 else if (prop.RefreshMs < 0) { _errors.Add(sctx + ": 'refresh_ms' must not be negative."); }
 
-                var rewardMap = Get(paramsMap, "reward") as YamlMappingNode;
-                if (rewardMap == null) { _errors.Add(sctx + ": 'reward' is required and must be a mapping."); }
-                else
+                var rewardNode = Get(paramsMap, "reward");
+                var rewardMap = rewardNode as YamlMappingNode;
+                var discoveryNode = Get(paramsMap, "discovery");
+                if (rewardNode == null && discoveryNode == null) { _errors.Add(sctx + ": needs a 'reward', a 'discovery', or both."); }
+                if (rewardNode != null && rewardMap == null) { _errors.Add(sctx + ": 'reward' must be a mapping."); }
+                if (discoveryNode != null)
+                {
+                    var discoveryMap = discoveryNode as YamlMappingNode;
+                    if (discoveryMap == null) { _errors.Add(sctx + ": 'discovery' must be a mapping."); }
+                    else
+                    {
+                        CheckKeys(discoveryMap, new[] { "id", "found", "again" }, sctx + ".discovery");
+                        prop.Discovery = new DiscoveryDefinition
+                        {
+                            Id = Scalar(discoveryMap, "id", sctx + ".discovery", true),
+                            Found = Text(discoveryMap, "found", sctx + ".discovery", false),
+                            Again = Text(discoveryMap, "again", sctx + ".discovery", false)
+                        };
+                    }
+                }
+                if (rewardMap != null)
                 {
                     CheckKeys(rewardMap, new[] { "short", "long", "handles", "adjectives", "plurals" }, sctx + ".reward");
                     prop.Reward = new ItemDefinition

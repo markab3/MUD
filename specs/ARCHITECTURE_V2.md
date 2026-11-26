@@ -299,7 +299,7 @@ core-owned operations apply to it.
 
 | Kind | Today | Required components | Notes |
 |---|---|---|---|
-| `room` | `Room` | `Description`, `Exits`, `Position` (area, X/Y/Z), `Contents` | Occupants derived from location, not stored. Carries behavior list |
+| `room` | `Room` | `Description`, `Exits`, `Position` (area, X/Y/Z), `Contents` | Occupants derived from location, not stored. Carries behavior list. The `secretexit` behavior (`SecretExit`, hooks `command.entered` + `heartbeat`; see ROOM_FILES 4.6) gives a room a per-player hidden control (player component `search.found`, granted by a core search entry with a `discovery`) and a timed runtime-only exit (`Room.OpenTemporaryExit`, not stored) |
 | `player` | `Player` | `Description`, `Location`, `Container`, `Account`, `Roles`, `Body` | Carries behavior list. Account holds name, NameKey, password (plaintext for now), Retired, term preference |
 | `npc` | `NPC` | `Description`, `Location`, `Container`, `Body` | No Account. Carries behavior list |
 | `item` | `InventoryItem` | `Description`, `Location` | Carries behavior list. Food and wand are behaviors on an item: component `food.servings` `{servings}` with a `command.entered` entry (`food`, `Food`; verb `eat`), and component `wand.charges` `{current, max}` with a `command.entered` entry (`wand`, `Wand`; verbs `zap`, `use`). Both ship in core (`InProcessBehaviorRegistry`); the verb works only while the item is in the player's inventory |

@@ -267,7 +267,41 @@ For `search` the params correspond to `BasicSearchProperty`:
 `id` is new: it is what makes field-level upsert of a list element possible
 (see 6.2). It is stored with the property.
 
+An entry may instead (or also) grant a **discovery**, a named per-player flag:
+
+```
+      - behavior: search
+        id: floor_search
+        params:
+          target: floor
+          refresh_ms: 0                # required, but a discovery has no room cooldown
+          discovery:
+            id: hidden_button          # required: the flag's id (global to the world)
+            found: "You search the floor and find a small hidden button!"   # optional
+            again: "You have already found the button here."               # optional
+```
+
+An entry needs a `reward`, a `discovery`, or both (neither is a validation error). All entries of a room are consulted: the first whose
+`target` matches the typed target answers (`search table` and `search floor` coexist). A discovery is stored on the player as the component
+`search.found` `{ ids: [ "<id>" ] }`, saved with the player (survives relog and restart); it is player state, so an area re-import never
+touches it. The first search tells `found`, later searches tell `again`. Behaviors read the flag with `DiscoveryFlags.Has(player, id)`.
+
 Unknown `behavior` or invalid `params` is a validation error.
+
+### 4.6 Behavior entries (`behaviors:`) and the secret exit
+
+A room may carry a `behaviors:` list (owner decisions D5, D53): `hook`, `module`, `type`, optional `priority`, `config` (a mapping) and
+`schema_version`. The importer validates the shape (known hook, names, config size, no duplicate hook+module+type) but not the config contents.
+Room-file behaviors shipped in core:
+
+| module / type | Hooks (one entry each, same `config`) | Config | What it does |
+|---|---|---|---|
+| `secretexit` / `SecretExit` | `command.entered` and `heartbeat` | `discovery` (required: the id of the per-player flag, see 4.5), `to` (full room key, required), `verb` (`press`), `noun` (`button`), `dir` (`down`), `open_for_s` (60), texts `press_msg`, `open_msg`, `already_open_msg`, `close_msg`, `close_dest_msg` | A hidden control. `<verb> <noun>` is handled only for a player who has the discovery flag and is in the room; it opens a runtime-only exit `dir` to `to` for `open_for_s` seconds, tells the room, and tells both rooms when it closes. Any other line, and `<verb> <noun>` from a player without the flag, is not handled, so core answers as usual and nothing leaks that the control exists. It does not search: the flag is granted by core's `search` entry with a `discovery` (4.5), so `search floor` keeps core's 3 s delay and messages. |
+
+Discovery is per player (the `search.found` component of 4.5), not room state. The open exit is a runtime-only exit of the room
+(`Room.OpenTemporaryExit`): it is not in `Exits`, is never exported, stored or imported, and a restart starts closed. The way back from the
+destination is an ordinary permanent exit written in the file (see `sample_area.secret_vault`). The `heartbeat` entry closes the exit (at most one
+heartbeat late); without it the exit would stay open.
 
 ## 5. Definition versus state
 

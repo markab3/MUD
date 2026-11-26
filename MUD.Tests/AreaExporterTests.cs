@@ -242,7 +242,7 @@ rooms:
 
             var exported = new AreaExporter(store).ExportArea("sample_area");
             Assert.True(exported.Success, string.Join("; ", exported.Errors));
-            Assert.Equal(3, importer.Import(exported.Yaml).Count(ImportAction.Unchanged));
+            Assert.Equal(4, importer.Import(exported.Yaml).Count(ImportAction.Unchanged));
         }
 
         private static string SampleAreaPath()
@@ -254,6 +254,51 @@ rooms:
                 if (System.IO.File.Exists(candidate)) { return candidate; }
             }
             throw new System.IO.FileNotFoundException("sample_area.yaml not found from " + dir);
+        }
+
+        [Fact]
+        public void ADiscoveryEntryAlongsideARewardEntryRoundTripsThroughExportAndReimport()
+        {
+            const string yaml = @"
+area:
+  schema_version: 1
+  prefix: t
+  name: Test
+rooms:
+  - key: hall
+    short: a hall
+    long: A hall.
+    properties:
+      - behavior: search
+        id: table_search
+        params:
+          target: table
+          refresh_ms: 1000
+          reward: {short: a coin, long: A coin.}
+      - behavior: search
+        id: floor_search
+        params:
+          target: floor
+          refresh_ms: 0
+          discovery: {id: hidden_button, found: You find a button!, again: Already found.}
+";
+            var original = new FakeStore();
+            var importer = new AreaImporter(original);
+            Assert.True(importer.Import(yaml).Success);
+
+            var exported = new AreaExporter(original).ExportArea("t");
+
+            Assert.True(exported.Success, string.Join("; ", exported.Errors));
+            Assert.Contains("discovery:", exported.Yaml);
+            var fresh = new FakeStore();
+            Assert.True(new AreaImporter(fresh).Import(exported.Yaml).Success);
+            var entries = fresh.Docs["t.hall"]["search"]["entries"].AsBsonArray;
+            Assert.Equal(2, entries.Count);
+            Assert.True(entries[0].AsBsonDocument.Contains("reward"));
+            Assert.False(entries[1].AsBsonDocument.Contains("reward"));
+            Assert.Equal("hidden_button", entries[1]["discovery"]["id"].AsString);
+            Assert.Equal("Already found.", entries[1]["discovery"]["again"].AsString);
+            Assert.Equal(1, new AreaImporter(original).Import(exported.Yaml).Count(ImportAction.Unchanged));
         }
     }
 }
