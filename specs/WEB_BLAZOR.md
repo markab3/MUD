@@ -113,8 +113,8 @@ added to `MUD.Web.csproj`; no new project in `MUD.sln` except the optional compo
 
 ### 2.2 Side by side until cutover
 
-Razor Pages own the final URLs now. Blazor components therefore live under a temporary prefix **`/next`** (`@page "/next/character"`, ...) and all
-internal links are built from one `Routes` constants class (`Routes.Character`, `Routes.RoomEdit(key)`), whose prefix is `"/next"` during migration and `""` at cutover.
+During migration the Razor Pages owned the final URLs, so the Blazor components lived under a temporary prefix **`/next`** (`@page "/next/character"`, ...) and all
+internal links were built from one constants class (now `WebRoutes`), whose prefix was `"/next"` during migration. After the cutover `WebRoutes.Prefix` is `""` and no `/next` route exists.
 Both UIs share the same cookie, the same `IAdminClient` and the same policies, so a user can use either. The cutover card changes the prefix constant and every `@page`
 (they use `@page Routes.X` constants where Razor allows, else a find/replace guarded by a route-table test), removes Razor Pages and deletes `_Layout`.
 Per-page cutover (delete a Razor page and take its URL in the same PR) is allowed too (Open question 10).
@@ -266,7 +266,7 @@ Decisions:
 
 1. **Retention**: `CircuitOptions.DisconnectedCircuitRetentionPeriod = 20 minutes` (default 3), `DisconnectedCircuitMaxRetained = 50` (default 100); a handful of users makes memory a non-issue. **[verify]** exact option names in .NET 8.
    SignalR: `ClientTimeoutInterval` 60 s (default 30) and `KeepAliveInterval` 15 s so a brief radio stall does not drop the circuit; `HandshakeTimeout` unchanged. WebSockets with long-polling fallback stay enabled (a future reverse proxy must pass WebSockets).
-2. **Reconnect UI**: replace the default modal with `ReconnectBanner` using the `components-reconnect-*` states: *retrying* shows a non-blocking bar "Connection lost, reconnecting..." and **disables Save and Delete** buttons (so a click cannot queue); *failed* shows "Could not reconnect." with a 44px Retry button; *rejected* (circuit gone) shows "This page's session was lost. Reload to continue." with a Reload button, plus "Your unsaved edits were kept as a draft on this device" when a draft exists. The banner is styled in `mobile.css`, never hides the sticky bar, and respects safe-area insets. Auto reload on *rejected* is **not** done (it would discard the draft prompt); the user taps Reload.
+2. **Reconnect UI**: replace the default modal with `ReconnectBanner` using the `components-reconnect-*` states: *retrying* shows a non-blocking bar "Connection lost, reconnecting..." and **disables Save, Delete and the other mutating buttons** (so a click cannot queue; built as one helper, `window.mudReconnectGuard` in `app.js`, which watches the banner's `components-reconnect-*` class and disables every `.mud-save` or `data-mutating` button, then re-enables only those it disabled; any new mutating button must carry one of the two markers); *failed* shows "Could not reconnect." with a 44px Retry button; *rejected* (circuit gone) shows "This page's session was lost. Reload to continue." with a Reload button, plus "Your unsaved edits were kept as a draft on this device" when a draft exists. The banner is styled in `mobile.css`, never hides the sticky bar, and respects safe-area insets. Auto reload on *rejected* is **not** done (it would discard the draft prompt); the user taps Reload.
 3. **State in components**: all form state is component/presenter state (never static, never singleton), so reconnect to a retained circuit loses nothing. Row edits (exits, features) are local and cost no round trip, so they are not lost by a drop except when the circuit is gone.
 4. **Local draft (for editors only)**: room edit, create room, player edit and terrain edit write their form state as JSON to browser `localStorage` (key `draft:<user>:<route>`, JS interop, debounced 2 s after the last change, plus on `visibilitychange` hidden, which is what fires when the phone is locked). Never stored: any password or login field. On load, if a draft exists and differs from what core returned, the page offers "Restore unsaved changes? / Discard". The draft is removed on successful save, on Discard and on logout; it expires after 24 h; it never overrides core's data without the user's choice. Last write wins (D30) still applies when the restored form is saved; the restore banner says the data may have changed in the meantime. Drafts are device-local plain text of data the user can already see; no secrets are in them.
 5. **Session ended while disconnected**: revalidation (3.1) runs on reconnect; an ended session sends the user to `/login` with a `ReturnUrl`.
@@ -347,7 +347,7 @@ No Mongo and no browser here: nothing in this design was exercised against a liv
 Each step is its own card/PR with tests; Razor Pages stay default and working until step 7.
 
 0. **Spike**: add the Fluent package and bUnit on a branch; confirm every **[verify]** (net8 versions, per-page render mode with a static login, `AntiforgeryToken` in an interactive layout, circuit token capture, `RevalidatingServerAuthenticationStateProvider`, circuit options names, 44px token overrides, `matchMedia` interop); measure first-load size; record results in this file. Gate for step 1.
-1. **Shell**: `App.razor`, `Routes.razor`, `MainLayout`, nav shell (phone/tablet/desktop), `CircuitSession`, auth state provider with revalidation, `ReconnectBanner`, `NoticeService`, `PageState`, `ConfirmDialog`, `Messages.cs`, `Routes` prefix `/next`, `mobile.css`, route-table test. Touches `Program.cs` and `MUD.Web.csproj` (collision hotspots: do not run in parallel with other web cards).
+1. **Shell**: `App.razor`, `Routes.razor`, `MainLayout`, nav shell (phone/tablet/desktop), `CircuitSession`, auth state provider with revalidation, `ReconnectBanner`, `NoticeService`, `PageState`, `ConfirmDialog`, `Messages.cs`, `Routes` prefix `/next` (migration only; now empty), `mobile.css`, route-table test. Touches `Program.cs` and `MUD.Web.csproj` (collision hotspots: do not run in parallel with other web cards).
 2. **Account pages**: Login (static), logout endpoint, Character, Password, AccessDenied.
 3. **Read pages**: Modules, PlayerList, CreatorMap with `roommap.js`.
 4. **Forms**: Creator, PlayerEdit, TerrainList, TerrainEdit; draft save component (6.4) lands with the first editor.
@@ -360,7 +360,7 @@ Steps 2-5 can partly parallelise after step 1 (distinct files); presenter/servic
 
 ## 11. Rollback plan
 
-- **Before cutover**: Razor Pages are still the default URLs; rolling back is not using `/next` (nothing to redeploy). A bad shell merge is reverted via `git revert` on `hermes`.
+- **Before cutover**: Razor Pages are still the default URLs; rolling back meant not using `/next` (historical; the prefix is now removed). A bad shell merge is reverted via `git revert` on `hermes`.
 - **At and after cutover**: `scripts/deploy.sh --rollback` switches `current` to the previous release (which has the Razor UI) and restarts the units. Keep at least the last Razor-era release (`MUD_KEEP_RELEASES` >= 3 around cutover). The restart is the operator's action at that time, not this card's.
 - **After Razor deletion**: `git revert` of the deletion PR plus a redeploy, or `--rollback`.
 - No change to core, the gRPC contract, units, ports or env files, so a web rollback never affects the game or telnet. The cookie name and format do not change, so sessions survive a rollback in either direction (core owns the session).
@@ -382,7 +382,7 @@ None of these was silently decided beyond the defaults named in the referenced s
 7. **`ReturnUrl` after login**: today ignored (always `/character`). Honour it (new; must be validated as a local path) or keep ignoring?
 8. **Logout mechanics** (2.1): POST form with antiforgery token (preferred) vs the fallback; confirm after the spike.
 9. **Colour scheme**: light only, system preference, or toggle (the current site has no styling).
-10. **Cutover style**: `/next` prefix then one cutover card (this spec) vs per-page cutover; and soak length.
+10. **Cutover style**: decided and done as the `/next` prefix followed by one cutover card (Appendix E); per-page cutover was not used.
 11. **Automated browser tests**: add Playwright to CI or accept the manual phone checklist only?
 12. **Grid/card switch**: JS-interop `ViewportService` vs rendering both and hiding one in CSS.
 13. **HTTP status codes** (7.3): accept that in-circuit 403/404/503 views are HTTP 200.
@@ -397,14 +397,14 @@ At 360x640 (Chrome device emulation and one real phone), every page: no horizont
 
 ## Appendix B. Room pages as built (card t_fd0c7a00)
 
-Components under `/next`: `/next/creator` (`Creator.razor`), `/next/creator/map` (`CreatorMap.razor`, `?area=&z=`), `/next/creator/rooms/{Key}` (`RoomEdit.razor`). All use `CreatorOrAdmin`.
+Components: `/creator` (`Creator.razor`), `/creator/map` (`CreatorMap.razor`, `?area=&z=`), `/creator/rooms/{Key}` (`RoomEdit.razor`). All use `CreatorOrAdmin`.
 Logic is in `CreatorPresenter`, `CreatorMapPresenter` and `RoomEditPresenter` (moved from the page models; same calls, same refusal mapping). Sentences are in `Messages.cs`.
 Shared: `ExitRows.razor` (exit cards), `RoomMap.razor` + `wwwroot/js/roommap.js` (viewBox pan, pinch, wheel, double-tap, keyboard; a tap on a room smaller than 44px selects the nearest room and shows "Open room"; room squares stay real links), `NoticeService` (replaces TempData), `DraftStore` + `window.mudDraft` in `app.js` (localStorage, 24 h, key `draft:<user>:<route>`, cleared on logout).
 Decisions: status codes become in-page views (7.3); Regen's confirm is an in-page confirmation showing `Messages.RegenWarning` (not a browser dialog, so no script string quoting); row edits (add/remove/move exit and feature) are local and call no core method; inputs bind on change, not per keystroke; a draft is offered only when it differs from what core returned. Not verified here: touch gestures, reconnect behaviour and the 360px layout need a real device (Appendix A); there is no bUnit, so components are covered by presenter tests plus source/reflection guards.
 
 ## Appendix C. Player and module pages as built (card t_459edd31)
 
-Components under `/next`: `/next/creator/players` (`PlayerList.razor`, `?q=&sort=&page=`), `/next/creator/players/{NameKey}` (`PlayerEdit.razor`), `/next/creator/modules` (`Modules.razor`). All use `CreatorOrAdmin`; the shell nav now links to them.
+Components: `/creator/players` (`PlayerList.razor`, `?q=&sort=&page=`), `/creator/players/{NameKey}` (`PlayerEdit.razor`), `/creator/modules` (`Modules.razor`). All use `CreatorOrAdmin`; the shell nav now links to them.
 Logic is in `PlayerListPresenter`, `PlayerEditPresenter` (editor role passed in; `PlayerRules` unchanged) and `ModulesPresenter`. Sentences are in `Messages.cs`.
 Lists render a table and a stacked-card list from the same rows; CSS shows the table from 600px and the cards below (no round trip, Open question 12 option "render both, hide one").
 Decisions: the module notice stays beside the refreshed list (no `NoticeService` hop, there is no navigation); Start goes straight through, Stop and Restart ask first in `ConfirmDialog`; newly retiring a character asks first (new, `Messages.RetirePlayerConfirm`); player edit keeps a local draft like the room editor (restore never takes a role or retired value the editor may not set); HTTP 403/404/503 become in-page views (7.3).
@@ -412,7 +412,7 @@ New text (not moved from Razor): `RetirePlayerConfirm`, `StopModuleConfirm`, `Re
 
 ## Appendix D. Terrain library pages as built (card t_9011d43a)
 
-Components under `/next`: `/next/creator/terrain` (`TerrainList.razor`, `?tab=&terrain=&tag=`) and `/next/creator/terrain/edit?kind=&id=` (`TerrainEdit.razor`). Both use `CreatorOrAdmin`; the shell Terrain link now points at them.
+Components: `/creator/terrain` (`TerrainList.razor`, `?tab=&terrain=&tag=`) and `/creator/terrain/edit?kind=&id=` (`TerrainEdit.razor`). Both use `CreatorOrAdmin`; the shell Terrain link now points at them.
 Logic is in `TerrainListPresenter` and `TerrainEditPresenter`; `TerrainLibrary.cs` (helpers and the error sentences) is shared with the Razor pages until cutover. Kind and id come from the query string only; the presenter has no setter for either, and an edit writes the original id, never the form's.
 Lists render a table and a card list from the same rows (CSS, 600px). The four tabs are links from 600px and one `<select>` below. The terrain tick list is a scrollable box (max 40vh) on a phone and a three-column grid from 600px. The empty-terrains warning (`[!] Not used by any generator`) shows on the editor and in list rows exactly as before.
 Decisions: Delete asks first in `ConfirmDialog` (new text `TerrainDeleteConfirm`); the editor keeps a local draft like the room and player editors (`TerrainDraftFound`); a saved new entry navigates to its edit address with the "Saved." notice via `NoticeService`; a saved edit reloads from core. HTTP 403/404/503 become in-page views (7.3).

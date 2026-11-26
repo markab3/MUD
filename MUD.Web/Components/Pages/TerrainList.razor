@@ -73,7 +73,7 @@ else
                     <td>
                         <div class="mud-actions">
                             <a class="mud-btn" href="@TerrainListPresenter.EditUrl(r.Kind, r.Id)">Edit</a>
-                            <button type="button" class="mud-btn mud-btn-danger" disabled="@_busy" @onclick="() => Ask(r)">Delete</button>
+                            <button type="button" class="mud-btn mud-btn-danger" data-mutating disabled="@_busy" @onclick="() => Ask(r)">Delete</button>
                         </div>
                     </td>
                 </tr>
@@ -98,7 +98,7 @@ else
                 </dl>
                 <div class="mud-actions">
                     <a class="mud-btn" href="@TerrainListPresenter.EditUrl(r.Kind, r.Id)">Edit</a>
-                    <button type="button" class="mud-btn mud-btn-danger" disabled="@_busy" @onclick="() => Ask(r)">Delete</button>
+                    <button type="button" class="mud-btn mud-btn-danger" data-mutating disabled="@_busy" @onclick="() => Ask(r)">Delete</button>
                 </div>
             </li>
         }

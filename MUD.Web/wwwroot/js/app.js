@@ -9,6 +9,36 @@
   if (reload) reload.addEventListener('click', function () { location.reload(); });
 })();
 
+// While the circuit is not connected (WEB_BLAZOR.md 6.2) every mutating button is disabled so a click cannot queue: buttons with class
+// mud-save (Save, Delete, Regen, Move, Update, confirm) or attribute data-mutating. One helper for all pages; it re-enables only the
+// buttons it disabled itself when the connection returns.
+window.mudReconnectGuard = (function () {
+  var SELECTOR = '.mud-save, [data-mutating]';
+  var MARK = 'data-reconnect-disabled';
+  function apply(root, reconnecting) {
+    var buttons = root.querySelectorAll(SELECTOR);
+    for (var i = 0; i < buttons.length; i++) {
+      var b = buttons[i];
+      if (reconnecting) {
+        if (!b.disabled) { b.disabled = true; b.setAttribute(MARK, '1'); }
+      } else if (b.hasAttribute(MARK)) {
+        b.disabled = false; b.removeAttribute(MARK);
+      }
+    }
+  }
+  function isReconnecting(modal) {
+    var c = modal.classList;
+    return c.contains('components-reconnect-show') || c.contains('components-reconnect-failed') || c.contains('components-reconnect-rejected');
+  }
+  function start() {
+    var modal = document.getElementById('components-reconnect-modal');
+    if (!modal || !window.MutationObserver) return;
+    new MutationObserver(function () { apply(document, isReconnecting(modal)); }).observe(modal, { attributes: true, attributeFilter: ['class'] });
+  }
+  return { apply: apply, start: start };
+})();
+window.mudReconnectGuard.start();
+
 // Local drafts of the editor forms (WEB_BLAZOR.md 6.4): localStorage, 24 hours, key draft:<user>:<route>. Removed on logout.
 window.mudDraft = (function () {
   var TTL = 24 * 60 * 60 * 1000;
