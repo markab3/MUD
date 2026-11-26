@@ -393,6 +393,12 @@ namespace MUD.Core.GameObjects
             RunLine(message, matchedCommand);
         }
 
+        /// <summary>Makes this player busy for the delay and then runs the action as their next command ("stop" cancels it). See CommandQueue.DelayThen.</summary>
+        public void DelayThen(TimeSpan delay, Action action)
+        {
+            if (_commandQueue != null) { _commandQueue.DelayThen(this, delay, action); }
+        }
+
         // The built-in path for a typed line: queue the resolved command, or say it is not recognized.
         private void RunLine(string message, ICommand matchedCommand)
         {

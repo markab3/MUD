@@ -903,7 +903,7 @@ namespace MUD.Core
             }
         }
 
-        public Room GetRoom(string roomId)
+        public virtual Room GetRoom(string roomId)
         {
             if (string.IsNullOrWhiteSpace(roomId)) { return null; }
 

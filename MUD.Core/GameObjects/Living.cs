@@ -85,6 +85,12 @@ namespace MUD.Core.GameObjects
 
         public virtual void ReceiveMessage(string message) { }
 
+        // The room with the given key, or null. For behaviors that need a room other than the one the living is in.
+        public Room FindRoom(string roomId)
+        {
+            return _world == null ? null : _world.GetRoom(roomId);
+        }
+
         /// <summary>
         /// Delivers a message tagged with an output channel. By default it is the same as the untagged
         /// ReceiveMessage(string), so a Living that only overrides that method still receives every message.
@@ -295,7 +301,7 @@ namespace MUD.Core.GameObjects
             if (viaExitName != null)
             {
                 if (fromRoom == null || fromRoom.Exits == null) { return false; }
-                if (!fromRoom.Exits.Any(e => e != null && string.Equals(e.Name, viaExitName, System.StringComparison.OrdinalIgnoreCase) && e.DestinationId == toRoom.Id)) { return false; }
+                if (!fromRoom.AllExits.Any(e => e != null && string.Equals(e.Name, viaExitName, System.StringComparison.OrdinalIgnoreCase) && e.DestinationId == toRoom.Id)) { return false; }
             }
             return true;
         }

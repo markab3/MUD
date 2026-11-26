@@ -5,7 +5,7 @@ area:
   schema_version: 1
   prefix: sample_area
   name: "Sample Area"
-  description: "A tiny area demonstrating exits, reverse exits, features and a search property."
+  description: "A tiny area demonstrating exits, reverse exits, features, a search property, and a hidden button (search floor, press button) that opens a timed secret exit down to a vault."
   defaults:
     coords:
       z: 0
@@ -33,6 +33,31 @@ rooms:
         handles: [table]
         adjectives: [heavy, oak]
         plurals: [tables]
+    behaviors:
+      # A hidden button: "search floor" finds it (per player), "press button" then opens a down exit for open_for_s seconds.
+      # Both hooks are needed: command.entered takes the lines, heartbeat closes the exit again.
+      - hook: command.entered
+        module: secretexit
+        type: SecretExit
+        config:
+          search_target: floor
+          verb: press
+          noun: button
+          dir: down
+          to: sample_area.secret_vault
+          open_for_s: 60
+          found_msg: "You search the floor and find a small hidden button!"
+          already_found_msg: "You have already found the hidden button."
+          press_msg: "You press the button."
+          open_msg: "A section of the floor grinds aside, revealing stairs leading down."
+          already_open_msg: "The stairs leading down are already open."
+          close_msg: "The section of floor grinds shut again, hiding the stairs."
+          close_dest_msg: "With a grinding noise the stairs above seal themselves shut."
+      - hook: heartbeat
+        module: secretexit
+        type: SecretExit
+        config:
+          to: sample_area.secret_vault
     properties:
       - behavior: search
         id: table_search
@@ -57,3 +82,15 @@ rooms:
     short: "a drafty landing"
     long: "A small landing at the top of a spiral stair. The air is cold here."
     coords: {x: 0, y: 0, z: 1}
+
+
+  # Reached only through the timed secret exit of the hall (down). The way back up is a permanent exit.
+  - key: secret_vault
+    short: "a hidden stone vault"
+    long: |
+      A low vault of dressed stone, cold and dry. Dust lies undisturbed on
+      the shelves, and a narrow stair climbs back up to the hall.
+    coords: {x: 0, y: 0, z: -1}
+    exits:
+      - dir: up
+        to: hall

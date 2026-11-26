@@ -290,8 +290,8 @@ rooms:
             var importer = new AreaImporter(store);
             var first = importer.Import(File.ReadAllText(path));
             Assert.True(first.Success, string.Join("; ", first.Errors));
-            Assert.Equal(3, first.Count(ImportAction.Insert));
-            Assert.Equal(3, importer.Import(File.ReadAllText(path)).Count(ImportAction.Unchanged));
+            Assert.Equal(4, first.Count(ImportAction.Insert));
+            Assert.Equal(4, importer.Import(File.ReadAllText(path)).Count(ImportAction.Unchanged));
         }
     }
 }

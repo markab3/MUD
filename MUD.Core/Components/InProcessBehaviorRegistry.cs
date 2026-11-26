@@ -72,6 +72,7 @@ namespace MUD.Core.Components
             var registry = new InProcessBehaviorRegistry();
             registry.Register(BleedingStatus.Module, BleedingStatus.Type, new BleedingBehavior());
             registry.Register(FoodBehavior.Module, FoodBehavior.Type, new FoodBehavior());
+            registry.Register(SecretExitBehavior.Module, SecretExitBehavior.Type, new SecretExitBehavior());
             registry.Register(WandBehavior.Module, WandBehavior.Type, new WandBehavior());
             return registry;
         }

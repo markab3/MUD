@@ -242,7 +242,7 @@ rooms:
 
             var exported = new AreaExporter(store).ExportArea("sample_area");
             Assert.True(exported.Success, string.Join("; ", exported.Errors));
-            Assert.Equal(3, importer.Import(exported.Yaml).Count(ImportAction.Unchanged));
+            Assert.Equal(4, importer.Import(exported.Yaml).Count(ImportAction.Unchanged));
         }
 
         private static string SampleAreaPath()
