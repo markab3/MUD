@@ -1,0 +1,114 @@
+@page "/next/creator/players"
+@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@inject IAdminClient Core
+@inject NavigationManager Navigation
+<PageTitle>Players - Planar Realms</PageTitle>
+<h1>Players</h1>
+@if (_presenter == null)
+{
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else
+{
+    var p = _presenter;
+    @if (p.Error != null)
+    {
+        <p role="alert" class="mud-error">@p.Error</p>
+    }
+    <form class="mud-filter" @onsubmit="ApplyFilterAsync" @onsubmit:preventDefault>
+        <div class="mud-field"><label for="pl-q">Name contains</label>
+            <input id="pl-q" type="search" value="@_filterText" @oninput="e => _filterText = e.Value?.ToString()" maxlength="@PlayerListPresenter.MaxFilterLength" autocomplete="off" /></div>
+        <div class="mud-actions">
+            <button type="submit" class="mud-btn mud-btn-primary">Filter</button>
+            <a class="mud-btn" href="@p.UrlFor(1, !p.Descending)">Name @(p.Descending ? "(Z-A)" : "(A-Z)")</a>
+        </div>
+    </form>
+
+    @* Wide screens: a table. Under 600px: the same rows as stacked cards (mobile.css switches them; no round trip). *@
+    <div class="mud-table-wrap">
+        <table class="mud-table">
+            <thead>
+                <tr>
+                    <th><a class="mud-link" href="@p.UrlFor(1, !p.Descending)">Name @(p.Descending ? "(Z-A)" : "(A-Z)")</a></th>
+                    <th>Race</th><th>Class</th><th>Gender</th><th>Location</th><th>Role</th><th>Online</th><th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var row in p.Items)
+            {
+                <tr>
+                    <td><a class="mud-link" href="@PlayerListPresenter.EditUrl(row.NameKey)">@row.Name</a></td>
+                    <td>@row.Race</td><td>@row.Class</td><td>@row.Gender</td><td>@row.Location</td>
+                    <td>@PlayerListPresenter.RoleText(row.Role)</td>
+                    <td>@PlayerListPresenter.OnlineText(row)</td>
+                    <td>@PlayerListPresenter.StatusText(row)</td>
+                </tr>
+            }
+            @if (p.Items.Count == 0)
+            {
+                <tr><td colspan="8">No players found.</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+    <ul class="mud-cardlist mud-cards">
+        @foreach (var row in p.Items)
+        {
+            <li>
+                <a class="mud-link mud-card-title" href="@PlayerListPresenter.EditUrl(row.NameKey)">@row.Name</a>
+                <dl class="mud-facts">
+                    <dt>Race</dt><dd>@row.Race</dd>
+                    <dt>Class</dt><dd>@row.Class</dd>
+                    <dt>Gender</dt><dd>@row.Gender</dd>
+                    <dt>Location</dt><dd>@row.Location</dd>
+                    <dt>Role</dt><dd>@PlayerListPresenter.RoleText(row.Role)</dd>
+                    <dt>Online</dt><dd>@PlayerListPresenter.OnlineText(row)</dd>
+                    <dt>Status</dt><dd>@PlayerListPresenter.StatusText(row)</dd>
+                </dl>
+            </li>
+        }
+        @if (p.Items.Count == 0)
+        {
+            <li>No players found.</li>
+        }
+    </ul>
+    <p>
+        Page @p.Page of @p.PageCount (@p.Total players).
+    </p>
+    <div class="mud-actions">
+        @if (p.Page > 1) { <a class="mud-btn" href="@p.UrlFor(p.Page - 1)">Previous</a> }
+        @if (p.Page < p.PageCount) { <a class="mud-btn" href="@p.UrlFor(p.Page + 1)">Next</a> }
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    // The query string is the only state of the page (as the Razor page's GET properties were).
+    [SupplyParameterFromQuery(Name = "q")] public string? Filter { get; set; }
+    [SupplyParameterFromQuery(Name = "sort")] public string? Sort { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PlayerListPresenter? _presenter;
+    private string? _filterText;
+    private string _token = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_token.Length == 0)
+        {
+            _token = (await AuthState).User.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
+        }
+        var presenter = new PlayerListPresenter(Core, _token);
+        await presenter.LoadAsync(Filter, Sort, PageNumber ?? 1);
+        _presenter = presenter;
+        _filterText = presenter.Filter;
+    }
+
+    // Filtering starts again from page one, keeping the sort order.
+    private Task ApplyFilterAsync()
+    {
+        Navigation.NavigateTo(PlayerListPresenter.PageUrl(_filterText?.Trim(), _presenter?.Descending ?? false, 1));
+        return Task.CompletedTask;
+    }
+}

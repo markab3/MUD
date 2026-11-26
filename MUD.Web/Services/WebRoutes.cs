@@ -22,8 +22,11 @@ public static class WebRoutes
 
     public static string RoomEdit(string key) => Prefix + "/creator/rooms/" + Uri.EscapeDataString(key);
 
+    public const string Players = Prefix + "/creator/players";
+    public const string Modules = Prefix + "/creator/modules";
+
+    public static string PlayerEdit(string nameKey) => Players + "/" + Uri.EscapeDataString(nameKey);
+
     // Pages that are still Razor Pages (later cards port them). The shell links to the real URLs until then.
-    public const string LegacyPlayers = "/creator/players";
-    public const string LegacyModules = "/creator/modules";
     public const string LegacyTerrain = "/creator/terrain";
 }

@@ -1,0 +1,141 @@
+@page "/next/creator/modules"
+@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@inject IAdminClient Core
+<PageTitle>Modules - Planar Realms</PageTitle>
+<h1>Modules</h1>
+@if (_presenter == null)
+{
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else
+{
+    var p = _presenter;
+    @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
+    @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
+    <p>Requests are queued on the game; the state may take a moment to change.
+        <button type="button" class="mud-btn" disabled="@_busy" @onclick="RefreshAsync">Refresh</button> to see it.</p>
+    @if (_admin) { <p>@Messages.ModuleRestartHint</p> }
+    @if (_confirm != null)
+    {
+        <ConfirmDialog Label="@(_confirm.Value.Action == ModuleAction.Stop ? "Confirm stop" : "Confirm restart")"
+                       Text="@((_confirm.Value.Action == ModuleAction.Stop ? Messages.StopModuleConfirm : Messages.RestartModuleConfirm) + " (" + _confirm.Value.Name + ")")"
+                       ConfirmText="@(_confirm.Value.Action == ModuleAction.Stop ? "Stop" : "Restart")"
+                       Busy="_busy" OnConfirm="ConfirmAsync" OnCancel="CancelConfirm" />
+    }
+
+    @* Wide screens: a table. Under 600px the same rows are stacked cards (CSS). *@
+    <div class="mud-table-wrap">
+        <table class="mud-table">
+            <thead>
+                <tr>
+                    <th>Name</th><th>Version</th><th>Status</th><th>Running</th><th>Required</th><th>Last failure</th>
+                    @if (_admin) { <th>Actions</th> }
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var m in p.Items)
+            {
+                <tr>
+                    <td>@ModulesPresenter.NameText(m)</td>
+                    <td>@ModulesPresenter.VersionText(m)</td>
+                    <td>@ModulesPresenter.StateText(m)</td>
+                    <td><strong>@(m.Running ? "[+] " : "[-] ")@ModulesPresenter.RunningText(m)</strong></td>
+                    <td>@(m.Required ? "Required" : "Optional")</td>
+                    <td>@m.LastFailure</td>
+                    @if (_admin) { <td><div class="mud-actions">@ActionButtons(m)</div></td> }
+                </tr>
+            }
+            @if (p.Items.Count == 0)
+            {
+                <tr><td colspan="@(_admin ? 7 : 6)">No modules found.</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+    <ul class="mud-cardlist mud-cards">
+        @foreach (var m in p.Items)
+        {
+            <li>
+                <strong class="mud-card-title">@ModulesPresenter.NameText(m)</strong>
+                <dl class="mud-facts">
+                    <dt>Version</dt><dd>@ModulesPresenter.VersionText(m)</dd>
+                    <dt>Status</dt><dd>@ModulesPresenter.StateText(m)</dd>
+                    <dt>Running</dt><dd><strong>@(m.Running ? "[+] " : "[-] ")@ModulesPresenter.RunningText(m)</strong></dd>
+                    <dt>Required</dt><dd>@(m.Required ? "Required" : "Optional")</dd>
+                    <dt>Last failure</dt><dd>@m.LastFailure</dd>
+                </dl>
+                @if (_admin) { <div class="mud-actions mud-card-actions">@ActionButtons(m)</div> }
+            </li>
+        }
+        @if (p.Items.Count == 0)
+        {
+            <li>No modules found.</li>
+        }
+    </ul>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private ModulesPresenter? _presenter;
+    private bool _admin;
+    private bool _busy;
+    private (ModuleAction Action, string Name)? _confirm;
+
+    // Start and Restart/Stop buttons, for admins only. Core re-checks the role on every call.
+    private RenderFragment ActionButtons(MUD.Contracts.ModuleInfo m) => __builder =>
+    {
+        if (m.Running)
+        {
+            <button type="button" class="mud-btn" disabled="@_busy" @onclick="() => Ask(ModuleAction.Stop, m.Name)">Stop</button>
+        }
+        else
+        {
+            <button type="button" class="mud-btn" disabled="@_busy" @onclick="() => RunAsync(ModuleAction.Start, m.Name)">Start</button>
+        }
+        <button type="button" class="mud-btn" disabled="@_busy" @onclick="() => Ask(ModuleAction.Restart, m.Name)">Restart</button>
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthState).User;
+        _admin = user.IsInRole(nameof(AccountRole.Admin));
+        var token = user.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
+        _presenter = new ModulesPresenter(Core, token);
+        await _presenter.LoadAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_busy || _presenter == null) { return; }
+        _busy = true;
+        try { await _presenter.LoadAsync(); }
+        finally { _busy = false; }
+    }
+
+    private void Ask(ModuleAction action, string name) => _confirm = (action, name);
+
+    private void CancelConfirm() => _confirm = null;
+
+    private async Task ConfirmAsync()
+    {
+        var c = _confirm;
+        _confirm = null;
+        if (c != null) { await RunAsync(c.Value.Action, c.Value.Name); }
+    }
+
+    // One request at a time (a double tap cannot send two); the notice stays beside the refreshed list.
+    private async Task RunAsync(ModuleAction action, string name)
+    {
+        if (_busy || _presenter == null || !_admin) { return; }
+        _busy = true;
+        try
+        {
+            if (await _presenter.ActAsync(action, name) == ModulesOutcome.Ok)
+            {
+                await _presenter.LoadAsync();   // keeps the notice; only the action clears it
+            }
+        }
+        finally { _busy = false; }
+    }
+}

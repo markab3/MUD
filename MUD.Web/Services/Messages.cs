@@ -41,6 +41,33 @@ public static class Messages
     public const string RegenFailed = "The room could not be regenerated. Please try again later.";
     public const string UpdateFailed = "The room could not be updated. Please try again later.";
 
+    // Player pages (list, edit): moved verbatim from PlayerListModel / PlayerEditModel.
+    public const string PlayerListFailed = "The player list could not be loaded. Please try again later.";
+    public const string PlayerListForbidden = "You are not allowed to list players.";
+    public const string PlayerNotFound = "That player does not exist.";
+    public const string PlayerSaveFailed = "The player could not be saved. Please try again later.";
+    public const string PlayerAuditFailed = "The change could not be recorded, so nothing was saved. Please try again later.";
+    public const string PlayerForbidden = "You are not allowed to make that change to this player.";
+    public const string PlayerLastAdmin = "The last Admin cannot lose the Admin role.";
+    public const string PlayerSaved = "Saved. The running game has the change now.";
+    public const string PlayerNoChange = "Nothing was changed.";
+    public const string PlayerCannotEdit = "You cannot edit this player: you may only edit players whose role is lower than yours.";
+    // New in the Blazor UI (WEB_BLAZOR.md 6.4 draft restore, 4.1 ConfirmDialog for destructive actions).
+    public const string PlayerDraftFound = "Unsaved changes from an earlier visit were found on this device. The player may have changed in the meantime; saving them overwrites it (last write wins).";
+    public const string RetirePlayerConfirm = "Retire this character? It can no longer log in until an Admin un-retires it.";
+
+    // Modules page: moved verbatim from ModulesModel.
+    public const string ModuleForbidden = "You are not allowed to do that.";
+    public const string ModuleFailed = "The module request could not be completed. Please try again later.";
+    public const string ModuleListFailed = "The module list could not be loaded. Please try again later.";
+    public const string ModuleRestartHint = "Restart starts a new instance before it stops the old one.";
+    public const string ModuleNothingChanged = "Nothing was changed.";
+    public const string ModuleNotFound = "That module does not exist.";
+    public const string ModuleCoreRefused = "Core refused the request.";
+    // New: confirm dialog texts for the destructive module actions.
+    public const string StopModuleConfirm = "Stop this module? Anything that depends on it stops working until it is started again.";
+    public const string RestartModuleConfirm = "Restart this module? It is replaced by a new instance.";
+
     // Draft restore (WEB_BLAZOR.md 6.4).
     public const string DraftFound = "Unsaved changes from an earlier visit were found on this device. The room may have changed in the meantime; saving them overwrites it (last write wins).";
 }
