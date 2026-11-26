@@ -136,8 +136,6 @@ namespace MUD.Main
                 //     // Load utility stuff?
                 //     .AddSingleton<CommandQueue>()
                 //     .AddTransient<InventoryItem>()
-                //     .AddTransient<Wand>()
-                //     .AddTransient<Food>()
                 //     .AddTransient<Player>()
                 //     .AddTransient<World>()
                 //     .BuildServiceProvider();
@@ -149,16 +147,6 @@ namespace MUD.Main
                 //     cm.SetIsRootClass(true);
                 //     cm.MapIdProperty("Id").SetIdGenerator(StringObjectIdGenerator.Instance);
                 //     cm.SetCreator(() => { return _serviceProvider.GetService<Item>(); });
-                // });
-                // BsonClassMap.RegisterClassMap<Wand>(cm =>
-                // {
-                //     cm.AutoMap();
-                //     cm.SetCreator(() => { return _serviceProvider.GetService<Wand>(); });
-                // });
-                // BsonClassMap.RegisterClassMap<Food>(cm =>
-                // {
-                //     cm.AutoMap();
-                //     cm.SetCreator(() => { return _serviceProvider.GetService<Food>(); });
                 // });
 
                 var database = dbClient.GetDatabase(databaseName); // This creates the database if it doesn't otherwise exist?
@@ -178,8 +166,6 @@ namespace MUD.Main
                 // helper.RegisterRootClassMap(typeof(Data.Entity));
                 // helper.RegisterClassMap(typeof(GameObject));
                 // helper.RegisterClassMap(typeof(InventoryItem));
-                // helper.RegisterClassMap(typeof(Wand));
-                // helper.RegisterClassMap(typeof(Food));
                 // helper.RegisterClassMap(typeof(Player));
 
                 // var itemCollection = database.GetCollection<InventoryItem>("item");
@@ -193,28 +179,7 @@ namespace MUD.Main
                 // };
                 // newItem.Update();
 
-                // Wand newWand = new Wand(database)
-                // {
-                //     ShortDescription = "wand of missiles",
-                //     LongDescription = "This is a short, straight stick that has been polished and painted red. It has been imbued with magical power such that it will shoot magic missiles at one's foe.",
-                //     CurrentCharges = 8,
-                //     MaxCharges = 10
-                // };
-                // newWand.Update();
-
-                // Food newFood = new Food(database)
-                // {
-                //     ShortDescription = "loaf of bread",
-                //     LongDescription = "A toasty, scrumptious loaf of fresh bread.",
-                //     Servings = 2
-                // };
-                // newFood.Update();
-
                 // var item = itemCollection.Find<InventoryItem>((m => m.Id == newItem.Id)).FirstOrDefault();
-                // var wand = (Wand)itemCollection.Find<InventoryItem>((m => m.Id == newWand.Id)).FirstOrDefault();
-                // wand.UseWand();
-                // wand.Update();
-                // var food = itemCollection.Find<InventoryItem>((m => m.Id == newFood.Id)).FirstOrDefault();
 
                 // var playerCollection = database.GetCollection<Player>("players");
 

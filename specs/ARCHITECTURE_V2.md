@@ -82,7 +82,7 @@ MUD.Data.Entity            string Id (Mongo _id), Clone<T>()               MUD.D
  |    |                    RoomCommandSource built from Exits, TellRoom/EnterRoom/ExitRoom, Save/SaveState,
  |    |                    ApplyDefinition, ApplyWebEdit                    Room.cs
  |    +-- InventoryItem    empty                                           InventoryItem.cs
- |    |    +-- Food, Wand  subclasses overriding Examine()                  Food.cs, Wand.cs (not registered: DI lines are commented out in Program.cs)
+ |    |    (the Food and Wand subclasses are retired: they are now the food and wand behaviors, see section 5)
  |    +-- Feature          RoomLine, DetailDescription, virtual getters     Feature.cs
  +-- Exit (plain class)    Name, DestinationId                             Exit.cs
  +-- ExtendedProperty (abstract, an Entity) objectContext, InitializeProperty(), RemoveProperty()   Properties/ExtendedProperty.cs
@@ -91,7 +91,7 @@ MUD.Data.Entity            string Id (Mongo _id), Clone<T>()               MUD.D
 
 How behaviour is attached today:
 
-- **Inheritance**: `Living` -> `Player`/`NPC`; `GameObject` -> `Room`, `InventoryItem` -> `Food`/`Wand`. Subclass
+- **Inheritance**: `Living` -> `Player`/`NPC`; `GameObject` -> `Room`, `InventoryItem` (the former `Food`/`Wand` subclasses are now behaviors, below). Subclass
   behaviour is by `virtual` overrides (`Examine`, `GetRoomLine`, ...). Mongo persists the class through the BSON
   discriminator, with class maps registered by `MongoDBClassMapManager` and objects constructed through DI
   (`World.LoadTypes()` registers every non-abstract `Entity` as a transient).
@@ -302,7 +302,7 @@ core-owned operations apply to it.
 | `room` | `Room` | `Description`, `Exits`, `Position` (area, X/Y/Z), `Contents` | Occupants derived from location, not stored. Carries behavior list |
 | `player` | `Player` | `Description`, `Location`, `Container`, `Account`, `Roles`, `Body` | Carries behavior list. Account holds name, NameKey, password (plaintext for now), Retired, term preference |
 | `npc` | `NPC` | `Description`, `Location`, `Container`, `Body` | No Account. Carries behavior list |
-| `item` | `InventoryItem`, `Food`, `Wand` | `Description`, `Location` | Carries behavior list. `Food.Servings`, `Wand.CurrentCharges` become components |
+| `item` | `InventoryItem` | `Description`, `Location` | Carries behavior list. Food and wand are behaviors on an item: component `food.servings` `{servings}` with a `command.entered` entry (`food`, `Food`; verb `eat`), and component `wand.charges` `{current, max}` with a `command.entered` entry (`wand`, `Wand`; verbs `zap`, `use`). Both ship in core (`InProcessBehaviorRegistry`); the verb works only while the item is in the player's inventory |
 | `feature` | `Feature` | `Description`, `FeatureText` | **Inert (D14): no behavior list.** Stays attached to a room (embedded or child entity: not decided, see G14) |
 
 `Living` disappears as a type: "living" becomes a query ("has `Location` and `Body`"). `if (x is Living)` becomes `if (x.Has<Body>())`.
@@ -422,7 +422,7 @@ documents; purging orphaned module data is deferred (open item).
 |---|---|
 | `Living` : `Player`, `NPC` | kinds + components; `Living` = "has Location + Body" |
 | `Room` subclass via `class:` | plain `room` kind + behavior entries; ROOM_FILES 8 `class:` is superseded (D39) |
-| `InventoryItem` : `Food`, `Wand` | `item` kind + components (`food.servings`, `wand.charges`) and behavior entries |
+| `InventoryItem` : `Food`, `Wand` | `item` kind + components (`food.servings`, `wand.charges`) and behavior entries (done: `FoodBehavior`, `WandBehavior`, hook `command.entered`) |
 | `AdminProperty`, `CreatorProperty` | `Roles` core component |
 | `BleedingProperty` (heartbeat) | a behavior entry on the living: `Hook = heartbeat`, `Type = "Bleeding"` with a component for its remaining duration; timed effects time themselves out (D11) |
 | `BasicSearchProperty` | search stays baked into core like look (D2); its per-room configuration (reward, cooldown) becomes a core component, so ROOM_FILES 7.4's "cooldowns reset on every boot" gap is fixed by moving `_nextReward` into component state. No extension slot is created for search |
@@ -583,7 +583,7 @@ CORE_API.md section 9.
 
 1. `Living.ResolveCommand` checks `CreatorCommands` for Admins instead of `AdminCommands` (`MUD.Core/GameObjects/Living.cs`, Admin branch).
 2. `ExtendedProperty.InitializeProperty/RemoveProperty` have no caller outside the property classes (grep in this revision found only overrides and `BleedingProperty`'s own `RemoveProperty()` call).
-3. `Food`/`Wand` are not registered for DI (commented-out lines in `MUD.Main/Program.cs` ~156-157, 170-178, 198-199), so they cannot be loaded from Mongo.
+3. ~~`Food`/`Wand` are not registered for DI~~ Resolved: the subclasses and the commented-out registrations are removed. Food and wand are behaviors (a component plus a `command.entered` entry) on any `InventoryItem`, so they load from Mongo as plain items.
 4. Six empty command source files (0 bytes: `Admin/ShutdownCommand.cs`, `Creator/{Dest,Edit,LS,Proto,RM}Command.cs`); the original card's "44 command classes" does not match the code (33 real).
 5. Heartbeats only reach players, not NPCs or rooms (`World.doHeartbeat`, `MUD.Core/World.cs:633`).
 6. `CommandSource.GetCommandFromInput` is a prefix match whose first-match order depends on dictionary enumeration.
