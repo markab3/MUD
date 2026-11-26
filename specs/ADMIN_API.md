@@ -93,6 +93,16 @@ Owner decision (supersedes `specs/WEB_EDITING.md` Q3): a creator can add, edit, 
 - Never touched: `Items`, occupants. The live change is applied with the other room fields on the game thread; occupants get the usual
   "Something feels different..." message.
 
+## Room behaviors and search entries (read-only)
+
+`RoomDetail` carries two read-only lists so the website's room page can show what is attached to a room. Logic: `AdminApi.RoomFrom` (live room and stored document).
+
+- `behaviors = 11`: `RoomBehavior { hook, module, type, priority, config_json }`, one per `BehaviorRef` in the room's stored order. `config_json` is the entry's config as compact JSON text (no whitespace; string escaping is the .NET default, so `"` and non-ASCII appear as `\uXXXX`); `"{}"` when the config is empty or cannot be converted, never empty or null. `schemaVersion` is not exposed.
+- `searches = 12`: `RoomSearchEntry { id, target, refresh_ms, reward_short }`, one per entry of the room's core `search` component in stored order (the sample hall's table search is a component, not a behavior entry). The reward item is exposed only as its short description (empty when there is no reward). The cooldown `nextRewardAt` is runtime state and not exposed.
+- Filled by `GetRoom` and `ListRooms`, from the live room when it is loaded and from the stored document otherwise. Authorisation is unchanged (creator or admin).
+- **UpdateRoom never touches them.** `RoomEditRequest` has no behaviors or searches field, so a client cannot send them; core diffs only the editable fields, so existing behaviors and search entries survive any edit, and no audit row mentions them (regression test `UpdateRoomIgnoresSentBehaviorsAndSearchesAndKeepsTheStoredOnes`). Replies to updates carry the unchanged lists.
+- **Contract version.** The additions are new optional fields, so old and new callers interoperate on the wire; `ContractVersion.Current` stays 1, as it did for `gen`, `template_id` and the earlier additive fields (see the open point below).
+
 ## Live objects
 
 An edit to a room or player that is loaded changes the live object on the game thread after the database write was handed over (room edits go

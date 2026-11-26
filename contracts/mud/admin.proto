@@ -206,7 +206,17 @@ message RoomDetail {
   repeated RoomFeature features = 9;
   // Generator provenance. Absent for authored rooms; present means the generator owns the room (regen and update apply).
   RoomGen gen = 10;
+  // The room's behavior entries in stored order. Read-only: UpdateRoom ignores it and never touches the room's behaviors.
+  repeated RoomBehavior behaviors = 11;
+  // The room's core search component entries in stored order. Read-only: UpdateRoom ignores it and never touches them.
+  repeated RoomSearchEntry searches = 12;
 }
+
+// One behavior entry of a room (BehaviorRef). config_json is the entry's config as compact JSON text; "{}" when there is none, never empty.
+message RoomBehavior { string hook = 1; string module = 2; string type = 3; int32 priority = 4; string config_json = 5; }
+
+// One entry of a room's core search component. The reward is exposed only as its short description (empty when there is no reward).
+message RoomSearchEntry { string id = 1; string target = 2; int32 refresh_ms = 3; string reward_short = 4; }
 
 message ListRoomsReply { repeated RoomDetail rooms = 1; }
 

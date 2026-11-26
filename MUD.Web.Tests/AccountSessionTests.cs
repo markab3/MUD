@@ -152,6 +152,7 @@ public class FakeAdminClient : IAdminClient
             if (request.HasZ) { current.Z = request.Z; }
             current.Exits.Clear();
             current.Exits.AddRange(request.Exits);
+            // Behaviors and searches are read-only: an edit never changes them (they stay as cloned from the stored room).
             // What core does: Features change only when the caller says it sent them (features_present).
             if (request.FeaturesPresent)
             {
@@ -726,8 +727,16 @@ public class GrpcAdminClientSocketTests : IDisposable
         {
             RequireToken(request.Token);
             return Task.FromResult(request.Key == "t.hall"
-                ? new GetRoomReply { Found = true, Room = new RoomDetail { Key = "t.hall", Area = "t" } }
+                ? new GetRoomReply { Found = true, Room = HallWithBehaviors() }
                 : new GetRoomReply { Found = false });
+        }
+
+        private static RoomDetail HallWithBehaviors()
+        {
+            var hall = new RoomDetail { Key = "t.hall", Area = "t" };
+            hall.Behaviors.Add(new RoomBehavior { Hook = "room.entered", Module = "m", Type = "T", Priority = 2, ConfigJson = "{\"a\":1}" });
+            hall.Searches.Add(new RoomSearchEntry { Id = "table", Target = "table", RefreshMs = 500, RewardShort = "a coin" });
+            return hall;
         }
 
         public override Task<RoomEditReply> CreateRoom(RoomEditRequest request, Grpc.Core.ServerCallContext context)
@@ -791,7 +800,10 @@ public class GrpcAdminClientSocketTests : IDisposable
         var client = await Start();
         var rooms = await client.ListRoomsAsync("tok");
         Assert.Equal("t.hall", Assert.Single(rooms).Key);
-        Assert.Equal("t.hall", (await client.GetRoomAsync("tok", "t.hall"))!.Key);
+        var hall = (await client.GetRoomAsync("tok", "t.hall"))!;
+        Assert.Equal("t.hall", hall.Key);
+        Assert.Equal(("room.entered", "m", "T", 2, "{\"a\":1}"), (hall.Behaviors[0].Hook, hall.Behaviors[0].Module, hall.Behaviors[0].Type, hall.Behaviors[0].Priority, hall.Behaviors[0].ConfigJson));
+        Assert.Equal(("table", "table", 500, "a coin"), (hall.Searches[0].Id, hall.Searches[0].Target, hall.Searches[0].RefreshMs, hall.Searches[0].RewardShort));
         Assert.Null(await client.GetRoomAsync("tok", "t.nope"));
         var created = await client.CreateRoomAsync("tok", new RoomEditRequest { Key = "t.new" });
         Assert.Equal((AdminResult.Ok, "t.new"), (created.Result, created.Room.Key));
