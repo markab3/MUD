@@ -406,8 +406,8 @@ public class TerrainPresenterTests
     }
 
     [Theory]
-    [InlineData("TerrainList", "/next/creator/terrain")]
-    [InlineData("TerrainEdit", "/next/creator/terrain/edit")]
+    [InlineData("TerrainList", "/creator/terrain")]
+    [InlineData("TerrainEdit", "/creator/terrain/edit")]
     public void ThePages_RequireTheCreatorOrAdminPolicy_OnTheirRoutes(string name, string route)
     {
         var type = Component(name);

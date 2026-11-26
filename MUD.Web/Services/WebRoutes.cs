@@ -5,9 +5,9 @@ namespace MUD.Web.Services;
 // table test pins each one against these constants.
 public static class WebRoutes
 {
-    public const string Prefix = "/next";
+    public const string Prefix = "";
 
-    public const string Home = Prefix;
+    public const string Home = "/";
     public const string Login = Prefix + "/login";
     public const string Logout = Prefix + "/logout";
     public const string AccessDenied = Prefix + "/access-denied";

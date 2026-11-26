@@ -32,9 +32,7 @@ builder.Services.AddAuthorization(WebPolicies.Configure);
 builder.Services.AddSingleton<IRoomCreationService, RoomCreationService>();
 // The player pages go through the Admin service as well; core applies the rules and writes the audit rows (D34).
 
-builder.Services.AddRazorPages();
-
-// Blazor Server with Fluent UI (WEB_BLAZOR.md): beside the Razor Pages, under /next, until the cutover card. Interactive server only.
+// Blazor Server with Fluent UI (WEB_BLAZOR.md) is the only UI. Interactive server only.
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddFluentUIComponents();
 builder.Services.AddScoped<NoticeService>();
@@ -57,7 +55,6 @@ app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
-app.MapRazorPages();
 LogoutEndpoint.Map(app);
 app.MapRazorComponents<MUD.Web.Components.App>().AddInteractiveServerRenderMode();
 app.Run();

@@ -15,7 +15,7 @@ public enum RoomEditOutcome
     Deleted,    // the room is gone
 }
 
-// The room edit logic (moved from RoomEditModel; FeatureInput stays declared beside the Razor page model until cutover), free of HttpContext, ModelState, TempData and IActionResult. Core validates, audits and
+// The room edit logic (moved from RoomEditModel), free of HttpContext, ModelState, TempData and IActionResult. Core validates, audits and
 // applies the edit (last write wins, D30). All messages are fixed strings; nothing from an exception is echoed. The room key and the token come
 // from the constructor (route and circuit) only, so the form cannot redirect a save to another room.
 public sealed class RoomEditPresenter
@@ -418,4 +418,16 @@ public sealed class RoomEditPresenter
             Handles = string.Join(", ", f.Handles), Adjectives = string.Join(", ", f.Adjectives), Plurals = string.Join(", ", f.Plurals),
         }).ToList();
     }
+}
+
+/// <summary>One feature row of the room edit form. Each word list is one text field: words separated by commas or spaces.</summary>
+public class FeatureInput
+{
+    public string? Short { get; set; }
+    public string? Long { get; set; }
+    public string? RoomLine { get; set; }
+    public string? Detail { get; set; }
+    public string? Handles { get; set; }
+    public string? Adjectives { get; set; }
+    public string? Plurals { get; set; }
 }
