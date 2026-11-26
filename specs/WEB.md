@@ -4,6 +4,15 @@
 > phone-first) running in this host and calling core through `IAdminClient`. See [WEB_BLAZOR.md](WEB_BLAZOR.md). Until that is built, this file describes the
 > current behaviour, which the new design must preserve (routes, policies, messages, auth model, caveats).
 
+> **Blazor foundation (built, card t_4b0a86b1):** Blazor Server + Fluent UI 4.14.5 now runs in this host beside the Razor Pages, under the
+> temporary prefix `/next` (`WebRoutes.Prefix`). Ported so far: `/next/login` (static SSR, antiforgery form), `POST /next/logout` (minimal endpoint,
+> antiforgery), `/next/character`, `/next/account/password`, `/next/access-denied`, `/next` (redirect), plus the responsive shell (bottom bar on phone, left rail
+> from 600px), reconnect banner and circuit settings (20 min retention, 60 s client timeout). The user comes from the `mud.session` cookie; a circuit re-checks the
+> token with core every 30 s (`SessionAuthenticationStateProvider`), so a lowered role or ended session applies within one interval. Logic lives in
+> `LoginPresenter` / `PasswordPresenter` (same behaviour and messages as the page models; sentences in `Messages.cs`). The other pages are still Razor Pages;
+> the shell links to them at their real URLs. Deviations from WEB_BLAZOR.md: .NET 8 has no `[ExcludeFromInteractiveRouting]`, so `App.razor` picks the static render mode by path
+> (`/next`, `/next/login`); Log out posts a hidden antiforgery token passed from `App.razor` to the layout. Not exercised: a signed-in circuit end to end (no core in the sandbox), real phone, bUnit.
+
 ASP.NET Core (Razor Pages, net8.0) site for logging in with the same character
 accounts the telnet game uses. It does not start the World or the telnet
 server and does not reference MUD.Core. It is a client of core's Admin service on `frontends.sock` and has no

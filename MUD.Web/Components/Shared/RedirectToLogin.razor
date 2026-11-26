@@ -1,0 +1,7 @@
+@inject NavigationManager Navigation
+@code {
+    // Anonymous visitor on a protected component: same as the handler's challenge today (ReturnUrl is passed, login still ignores it).
+    // A full page load, so the login page is the static one.
+    protected override void OnInitialized() =>
+        Navigation.NavigateTo(WebRoutes.Login + "?ReturnUrl=" + Uri.EscapeDataString(Navigation.ToBaseRelativePath(Navigation.Uri).Insert(0, "/")), forceLoad: true);
+}

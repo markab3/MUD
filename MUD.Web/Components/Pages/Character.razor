@@ -1,0 +1,12 @@
+@page "/next/character"
+@attribute [Authorize]
+<PageTitle>Character - Planar Realms</PageTitle>
+<p>Hello (@_name)!</p>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    private string _name = string.Empty;
+
+    protected override async Task OnInitializedAsync() =>
+        _name = (await AuthState).User.FindFirstValue(ClaimTypes.Name) ?? string.Empty;
+}

@@ -1,0 +1,50 @@
+@page "/next/login"
+@attribute [AllowAnonymous]
+@inject IAdminClient Core
+@inject NavigationManager Navigation
+<PageTitle>Log in - Planar Realms</PageTitle>
+<div class="mud-login">
+<h1>Log in</h1>
+@if (_error != null)
+{
+    <p role="alert" class="mud-error">@_error</p>
+}
+<EditForm Model="Form" FormName="login" OnSubmit="SubmitAsync" method="post" Enhance="false">
+    <div class="mud-field"><label for="login-name">Character name</label>
+        <InputText id="login-name" @bind-Value="Form.Name" autocomplete="username" maxlength="64" required="required" /></div>
+    <div class="mud-field"><label for="login-password">Password</label>
+        <InputText id="login-password" type="password" @bind-Value="Form.Password" autocomplete="current-password" required="required" /></div>
+    <button type="submit" class="mud-btn mud-btn-primary">Log in</button>
+</EditForm>
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm(FormName = "login")] private LoginForm Form { get; set; } = new();
+    private string? _error;
+
+    public sealed class LoginForm
+    {
+        public string? Name { get; set; }
+        public string? Password { get; set; }
+    }
+
+    protected override void OnInitialized()
+    {
+        if (HttpContext.User.Identity?.IsAuthenticated == true) { Navigation.NavigateTo(WebRoutes.Character); }
+    }
+
+    private async Task SubmitAsync()
+    {
+        var remoteKey = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var presenter = new LoginPresenter(Core);
+        var outcome = await presenter.SignInAsync(Form.Name, Form.Password, remoteKey, HttpContext.RequestAborted);
+        if (outcome == LoginOutcome.SignedIn)
+        {
+            HttpContext.Response.Cookies.Append(SessionAuthentication.CookieName, presenter.Token!, SessionAuthentication.CookieOptionsFor(HttpContext.Request));
+            Navigation.NavigateTo(WebRoutes.Character);
+            return;
+        }
+        _error = presenter.Error;
+    }
+}

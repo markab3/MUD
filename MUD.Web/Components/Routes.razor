@@ -1,0 +1,37 @@
+<CascadingValue Value="_tokens">
+<CascadingAuthenticationState>
+    <Router AppAssembly="typeof(Program).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
+                <NotAuthorized>
+                    @if (context.User.Identity?.IsAuthenticated == true)
+                    {
+                        <AccessDeniedView />
+                    }
+                    else
+                    {
+                        <RedirectToLogin />
+                    }
+                </NotAuthorized>
+                <Authorizing><p class="mud-loading" aria-busy="true">Loading...</p></Authorizing>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <LayoutView Layout="typeof(MainLayout)">
+                <h1>Not found</h1>
+                <p>There is nothing at this address.</p>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>
+</CascadingValue>
+
+@code {
+    [Parameter] public string FormFieldName { get; set; } = string.Empty;
+    [Parameter] public string RequestToken { get; set; } = string.Empty;
+
+    private AntiforgeryTokens _tokens = new(string.Empty, string.Empty);
+
+    protected override void OnParametersSet() => _tokens = new AntiforgeryTokens(FormFieldName, RequestToken);
+}

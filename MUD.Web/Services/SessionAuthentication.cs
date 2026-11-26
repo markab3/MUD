@@ -26,6 +26,20 @@ public static class SessionAuthentication
     public static string TokenFrom(HttpRequest request) =>
         request.Cookies.TryGetValue(CookieName, out var token) ? token ?? string.Empty : string.Empty;
 
+    // Server-side claims that let a circuit (which has no HttpContext after it starts) re-check the session and key the password
+    // throttle. They live in the principal on the server only and are never rendered or sent to the browser.
+    public const string TokenClaim = "mud:session-token";
+    public const string RemoteClaim = "mud:remote";
+
+    public static ClaimsPrincipal BuildPrincipal(SessionInfoReply session, string token, string? remote) =>
+        new(new ClaimsIdentity(new[]
+        {
+            new Claim(ClaimTypes.Name, session.PlayerName),
+            new Claim(ClaimTypes.Role, RoleFrom(session.Role).ToString()),
+            new Claim(TokenClaim, token),
+            new Claim(RemoteClaim, remote ?? "unknown"),
+        }, Scheme));
+
     public static AccountRole RoleFrom(AdminRole role) => role switch
     {
         AdminRole.Admin => AccountRole.Admin,
@@ -71,12 +85,8 @@ public sealed class SessionAuthenticationHandler : AuthenticationHandler<Authent
             return AuthenticateResult.NoResult();
         }
 
-        var identity = new ClaimsIdentity(new[]
-        {
-            new Claim(ClaimTypes.Name, session.PlayerName),
-            new Claim(ClaimTypes.Role, SessionAuthentication.RoleFrom(session.Role).ToString()),
-        }, SessionAuthentication.Scheme);
-        return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), SessionAuthentication.Scheme));
+        var principal = SessionAuthentication.BuildPrincipal(session, token, Context.Connection.RemoteIpAddress?.ToString());
+        return AuthenticateResult.Success(new AuthenticationTicket(principal, SessionAuthentication.Scheme));
     }
 
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)

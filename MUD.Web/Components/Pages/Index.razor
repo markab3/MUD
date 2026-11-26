@@ -1,0 +1,10 @@
+@page "/next"
+@attribute [AllowAnonymous]
+@inject NavigationManager Navigation
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    // Static page, like the Razor Index: a real redirect to the character page or the login page.
+    protected override void OnInitialized() =>
+        Navigation.NavigateTo(HttpContext.User.Identity?.IsAuthenticated == true ? WebRoutes.Character : WebRoutes.Login);
+}
