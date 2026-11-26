@@ -1,0 +1,320 @@
+@page "/next/creator/rooms/{Key}"
+@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@inject IAdminClient Core
+@inject NavigationManager Navigation
+@inject NoticeService Notices
+@inject DraftStore Drafts
+<PageTitle>Edit room - Planar Realms</PageTitle>
+<h1>Edit room</h1>
+@if (_presenter == null)
+{
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else if (_presenter.IsMissing)
+{
+    <p role="alert" class="mud-error">@_presenter.Error</p>
+    <p><a class="mud-btn" href="@WebRoutes.Map">Back to the map</a></p>
+}
+else
+{
+    var p = _presenter;
+    <p>Room key: <code>@p.Key</code> (read-only)</p>
+    @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
+    @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
+    @if (p.Problems.Count > 0)
+    {
+        <ul role="alert" class="mud-error">
+            @foreach (var m in p.Problems) { <li>@m</li> }
+        </ul>
+    }
+    @if (_draftOffer != null)
+    {
+        <div class="mud-draft" role="status">
+            <p>@Messages.DraftFound</p>
+            <div class="mud-actions">
+                <button type="button" class="mud-btn" @onclick="RestoreDraft">Restore unsaved changes</button>
+                <button type="button" class="mud-btn" @onclick="DiscardDraft">Discard</button>
+            </div>
+        </div>
+    }
+    <form @onsubmit="SaveAsync" @onsubmit:preventDefault novalidate>
+        <section class="mud-section">
+            <h2>Basics</h2>
+            <div class="mud-field"><label for="re-short">Short description</label>
+                <input id="re-short" value="@p.Short" @onchange="e => Edit(() => p.Short = e.Value?.ToString())" maxlength="100" required /></div>
+            <div class="mud-field"><label for="re-long">Long description</label>
+                <textarea id="re-long" value="@p.Long" @onchange="e => Edit(() => p.Long = e.Value?.ToString())" maxlength="4000" rows="8" required></textarea></div>
+            <div class="mud-field"><label for="re-area">Area prefix</label>
+                <input id="re-area" value="@p.Area" maxlength="128" readonly />
+                <span class="mud-hint">(fixed by the room key; rooms cannot be renamed)</span></div>
+            <div class="mud-coords">
+                <div class="mud-field"><label for="re-x">X</label>
+                    <input id="re-x" type="number" inputmode="numeric" value="@p.X" @onchange="e => Edit(() => p.X = ParseInt(e.Value))" /></div>
+                <div class="mud-field"><label for="re-y">Y</label>
+                    <input id="re-y" type="number" inputmode="numeric" value="@p.Y" @onchange="e => Edit(() => p.Y = ParseInt(e.Value))" /></div>
+                <div class="mud-field"><label for="re-z">Z</label>
+                    <input id="re-z" type="number" inputmode="numeric" value="@p.Z" @onchange="e => Edit(() => p.Z = ParseInt(e.Value))" /></div>
+            </div>
+            <p class="mud-hint">(leave a field blank for an unplaced room; blank is not 0)</p>
+        </section>
+
+        <section class="mud-section">
+            <h2>Exits</h2>
+            <ExitRows Id="re-exit" Exits="p.Exits" Max="RoomEditPresenter.MaxFormExits" AllowAdd="true" AllowRemove="true"
+                      ConfirmDangling="p.ConfirmDangling" ConfirmDanglingChanged="v => Edit(() => p.ConfirmDangling = v)"
+                      OnAdd="p.AddExit" OnRemove="p.RemoveExit" Changed="SaveDraftAsync" />
+        </section>
+
+        <section class="mud-section">
+            <h2>Features</h2>
+            <fieldset class="mud-fieldset">
+                <legend>Features (things in the room that players can look at)</legend>
+                <p class="mud-hint">Handles, adjectives and plurals: separate words with commas or spaces, for example <code>fountain, basin</code>.
+                A feature keeps any behavior or component set up with the in-game creator commands while its short description stays the same;
+                renaming or removing a feature drops that behavior. The order here is the stored order.</p>
+                @for (var i = 0; i < p.Features.Count; i++)
+                {
+                    var index = i;
+                    var f = p.Features[index];
+                    <div class="mud-row-card">
+                        <h3>Feature @(index + 1)</h3>
+                        <div class="mud-field"><label for="re-f@(index)-short">Short</label>
+                            <input id="re-f@(index)-short" value="@f.Short" @onchange="e => Edit(() => f.Short = e.Value?.ToString())" maxlength="100" /></div>
+                        <div class="mud-field"><label for="re-f@(index)-long">Long</label>
+                            <textarea id="re-f@(index)-long" value="@f.Long" @onchange="e => Edit(() => f.Long = e.Value?.ToString())" maxlength="4000" rows="4"></textarea></div>
+                        <div class="mud-field"><label for="re-f@(index)-line">Room line (optional)</label>
+                            <input id="re-f@(index)-line" value="@f.RoomLine" @onchange="e => Edit(() => f.RoomLine = e.Value?.ToString())" maxlength="4000" /></div>
+                        <div class="mud-field"><label for="re-f@(index)-detail">Detail (optional)</label>
+                            <textarea id="re-f@(index)-detail" value="@f.Detail" @onchange="e => Edit(() => f.Detail = e.Value?.ToString())" maxlength="4000" rows="3"></textarea></div>
+                        <div class="mud-field"><label for="re-f@(index)-handles">Handles (comma or space separated)</label>
+                            <input id="re-f@(index)-handles" value="@f.Handles" @onchange="e => Edit(() => f.Handles = e.Value?.ToString())" autocapitalize="none" /></div>
+                        <div class="mud-field"><label for="re-f@(index)-adj">Adjectives (comma or space separated)</label>
+                            <input id="re-f@(index)-adj" value="@f.Adjectives" @onchange="e => Edit(() => f.Adjectives = e.Value?.ToString())" autocapitalize="none" /></div>
+                        <div class="mud-field"><label for="re-f@(index)-pl">Plurals (comma or space separated)</label>
+                            <input id="re-f@(index)-pl" value="@f.Plurals" @onchange="e => Edit(() => f.Plurals = e.Value?.ToString())" autocapitalize="none" /></div>
+                        <div class="mud-actions">
+                            <button type="button" class="mud-btn" @onclick="() => Edit(() => p.MoveFeatureUp(index))">Move up</button>
+                            <button type="button" class="mud-btn" @onclick="() => Edit(() => p.MoveFeatureDown(index))">Move down</button>
+                            <button type="button" class="mud-btn" @onclick="() => Edit(() => p.RemoveFeature(index))">Remove</button>
+                        </div>
+                    </div>
+                }
+                <p class="mud-hint">@p.Features.Count of @RoomEditPresenter.MaxFormFeatures features</p>
+                <div class="mud-actions"><button type="button" class="mud-btn" disabled="@(p.Features.Count >= RoomEditPresenter.MaxFormFeatures)" @onclick="() => Edit(p.AddFeature)">Add feature</button></div>
+            </fieldset>
+        </section>
+
+        <div class="mud-sticky-actions">
+            <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Save room</button>
+        </div>
+    </form>
+
+    @if (p.IsGenerated)
+    {
+        <section class="mud-section">
+            <h2>Generated room</h2>
+            <p>Made by the map generator: map <code>@p.GenMap</code>, terrain <code>@p.GenTerrain</code>.</p>
+            @if (_confirmRegen)
+            {
+                <div class="mud-confirm" role="alertdialog" aria-label="Confirm regen">
+                    <p>@Messages.RegenWarning</p>
+                    <div class="mud-actions">
+                        <button type="button" class="mud-btn mud-btn-danger mud-save" disabled="@_busy" @onclick="ConfirmRegenAsync">Regen</button>
+                        <button type="button" class="mud-btn" @onclick="CancelRegen">Cancel</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="mud-actions">
+                    <button type="button" class="mud-btn mud-save" disabled="@_busy" @onclick="AskRegen">Regen</button>
+                </div>
+                <p class="mud-hint">Replaces the description, all features (hand-added too) and properties from the generator. Hand edits are lost. Exits and occupants stay.</p>
+                <div class="mud-actions">
+                    <button type="button" class="mud-btn mud-save" disabled="@_busy" @onclick="UpdateGeneratedAsync">Update</button>
+                </div>
+                <p class="mud-hint">Refreshes only features made from a library template, when the template is newer. The description and hand-added features are not touched.</p>
+            }
+        </section>
+    }
+
+    <section class="mud-section">
+        <h2>Move room (change its key)</h2>
+        <div class="mud-field"><label for="re-newarea">Area prefix</label>
+            <input id="re-newarea" value="@p.NewArea" @onchange="e => p.NewArea = e.Value?.ToString()" maxlength="128" list="re-area-list" autocomplete="off" autocapitalize="none" required /></div>
+        <datalist id="re-area-list">
+            @foreach (var a in _areas) { <option value="@a"></option> }
+        </datalist>
+        <div class="mud-field"><label for="re-newlocal">Local key</label>
+            <input id="re-newlocal" value="@p.NewLocalKey" @onchange="e => p.NewLocalKey = e.Value?.ToString()" maxlength="64" autocomplete="off" autocapitalize="none" required /></div>
+        <div class="mud-actions"><button type="button" class="mud-btn mud-save" disabled="@_busy" @onclick="MoveAsync">Move room</button></div>
+        <p class="mud-hint">The new key is <code>area prefix.local key</code>. Exits that lead here, players standing here, and everything inside follow the room. The default room cannot be moved.</p>
+    </section>
+
+    <section class="mud-section mud-danger">
+        <h2>Delete</h2>
+        <div class="mud-actions"><button type="button" class="mud-btn mud-btn-danger mud-save" disabled="@_busy" @onclick="DeleteAsync">Delete this room</button></div>
+        <p class="mud-hint">Everything inside is moved to a neighbouring room, or to the default room. The default room cannot be deleted.</p>
+    </section>
+    <p><a class="mud-btn" href="@WebRoutes.Map">Back to the map</a></p>
+}
+
+@code {
+    [Parameter] public string Key { get; set; } = string.Empty;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private RoomEditPresenter? _presenter;
+    private IReadOnlyList<string> _areas = Array.Empty<string>();
+    private string _draftKey = string.Empty;
+    private bool _busy;
+    private bool _confirmRegen;
+    private RoomEditDraft? _draftOffer;
+    private string? _loadedKey;
+    private string _token = string.Empty;
+    private string _user = string.Empty;
+
+    // The editable fields kept in the browser while editing (WEB_BLAZOR.md 6.4). No secret is in here.
+    public sealed class RoomEditDraft
+    {
+        public string? Short { get; set; }
+        public string? Long { get; set; }
+        public int? X { get; set; }
+        public int? Y { get; set; }
+        public int? Z { get; set; }
+        public bool ConfirmDangling { get; set; }
+        public List<ExitInput> Exits { get; set; } = new();
+        public List<FeatureInput> Features { get; set; } = new();
+
+        public bool SameAs(RoomEditDraft other) =>
+            System.Text.Json.JsonSerializer.Serialize(this) == System.Text.Json.JsonSerializer.Serialize(other);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // The key comes from the route only. A different route value (a moved room, another room) reloads everything.
+        if (_loadedKey == Key) { return; }
+        _loadedKey = Key;
+        _confirmRegen = false;
+        _draftOffer = null;
+        var user = (await AuthState).User;
+        _token = user.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
+        _user = user.FindFirstValue(ClaimTypes.Name) ?? string.Empty;
+        _draftKey = DraftStore.KeyFor(_user, WebRoutes.RoomEdit(Key));
+        var presenter = new RoomEditPresenter(Core, _token, Key);
+        if (await presenter.LoadAsync() == RoomEditOutcome.Ok)
+        {
+            _areas = await presenter.GetAreasAsync();
+            presenter.Notice = Notices.Take();
+        }
+        _presenter = presenter;
+        _stored = Snapshot();
+    }
+
+    private RoomEditDraft? _stored;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // JS interop is only available after the first render; the offer is made once, when the room loaded.
+        if (!firstRender || _presenter == null || _presenter.IsMissing) { return; }
+        var draft = await Drafts.LoadAsync<RoomEditDraft>(_draftKey);
+        if (draft != null && _stored != null && !draft.SameAs(_stored))
+        {
+            _draftOffer = draft;
+            StateHasChanged();
+        }
+    }
+
+    private RoomEditDraft? Snapshot() => _presenter == null || _presenter.IsMissing ? null : new RoomEditDraft
+    {
+        Short = _presenter.Short, Long = _presenter.Long, X = _presenter.X, Y = _presenter.Y, Z = _presenter.Z,
+        ConfirmDangling = _presenter.ConfirmDangling,
+        Exits = _presenter.Exits.Select(e => new ExitInput { Dir = e.Dir, To = e.To }).ToList(),
+        Features = _presenter.Features.Select(f => new FeatureInput
+        {
+            Short = f.Short, Long = f.Long, RoomLine = f.RoomLine, Detail = f.Detail, Handles = f.Handles, Adjectives = f.Adjectives, Plurals = f.Plurals,
+        }).ToList(),
+    };
+
+    private static int? ParseInt(object? value) =>
+        int.TryParse(value?.ToString(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : null;
+
+    private Task Edit(Action change)
+    {
+        change();
+        return SaveDraftAsync();
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        var snapshot = Snapshot();
+        if (snapshot == null) { return; }
+        // Not stored while it equals what core gave us.
+        if (_stored != null && snapshot.SameAs(_stored)) { await Drafts.RemoveAsync(_draftKey); }
+        else { await Drafts.SaveAsync(_draftKey, snapshot); }
+    }
+
+    private void RestoreDraft()
+    {
+        var d = _draftOffer;
+        _draftOffer = null;
+        if (d == null || _presenter == null) { return; }
+        _presenter.Short = d.Short; _presenter.Long = d.Long;
+        _presenter.X = d.X; _presenter.Y = d.Y; _presenter.Z = d.Z;
+        _presenter.ConfirmDangling = d.ConfirmDangling;
+        _presenter.Exits = (d.Exits ?? new()).Where(e => e != null).Take(RoomEditPresenter.MaxFormExits).ToList();
+        _presenter.Features = (d.Features ?? new()).Where(f => f != null).Take(RoomEditPresenter.MaxFormFeatures).ToList();
+    }
+
+    private async Task DiscardDraft()
+    {
+        _draftOffer = null;
+        await Drafts.RemoveAsync(_draftKey);
+    }
+
+    // Runs one write at a time (a double tap cannot send two) and applies the outcome.
+    private async Task RunAsync(Func<Task<RoomEditOutcome>> action)
+    {
+        if (_busy || _presenter == null) { return; }
+        _busy = true;
+        try
+        {
+            var outcome = await action();
+            switch (outcome)
+            {
+                case RoomEditOutcome.Ok:
+                    _stored = Snapshot();
+                    await Drafts.RemoveAsync(_draftKey);
+                    break;
+                case RoomEditOutcome.Moved:
+                    await Drafts.RemoveAsync(_draftKey);
+                    Notices.Set(_presenter.Notice ?? Messages.RoomMoved);
+                    Navigation.NavigateTo(WebRoutes.RoomEdit(_presenter.NewKey ?? Key));
+                    break;
+                case RoomEditOutcome.Deleted:
+                    await Drafts.RemoveAsync(_draftKey);
+                    Notices.Set(Messages.RoomDeleted);
+                    Navigation.NavigateTo(WebRoutes.Map);
+                    break;
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private Task SaveAsync() => RunAsync(() => _presenter!.SaveAsync());
+
+    private Task MoveAsync() => RunAsync(() => _presenter!.MoveAsync());
+
+    private Task DeleteAsync() => RunAsync(() => _presenter!.DeleteAsync());
+
+    private Task UpdateGeneratedAsync() => RunAsync(() => _presenter!.UpdateAsync());
+
+    private void AskRegen() => _confirmRegen = true;
+
+    private void CancelRegen() => _confirmRegen = false;
+
+    private async Task ConfirmRegenAsync()
+    {
+        _confirmRegen = false;
+        await RunAsync(() => _presenter!.RegenAsync());
+    }
+}

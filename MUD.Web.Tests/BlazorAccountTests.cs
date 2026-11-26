@@ -335,7 +335,8 @@ public class BlazorShellTests
     public void TheRoutes_MatchTheRouteConstants_AndTheSignedInPagesRequireSignIn()
     {
         var byRoute = Components().ToDictionary(c => c.Route, c => c.Type);
-        Assert.Equal(new[] { WebRoutes.AccessDenied, WebRoutes.Character, WebRoutes.Home, WebRoutes.Login, WebRoutes.Password }.OrderBy(x => x),
+        Assert.Equal(new[] { WebRoutes.AccessDenied, WebRoutes.Character, WebRoutes.Home, WebRoutes.Login, WebRoutes.Password,
+                WebRoutes.Creator, WebRoutes.Map, WebRoutes.Prefix + "/creator/rooms/{Key}" }.OrderBy(x => x),
             byRoute.Keys.OrderBy(x => x));
         Assert.NotNull(byRoute[WebRoutes.Character].GetCustomAttribute<AuthorizeAttribute>());
         Assert.NotNull(byRoute[WebRoutes.Password].GetCustomAttribute<AuthorizeAttribute>());

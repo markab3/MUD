@@ -14,9 +14,15 @@ public static class WebRoutes
     public const string Character = Prefix + "/character";
     public const string Password = Prefix + "/account/password";
 
+    public const string Creator = Prefix + "/creator";
+    public const string Map = Prefix + "/creator/map";
+
+    public static string MapFor(string area, int? z) =>
+        Map + "?area=" + Uri.EscapeDataString(area) + (z.HasValue ? "&z=" + z.Value : string.Empty);
+
+    public static string RoomEdit(string key) => Prefix + "/creator/rooms/" + Uri.EscapeDataString(key);
+
     // Pages that are still Razor Pages (later cards port them). The shell links to the real URLs until then.
-    public const string LegacyCreator = "/creator";
-    public const string LegacyMap = "/creator/map";
     public const string LegacyPlayers = "/creator/players";
     public const string LegacyModules = "/creator/modules";
     public const string LegacyTerrain = "/creator/terrain";

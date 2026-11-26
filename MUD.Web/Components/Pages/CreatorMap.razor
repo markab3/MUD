@@ -1,0 +1,118 @@
+@page "/next/creator/map"
+@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@inject IAdminClient Core
+@inject NavigationManager Navigation
+@inject NoticeService Notices
+<PageTitle>Room map - Planar Realms</PageTitle>
+<h1>Room map</h1>
+@if (_notice != null) { <p role="status" class="mud-ok">@_notice</p> }
+@if (_presenter == null)
+{
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else if (_presenter.Error != null)
+{
+    <p role="alert" class="mud-error">@_presenter.Error</p>
+    <div class="mud-actions"><button type="button" class="mud-btn" @onclick="ReloadAsync">Retry</button></div>
+}
+else if (_presenter.Areas.Count == 0)
+{
+    <p>There are no rooms.</p>
+}
+else
+{
+    var map = _presenter.Map!;
+    <div class="mud-map-toolbar">
+        <div class="mud-field"><label for="map-area">Area</label>
+            <select id="map-area" value="@_presenter.Area" @onchange="OnAreaChanged">
+                @foreach (var a in _presenter.Areas)
+                {
+                    <option value="@a" selected="@(a == _presenter.Area)">@(a.Length == 0 ? "(no area)" : a)</option>
+                }
+            </select></div>
+        <div class="mud-field"><label for="map-z">Level (Z)</label>
+            <select id="map-z" value="@_presenter.Z" @onchange="OnLevelChanged">
+                @if (_presenter.Levels.Count == 0)
+                {
+                    <option value="0" selected="selected">0</option>
+                }
+                @foreach (var l in _presenter.Levels)
+                {
+                    <option value="@l" selected="@(l == _presenter.Z)">@l</option>
+                }
+            </select></div>
+    </div>
+    <p>North is up. Arrowheads show direction; a line with arrowheads at both ends is a two-way exit. Drag to pan and pinch to zoom; tap a room to open it.</p>
+    @if (map.Rects.Count == 0)
+    {
+        <p>No placed rooms on this level.</p>
+    }
+    else
+    {
+        <RoomMap Map="map" FillFor="_presenter.FillFor" />
+    }
+    @if (map.Mismatches.Count > 0)
+    {
+        <section class="mud-section">
+            <h2>Direction mismatches</h2>
+            <p>The room coordinates disagree with the exit direction. Exits are the truth; these lines are dashed.</p>
+            <ul class="mud-cardlist">
+                @foreach (var m in map.Mismatches)
+                {
+                    <li>@m.FromKey @m.Direction → @m.ToKey</li>
+                }
+            </ul>
+        </section>
+    }
+    <section class="mud-section">
+        <h2>Unplaced rooms</h2>
+        @if (map.Unplaced.Count == 0)
+        {
+            <p>None.</p>
+        }
+        else
+        {
+            <ul class="mud-cardlist">
+                @foreach (var u in map.Unplaced)
+                {
+                    <li><a class="mud-link" href="@WebRoutes.RoomEdit(u.Key)">@u.Key</a> @u.Short</li>
+                }
+            </ul>
+        }
+    </section>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    [SupplyParameterFromQuery(Name = "area")] public string? Area { get; set; }
+    [SupplyParameterFromQuery(Name = "z")] public int? Z { get; set; }
+
+    private CreatorMapPresenter? _presenter;
+    private string? _notice;
+    private string _token = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_token.Length == 0)
+        {
+            _token = (await AuthState).User.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
+            _notice = Notices.Take();
+        }
+        var presenter = new CreatorMapPresenter(Core, _token);
+        var outcome = await presenter.LoadAsync(Area, Z);
+        if (outcome == MapOutcome.Denied)
+        {
+            // The session ended or the role was lowered since the page was authorised (D31).
+            Navigation.NavigateTo(WebRoutes.AccessDenied);
+            return;
+        }
+        _presenter = presenter;
+    }
+
+    private Task ReloadAsync() => OnParametersSetAsync();
+
+    private void OnAreaChanged(ChangeEventArgs e) => Navigation.NavigateTo(WebRoutes.MapFor(e.Value?.ToString() ?? string.Empty, null));
+
+    private void OnLevelChanged(ChangeEventArgs e) =>
+        Navigation.NavigateTo(WebRoutes.MapFor(_presenter!.Area ?? string.Empty, int.TryParse(e.Value?.ToString(), out var z) ? z : 0));
+}
