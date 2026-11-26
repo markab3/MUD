@@ -64,7 +64,7 @@ public class SiteChromeMarkupTests
     private static string Nav() => Read("MUD.Web/Components/Layout/NavShell.razor");
 
     [Fact]
-    public void TheBar_HasMenuButtonTitleAndUserName_InThatOrder_AndAnonymousSeesTheTitleOnly()
+    public void TheBar_HasMenuButtonTitleAndUserName_InThatOrder_AndAnonymousSeesTheLogoOnly()
     {
         var nav = Nav();
         var authorized = nav.IndexOf("<Authorized>", StringComparison.Ordinal);
@@ -74,9 +74,22 @@ public class SiteChromeMarkupTests
         var user = nav.IndexOf("mud-username", StringComparison.Ordinal);
         Assert.True(authorized < button && button < title && title < user && user < notAuthorized);
         var anonymous = nav.Substring(notAuthorized, nav.IndexOf("</NotAuthorized>", StringComparison.Ordinal) - notAuthorized);
-        Assert.Contains("Planar Realms", anonymous);
+        Assert.Contains("alt=\"Planar Realms\"", anonymous);
+        Assert.Contains("img/planar-realms-logo.png", anonymous);
         Assert.DoesNotContain("mud-menu-button", anonymous);
         Assert.DoesNotContain("mud-username", anonymous);
+    }
+
+    [Fact]
+    public void TheTitle_IsALogoImageLinkingHome_WithAltTextAndSize_InBothBars()
+    {
+        var nav = Nav();
+        Assert.Equal(2, Regex.Matches(nav, @"<a class=""mud-title"" href=""/""><img src=""img/planar-realms-logo.png"" width=""116"" height=""40"" alt=""Planar Realms"" /></a>").Count);
+        Assert.DoesNotContain("<span class=\"mud-title\"", nav);
+        var png = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "MUD.Web", "wwwroot", "img", "planar-realms-logo.png");
+        Assert.True(new FileInfo(png).Length < 60 * 1024);
+        var css = Read("MUD.Web/wwwroot/css/mobile.css");
+        Assert.Matches(@"\.mud-title \{[^}]*min-height: var\(--mud-hit\)", css);
     }
 
     [Fact]

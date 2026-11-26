@@ -10,11 +10,11 @@
                     aria-expanded="@(_menu.IsOpen ? "true" : "false")" aria-controls="mud-menu" @onclick="Toggle">
                 <span class="mud-burger" aria-hidden="true"></span>
             </button>
-            <span class="mud-title">Planar Realms</span>
+            <a class="mud-title" href="/"><img src="img/planar-realms-logo.png" width="116" height="40" alt="Planar Realms" /></a>
             <a class="mud-username" href="@WebRoutes.Character">@context.User.FindFirstValue(ClaimTypes.Name)</a>
         </Authorized>
         <NotAuthorized>
-            <span class="mud-title">Planar Realms</span>
+            <a class="mud-title" href="/"><img src="img/planar-realms-logo.png" width="116" height="40" alt="Planar Realms" /></a>
         </NotAuthorized>
     </AuthorizeView>
 </header>

@@ -71,7 +71,8 @@ h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
 
 /* Top bar: menu button, title, user name. The same at every width. */
 .mud-topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 8px; min-height: var(--mud-bar-h); box-sizing: border-box; padding: 0 8px; background: var(--mud-teal-dark); color: var(--mud-on-dark); }
-.mud-title { flex: 0 0 auto; font-size: 1.25rem; font-weight: 600; padding: 0 8px; white-space: nowrap; }
+.mud-title { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: var(--mud-hit); min-width: var(--mud-hit); padding: 0 8px; box-sizing: border-box; }
+.mud-title img { display: block; height: 40px; width: auto; }
 .mud-topbar .mud-menu-button + .mud-title { padding-left: 0; }
 .mud-menu-button { flex: 0 0 auto; width: var(--mud-hit); height: var(--mud-hit); min-height: var(--mud-hit); display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
 .mud-menu-button:hover { background: var(--mud-teal); }
