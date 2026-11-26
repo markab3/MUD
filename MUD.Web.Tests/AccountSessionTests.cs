@@ -65,6 +65,18 @@ public class FakeAdminClient : IAdminClient
         return Task.FromResult(new ChangePasswordReply { Outcome = PasswordOutcome, Message = PasswordMessage });
     }
 
+    public Dictionary<string, OwnPlayerReply> OwnPlayers { get; } = new();
+    public List<string> OwnPlayerTokens { get; } = new();
+    public bool RefuseOwnPlayer { get; set; }
+
+    public Task<OwnPlayerReply> GetOwnPlayerAsync(string token, CancellationToken cancellation = default)
+    {
+        if (Unavailable) { throw new CoreUnavailableException(); }
+        OwnPlayerTokens.Add(token);
+        if (RefuseOwnPlayer || !OwnPlayers.TryGetValue(token, out var own)) { throw new CoreRefusedException(sessionEnded: true); }
+        return Task.FromResult(own);
+    }
+
     // Rooms. The fake keeps the rooms it is given and answers edits with the reply a test sets; it records what the web sent.
     public Dictionary<string, RoomDetail> Rooms { get; } = new();
     public bool RefuseRoomCalls { get; set; }

@@ -15,7 +15,7 @@ Owner decisions (fixed; they supersede earlier WASM / JSON API / DTO-project tex
    `NoDatabaseAccessTests` still holds.
 3. Login and logout stay plain HTTP (cookies cannot be set from a circuit). `SessionAuthenticationHandler` stays; components read
    the user through `AuthenticationState`; the session token is re-checked on circuit start and periodically (D31).
-4. Phone is first class: mobile-first, touch targets >= 44px, no horizontal page scroll at 360px, nav collapses to drawer/bottom bar,
+4. Phone is first class: mobile-first, touch targets >= 44px, no horizontal page scroll at 360px, one top bar with a pull-out menu from the left at every width (no bottom bar, no left rail),
    forms and tables reflow to stacked cards, one-handed use, map with touch pan and pinch zoom.
 5. Dropped connections must not silently lose input: reconnect UI, state kept in components, clear lost-circuit message,
    optional local draft (section 8).
@@ -204,21 +204,23 @@ Package components used (confirm each in the pinned version **[verify]**): `Flue
 
 | Class | Width | Layout |
 |---|---|---|
-| Phone | < 600px | one column; **bottom tab bar** (max 4 slots) + **drawer** for the rest; top bar shows title (+ back) |
-| Tablet | 600-1023px | top bar + icon rail that expands as an overlay drawer |
-| Desktop | >= 1024px | permanent left nav, content max-width 1100px (map and tables full width) |
+| Every width | all | **one chrome**: a top bar (menu button, title, user name) and a pull-out menu from the left (5.2). No bottom tab bar, no "More" sheet, no left rail. Content max-width 1100px |
+
+Only the page content (tables vs cards, grids) still changes at 600px.
 
 Design baseline 360x640. Breakpoints are decided in CSS (`@media`) wherever possible, so layout never depends on a circuit round trip; where the markup itself must differ (grid vs card list) a `ViewportService`
 reads `matchMedia` once through JS interop and subscribes to changes. Alternative that needs no interop: render both and hide one with CSS; chosen only for small lists (Open question 12).
 
 ### 5.2 Navigation
 
-Same items and visibility as today's `_Layout`: Character, Change password (signed in); Creator, Map, Players, Modules, Terrain (CreatorOrAdmin); Log out (a POST form, never a link). Anonymous users see no nav.
+Same items and visibility as before the top bar: Character, Change password (signed in); Map, Creator, Players, Modules, Terrain (CreatorOrAdmin, listed first); Log out (a POST form, never a link). The list is `NavMenu.ItemsFor(creatorOrAdmin)` in `MUD.Web/Pages/NavMenu.cs`; `NavShell.razor` renders it.
 
-- Phone creator/admin: bottom bar = Map, Creator, Players, **More** (bottom-sheet drawer: Modules, Terrain, Character, Change password, Log out). Phone player: Character, Password, Log out.
-- Tablet/desktop: left nav lists all; Log out at the bottom.
-- Active item marked by weight and icon, not colour alone; skip-to-content link; `nav` landmark and `aria-current`. Drawer closes on navigation, Escape and backdrop tap, and returns focus. Bottom bar respects `env(safe-area-inset-bottom)`.
-- `<PageTitle>` per page, `<Title> - Planar Realms`.
+- **Top bar** (`<header class="mud-topbar">`, sticky, at every width), left to right: a three-line menu button (44x44, `aria-label="Menu"`, `aria-haspopup="dialog"`, `aria-expanded`, `aria-controls="mud-menu"`), the title "Planar Realms", and on the far right the signed-in user's name as a link to `/character`. The name is one line and truncates with an ellipsis (`min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap`), so there is no horizontal scroll at 360px however long the name. **Anonymous visitors** (login page, access denied before sign-in) get the bar with the title only: no button, no name, no menu.
+- **Pull-out menu**: `#mud-menu`, `role="dialog" aria-modal="true"` around a `<nav aria-label="Main">`, slides in from the left (`transform` transition, 0.25s; no animation under `prefers-reduced-motion`) over a dimmed backdrop. Closed, it is `visibility:hidden` so it is neither focusable nor read. Width `min(280px, 85vw)`.
+- **Closes** on: backdrop tap, Escape, the "Close menu" button, a link click (`CloseForNavigation`) and any navigation (`LocationChanged`; the handler is detached in `Dispose`).
+- **Focus** (`window.mudMenu` in `wwwroot/js/app.js`, called from `NavShell.OnAfterRenderAsync`): on open, focus moves to the first control in the menu and Tab / Shift+Tab wrap inside it; on close from the menu (Escape, backdrop, Close button) focus returns to the menu button. After a link click or navigation the page's `FocusOnNavigate` puts focus on the new heading instead, so focus is not pulled back to the button.
+- Active link: weight, underline and a turquoise left edge (not colour alone); skip-to-content link; `aria-current` from `NavLink`. `<PageTitle>` per page, `<Title> - Planar Realms`.
+- The reconnect banner now sits at the bottom edge (there is no bottom bar); the sticky action bar of forms sticks at `bottom: 0`.
 
 ### 5.3 Global phone rules (acceptance)
 
@@ -392,7 +394,7 @@ None of these was silently decided beyond the defaults named in the referenced s
 
 ## Appendix A. Manual phone checklist (acceptance for layout cards)
 
-At 360x640 (Chrome device emulation and one real phone), every page: no horizontal scroll (also with long keys and names); all controls >= 44px and not touching; text readable without zoom; inputs do not zoom on focus; bottom bar and drawer work with one thumb; Save reachable without scrolling to the top; the on-screen keyboard does not hide the focused field or the sticky bar; landscape works; map: one-finger pan, two-finger pinch, double-tap zoom, zoom buttons, tap a room opens it, the page does not scroll while panning;
+At 360x640 (Chrome device emulation and one real phone), every page: no horizontal scroll (also with long keys and names); all controls >= 44px and not touching; text readable without zoom; inputs do not zoom on focus; the menu button and pull-out menu work with one thumb; Save reachable without scrolling to the top; the on-screen keyboard does not hide the focused field or the sticky bar; landscape works; map: one-finger pan, two-finger pinch, double-tap zoom, zoom buttons, tap a room opens it, the page does not scroll while panning;
 **connection tests**: lock the phone for 30 s and unlock (the edit form keeps its input), switch Wi-Fi to mobile data mid-edit, stop and start the web unit and confirm the "session was lost" banner and the draft restore prompt; error states (core stopped) show the fixed sentences. Repeat at 768px and 1280px.
 
 ## Appendix B. Room pages as built (card t_fd0c7a00)
@@ -435,3 +437,36 @@ layout, policy, gRPC and guard tests are untouched. A new test asserts no `.csht
 Measured with headless Chromium (Playwright) against the published Release build and a stand-in core on a Unix socket (no real core or Mongo; room, player and
 module data were canned). Results and screenshots are attached to the PR. Not verified: a real phone, real touch gestures on the map (pinch, one-finger pan), the
 core-down banner, a role lowered mid-circuit, throttled networks.
+
+## Appendix F. Site chrome, player page and palette (card t_2e8bcd61)
+
+**Chrome**: see 5.1 and 5.2. Files: `Components/Layout/NavShell.razor` (bar + menu), `MainLayout.razor` (no `FluentLayout`/`FluentHeader` any more), `Pages/NavMenu.cs`, `wwwroot/css/mobile.css`, `wwwroot/js/app.js` (`mudMenu`).
+
+**Player page** (`/character`, `Character.razor` + `CharacterPresenter`): the signed-in player's OWN record. It calls a new read-only Admin rpc, `GetOwnPlayer(TokenRequest) returns (OwnPlayerReply)` (`GetPlayer` is creator-only and takes a name; see ADMIN_API.md). Core picks the player from the token and the request has no name field, so no other player can be asked for. Shown, in a `FluentCard` around a definition list (one column on a phone; label/value columns from 600px): name, role, race, gender, class, current location (room key), short description, long description. Chosen from the real model: these are the fields the player edit page shows plus role and location, and all are safe for the owner. Never in the reply: password, hash, session token, inventory, retired flag (a retired player cannot be signed in), other players. Core down shows `Messages.Unavailable` (the existing core-down sentence); a refused token shows `Messages.CharacterRefused`.
+
+**Palette** (all in `mobile.css`, defined once as custom properties; no hex outside the `:root` block): `--mud-red #931621`, `--mud-teal-dark #28464B`, `--mud-teal #326771`, `--mud-cyan #2C8C99`, `--mud-turquoise #42D9C8`. Fluent design tokens are mapped to them (`--accent-base-color`, `--accent-fill-*`, `--accent-foreground-*`, `--focus-stroke-*`, `--error`). Roles: top bar and menu `--mud-teal-dark` with white text, menu hover `--mud-teal`, focus ring turquoise on the dark bar and menu (dark ring with turquoise halo on light surfaces), destructive buttons, errors and the regen warning `--mud-red`, links and primary buttons the darkened cyan below, page background `#F4F7F8`, body text `#1B2B2E`. Map terrain colours (from the legends) are untouched. Dark mode is out of scope.
+
+**Contrast** (WCAG 2.x, checked by script and pinned in `SiteChromeMarkupTests`). Two palette colours fail on their own, so shades are used:
+- Raw cyan `#2C8C99` is 3.95:1 on white, below 4.5:1 for text and for white-on-cyan buttons. Links, primary buttons and the accent use `--mud-cyan-ink #216E79` (5.88:1 on white, 5.46:1 on the page) and `--mud-cyan-deep #1B5C66` for hover (7.04:1). Raw cyan stays defined but is not used for text or fills.
+- Raw turquoise `#42D9C8` is 1.75:1 on white, so it is not a focus ring on light surfaces; there the ring is `--mud-teal-dark` (10.16:1) with a turquoise halo. On the dark bar and menu turquoise is 5.80:1 and is used directly.
+- The border colour is the shade `#6F878C` (3.53:1 on the page, 3.80:1 on white; UI components need 3:1).
+
+| Pair | Ratio | Needs |
+|---|---|---|
+| white on `#28464B` (bar, menu) | 10.16 | 4.5 |
+| white on `#326771` (menu hover) | 6.34 | 4.5 |
+| `#42D9C8` on `#28464B` (name hover, focus) | 5.80 | 4.5 |
+| `#216E79` on white / on `#F4F7F8` (links, primary fill) | 5.88 / 5.46 | 4.5 |
+| `#1B5C66` on `#F4F7F8` (link hover) | 7.04 | 4.5 |
+| white on `#1B5C66` (primary hover) | 7.58 | 4.5 |
+| white on `#931621` (danger button) | 8.83 | 4.5 |
+| `#931621` on `#F4F7F8` / white (errors) | 8.21 / 8.83 | 4.5 |
+| `#1B2B2E` on `#F4F7F8` / white (body) | 13.63 / 14.67 | 4.5 |
+| `#4A5A5E` on `#F4F7F8` / white (hints, card labels) | 6.69 / 7.20 | 4.5 |
+| `#1B2B2E` on `#FFF4CE` (warning band) | 13.33 | 4.5 |
+| `#0E700E` on `#F4F7F8` (ok text) | 5.84 | 4.5 |
+| `#28464B` on `#42D9C8` | 5.80 | 4.5 |
+| `#28464B` on white (focus ring) | 10.16 | 3 |
+| `#6F878C` on `#F4F7F8` / white (control border) | 3.53 / 3.80 | 3 |
+
+**Verified** with headless Chromium (Playwright) at 360x640, 768x1024 and 1280x800 against a stand-in core (canned data, no Mongo): anonymous bar (title only), player and creator menus (links as above), 44x44 button, aria-expanded, focus into the menu and back to the button on Escape and backdrop, Tab and Shift+Tab trapped, link click closes and navigates, log-out form is a POST with a token, no horizontal scroll, a 48-character name truncates with an ellipsis. **Not verified**: a real phone and touch, a screen reader, a real core and Mongo, the visual result of every other page under the new palette beyond the character page and the menu, and the Fluent components' own colours (the pages still use the plain `mud-*` controls; only `FluentCard` is new).

@@ -26,6 +26,8 @@ namespace MUD.Core.Administration
 
         public override Task<SessionInfoReply> GetSession(TokenRequest request, ServerCallContext context) { return Run(() => _api.GetSession(request)); }
 
+        public override Task<OwnPlayerReply> GetOwnPlayer(TokenRequest request, ServerCallContext context) { return Run(() => _api.GetOwnPlayer(request)); }
+
         public override Task<ChangePasswordReply> ChangePassword(ChangePasswordRequest request, ServerCallContext context) { return Run(() => _api.ChangePassword(request)); }
 
         public override Task<ListRoomsReply> ListRooms(TokenRequest request, ServerCallContext context) { return Run(() => _api.ListRooms(request)); }

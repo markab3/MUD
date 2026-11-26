@@ -505,8 +505,9 @@ public class TerrainPresenterTests
     [Fact]
     public void TheNav_LinksToTheBlazorTerrainPage_UnderTheCreatorPolicy()
     {
-        var nav = Read("MUD.Web/Components/Layout/NavShell.razor");
-        var creator = nav.IndexOf("_creator", StringComparison.Ordinal);
+        var nav = Read("MUD.Web/Pages/NavMenu.cs");
+        var creator = nav.IndexOf("if (creatorOrAdmin)", StringComparison.Ordinal);
+        Assert.True(creator >= 0);
         Assert.True(nav.IndexOf("WebRoutes.Terrain", StringComparison.Ordinal) > creator);
         Assert.DoesNotContain("LegacyTerrain", nav);
     }

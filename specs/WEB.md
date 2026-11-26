@@ -36,7 +36,7 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/` | anyone | redirects to `/character` if signed in, else `/login` |
 | `/login` | anyone | name + password form, antiforgery protected |
 | `/logout` | POST only | antiforgery protected sign-out; GET just redirects |
-| `/character` | signed in | `Hello (<PlayerName>)!`, HTML-encoded |
+| `/character` | signed in | the signed-in player's own details (name, role, race, gender, class, location, descriptions) from `GetOwnPlayer`; never another player, never a credential; core down shows the "not reachable" message |
 | `/account/password` | signed in | change-password form (current, new, confirm), antiforgery protected; see below |
 | `/creator/players` | `CreatorOrAdmin` | player list (see "Player pages") |
 | `/creator/players/{nameKey}` | `CreatorOrAdmin` | player edit page (see "Player pages") |

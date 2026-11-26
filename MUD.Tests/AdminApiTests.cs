@@ -861,6 +861,34 @@ namespace MUD.Tests
         }
 
         [Fact]
+        public void GetOwnPlayerReturnsOnlyTheCallersOwnRecord_ForAnyRole_WithoutCredentials()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Pat");
+            f.AddPlayer("Quinn");
+            f.AddPlayer("Cris", creator: true);
+            string pat = f.Login("pat");
+            OwnPlayerReply own = f.Api.GetOwnPlayer(new TokenRequest { Token = pat });
+            Assert.Equal("Pat", own.Name);
+            Assert.Equal(AdminRole.Player, own.Role);
+            Assert.Equal("human", own.Race);
+            Assert.DoesNotContain("secret1", own.ToString());
+            Assert.DoesNotContain("Quinn", own.ToString());
+            Assert.Equal(AdminRole.Creator, f.Api.GetOwnPlayer(new TokenRequest { Token = f.Login("cris") }).Role);
+        }
+
+        [Fact]
+        public void GetOwnPlayerRefusesAnUnknownTokenAndHasNoWayToNameAnotherPlayer()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Pat");
+            Assert.Equal(AdminFailure.Unauthenticated, Refused(() => f.Api.GetOwnPlayer(new TokenRequest { Token = "nope" })).Failure);
+            Assert.Equal(AdminFailure.Unauthenticated, Refused(() => f.Api.GetOwnPlayer(new TokenRequest { Token = "" })).Failure);
+            Assert.DoesNotContain(OwnPlayerReply.Descriptor.Fields.InDeclarationOrder().Select(x => x.Name), n => n.Contains("password") || n.Contains("token"));
+            Assert.DoesNotContain(TokenRequest.Descriptor.Fields.InDeclarationOrder().Select(x => x.Name), n => n.Contains("name"));
+        }
+
+        [Fact]
         public void ACreatorEditsAPlayersTextAndTheOnlinePlayerIsTold()
         {
             var f = new Fixture();

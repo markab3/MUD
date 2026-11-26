@@ -1,12 +1,44 @@
 @page "/character"
 @attribute [Authorize]
+@inject IAdminClient Core
 <PageTitle>Character - Planar Realms</PageTitle>
-<p>Hello (@_name)!</p>
+@if (_presenter == null)
+{
+    <h1>Character</h1>
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else if (_presenter.Own == null)
+{
+    <h1>Character</h1>
+    <p role="alert" class="mud-error">@_presenter.Error</p>
+}
+else
+{
+    var o = _presenter.Own;
+    <h1>@o.Name</h1>
+    <FluentCard class="mud-character" aria-label="Character details">
+        <dl class="mud-facts mud-character-facts">
+            <dt>Name</dt><dd>@o.Name</dd>
+            <dt>Role</dt><dd>@CharacterPresenter.RoleText(o.Role)</dd>
+            <dt>Race</dt><dd>@CharacterPresenter.OrDash(o.Race)</dd>
+            <dt>Gender</dt><dd>@CharacterPresenter.OrDash(o.Gender)</dd>
+            <dt>Class</dt><dd>@CharacterPresenter.OrDash(o.Class)</dd>
+            <dt>Location</dt><dd>@CharacterPresenter.OrDash(o.Location)</dd>
+            <dt>Short description</dt><dd>@CharacterPresenter.OrDash(o.ShortDescription)</dd>
+            <dt>Description</dt><dd class="mud-prewrap">@CharacterPresenter.OrDash(o.LongDescription)</dd>
+        </dl>
+    </FluentCard>
+}
 
 @code {
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
-    private string _name = string.Empty;
+    private CharacterPresenter? _presenter;
 
-    protected override async Task OnInitializedAsync() =>
-        _name = (await AuthState).User.FindFirstValue(ClaimTypes.Name) ?? string.Empty;
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthState).User;
+        var presenter = new CharacterPresenter(Core, user.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty);
+        await presenter.LoadAsync();
+        _presenter = presenter;
+    }
 }
