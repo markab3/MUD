@@ -6,6 +6,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Grpc.Net.Client" Version="2.84.0" />
+    <!-- Blazor Server UI (WEB_BLAZOR.md). Server-side only: no WebAssembly, no client project. -->
+    <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components" Version="4.14.5" />
   </ItemGroup>
   <ItemGroup>
     <!-- Shared room validation rules (RoomRules) only; never MUD.Core. -->

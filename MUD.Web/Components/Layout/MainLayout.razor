@@ -1,0 +1,18 @@
+@inherits LayoutComponentBase
+<FluentLayout>
+    <a class="mud-skip" href="#main">Skip to content</a>
+    <FluentHeader>Planar Realms</FluentHeader>
+    <div class="mud-shell">
+        <NavShell />
+        <FluentBodyContent>
+            <main id="main" class="mud-main">
+                <ErrorBoundary>
+                    <ChildContent>@Body</ChildContent>
+                    <ErrorContent>
+                        <p role="alert" class="mud-error">@Messages.UnexpectedError <a class="mud-btn" href="" onclick="location.reload();return false;">Reload</a></p>
+                    </ErrorContent>
+                </ErrorBoundary>
+            </main>
+        </FluentBodyContent>
+    </div>
+</FluentLayout>

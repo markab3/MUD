@@ -1,5 +1,9 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Components.Server;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.FluentUI.AspNetCore.Components;
 using MUD.Contracts;
 using MUD.Web.Services;
 
@@ -30,11 +34,30 @@ builder.Services.AddSingleton<IRoomCreationService, RoomCreationService>();
 
 builder.Services.AddRazorPages();
 
+// Blazor Server with Fluent UI (WEB_BLAZOR.md): beside the Razor Pages, under /next, until the cutover card. Interactive server only.
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+builder.Services.AddFluentUIComponents();
+builder.Services.AddScoped<AuthenticationStateProvider, SessionAuthenticationStateProvider>();
+builder.Services.Configure<CircuitOptions>(o =>
+{
+    // Mobile connections drop (screen lock, network change): keep a disconnected circuit long enough to be resumed (6.1).
+    o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(20);
+    o.DisconnectedCircuitMaxRetained = 50;
+});
+builder.Services.Configure<HubOptions>(o =>
+{
+    o.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+    o.KeepAliveInterval = TimeSpan.FromSeconds(15);
+});
+
 var app = builder.Build();
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAntiforgery();
 app.MapRazorPages();
+LogoutEndpoint.Map(app);
+app.MapRazorComponents<MUD.Web.Components.App>().AddInteractiveServerRenderMode();
 app.Run();
 return 0;
 

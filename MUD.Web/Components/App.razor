@@ -1,0 +1,48 @@
+@using Microsoft.AspNetCore.Antiforgery
+@inject IAntiforgery Antiforgery
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base href="/" />
+    <link rel="stylesheet" href="_content/Microsoft.FluentUI.AspNetCore.Components/css/reboot.css" />
+    <link rel="stylesheet" href="css/mobile.css" />
+    <HeadOutlet @rendermode="PageMode" />
+</head>
+<body>
+    <noscript><p class="mud-noscript" role="alert">@Messages.NeedsJavaScript</p></noscript>
+    <Routes @rendermode="PageMode" FormFieldName="@_formFieldName" RequestToken="@_requestToken" />
+    <div id="components-reconnect-modal" class="mud-reconnect" role="alert" aria-live="assertive">
+        <p class="mud-reconnect-show">@Messages.Reconnecting</p>
+        <p class="mud-reconnect-failed">@Messages.ReconnectFailed <button type="button" class="mud-btn" id="mud-retry">Retry</button></p>
+        <p class="mud-reconnect-rejected">@Messages.CircuitLost <button type="button" class="mud-btn" id="mud-reload">Reload</button></p>
+    </div>
+    <script src="_framework/blazor.web.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    private string _formFieldName = string.Empty;
+    private string _requestToken = string.Empty;
+
+    // Login (and Index) are static pages: a cookie can only be set by a normal HTTP response. Everything else is one circuit.
+    // (.NET 8 has no [ExcludeFromInteractiveRouting], so the static pages are listed by path.)
+    private static readonly string[] StaticPaths = { WebRoutes.Login, WebRoutes.Home };
+
+    private IComponentRenderMode? PageMode =>
+        StaticPaths.Any(p => HttpContext.Request.Path.Equals(p, StringComparison.OrdinalIgnoreCase) || HttpContext.Request.Path.Equals(p + "/", StringComparison.OrdinalIgnoreCase))
+            ? null
+            : new InteractiveServerRenderMode(prerender: false);
+
+    protected override void OnInitialized()
+    {
+        // The request token for the logout form in the (interactive) layout; the cookie token is set on this response.
+        var tokens = Antiforgery.GetAndStoreTokens(HttpContext);
+        _formFieldName = tokens.FormFieldName;
+        _requestToken = tokens.RequestToken ?? string.Empty;
+    }
+}

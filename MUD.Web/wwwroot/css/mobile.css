@@ -1,0 +1,57 @@
+/* Mobile-first shell (WEB_BLAZOR.md 5). Phone < 600px: bottom tab bar + More sheet. Tablet/desktop: left rail. */
+:root { --mud-hit: 44px; --mud-nav-w: 220px; }
+html, body { margin: 0; font-size: 16px; line-height: 1.45; overflow-wrap: anywhere; }
+body { max-width: 100vw; }
+.mud-skip { position: absolute; left: -999px; }
+.mud-skip:focus { left: 8px; top: 8px; background: #fff; padding: 8px; z-index: 100; }
+.mud-main { padding: 12px 12px calc(var(--mud-hit) + 24px + env(safe-area-inset-bottom)); max-width: 1100px; }
+h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
+
+/* Controls: >= 44px hit areas, 16px text (no iOS zoom on focus). */
+.mud-btn, .mud-nav a, .mud-nav button, input, select, textarea {
+  min-height: var(--mud-hit); font-size: 16px; box-sizing: border-box;
+}
+.mud-btn { min-width: var(--mud-hit); padding: 8px 16px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #888; border-radius: 6px; background: #f3f3f3; color: inherit; text-decoration: none; }
+.mud-btn-primary { background: #0f6cbd; color: #fff; border-color: #0f6cbd; }
+.mud-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.mud-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; max-width: 420px; }
+.mud-field input { width: 100%; padding: 8px; border: 1px solid #888; border-radius: 6px; }
+.mud-login { max-width: 420px; margin: 0 auto; padding: 12px; }
+.mud-login .mud-btn { width: 100%; }
+.mud-error { color: #b10e1c; }
+.mud-ok { color: #0e700e; }
+.mud-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+/* Phone: bottom bar. */
+.mud-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: #fff; border-top: 1px solid #ccc; padding-bottom: env(safe-area-inset-bottom); }
+.mud-nav ul { list-style: none; margin: 0; padding: 0; display: flex; }
+.mud-nav li { flex: 1 1 0; min-width: 0; }
+.mud-nav a, .mud-nav button { display: flex; align-items: center; justify-content: center; width: 100%; padding: 8px 4px; text-align: center; text-decoration: none; color: inherit; background: none; border: 0; }
+.mud-nav a.active { font-weight: 700; text-decoration: underline; }
+.mud-nav-extra { display: none; }
+.mud-nav.mud-open .mud-nav-extra { display: block; }
+.mud-nav.mud-open ul { flex-wrap: wrap; }
+.mud-nav.mud-open li { flex: 1 1 100%; }
+.mud-nav.mud-open .mud-nav-more { order: 99; }
+.mud-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.3); }
+.mud-nav-logout form { margin: 0; }
+
+/* Tablet / desktop: left rail, everything visible, no More. */
+@media (min-width: 600px) {
+  .mud-shell { display: flex; align-items: flex-start; }
+  .mud-nav { position: sticky; top: 0; flex: 0 0 var(--mud-nav-w); width: var(--mud-nav-w); border-top: 0; border-right: 1px solid #ccc; min-height: 100vh; }
+  .mud-nav ul { flex-direction: column; }
+  .mud-nav a, .mud-nav button { justify-content: flex-start; padding: 8px 16px; }
+  .mud-nav-extra { display: block; }
+  .mud-nav-more, .mud-backdrop { display: none; }
+  .mud-shell > :last-child { flex: 1 1 auto; min-width: 0; }
+  .mud-main { padding-bottom: 24px; }
+}
+
+/* Reconnect banner (replaces Blazor's default modal). Non-blocking; sits above the bottom bar. */
+.mud-reconnect { display: none; position: fixed; left: 0; right: 0; bottom: calc(var(--mud-hit) + 8px + env(safe-area-inset-bottom)); z-index: 60; background: #fff4ce; border-top: 1px solid #c8a000; padding: 8px 12px; }
+.mud-reconnect p { margin: 0; display: none; }
+.mud-reconnect.components-reconnect-show, .mud-reconnect.components-reconnect-failed, .mud-reconnect.components-reconnect-rejected { display: block; }
+.components-reconnect-show .mud-reconnect-show, .components-reconnect-failed .mud-reconnect-failed, .components-reconnect-rejected .mud-reconnect-rejected { display: block; }
+@media (min-width: 600px) { .mud-reconnect { bottom: 0; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

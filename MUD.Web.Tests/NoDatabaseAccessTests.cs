@@ -35,7 +35,10 @@ public class NoDatabaseAccessTests
     public void TheWebSources_NeverReadTheConnectionStringOrNameAMongoType()
     {
         var web = Path.Combine(RepositoryRoot(), "MUD.Web");
-        foreach (var file in Directory.EnumerateFiles(web, "*.cs*", SearchOption.AllDirectories))
+        // "*.cs*" covers .cs, .cshtml and .cshtml.cs but not .razor (WEB_BLAZOR.md 8.4), so the components are scanned explicitly.
+        var files = Directory.EnumerateFiles(web, "*.cs*", SearchOption.AllDirectories).Concat(Directory.EnumerateFiles(web, "*.razor", SearchOption.AllDirectories)).ToList();
+        Assert.Contains(files, f => f.EndsWith(".razor"));
+        foreach (var file in files)
         {
             if (file.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar) || file.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar)) { continue; }
             var text = File.ReadAllText(file);
