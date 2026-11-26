@@ -15,11 +15,16 @@ namespace MUD.Core.GameObjects
 
         public string LongDescription { get; set; }
 
-        public List<string> Plurals { get; set; }
+        // Never null: a stored document or caller may set these to null, and the matching methods read them.
+        public List<string> Plurals { get { return _plurals ?? (_plurals = new List<string>()); } set { _plurals = value; } }
 
-        public List<string> Adjectives { get; set; } = new List<string>();
+        public List<string> Adjectives { get { return _adjectives ?? (_adjectives = new List<string>()); } set { _adjectives = value; } }
 
-        public List<string> Handles { get; set; } = new List<string>();
+        public List<string> Handles { get { return _handles ?? (_handles = new List<string>()); } set { _handles = value; } }
+
+        private List<string> _plurals;
+        private List<string> _adjectives;
+        private List<string> _handles;
 
         // Module-owned components, stored as components.<module>.<name>. Core does not interpret the data: it is
         // kept as BSON and written back exactly as it was read, including components of modules that are not

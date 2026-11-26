@@ -48,11 +48,14 @@ namespace MUD.Core.GameObjects
 
         public int? Z { get; set; }
 
-        public List<InventoryItem> Items { get; set; } = new List<InventoryItem>();
+        public List<InventoryItem> Items { get { return _items ?? (_items = new List<InventoryItem>()); } set { _items = value; } }
+        private List<InventoryItem> _items;
 
-        public List<Feature> Features { get; set; } = new List<Feature>();
+        public List<Feature> Features { get { return _features ?? (_features = new List<Feature>()); } set { _features = value; } }
+        private List<Feature> _features;
 
-        public List<Exit> Exits { get; set; } = new List<Exit>();
+        public List<Exit> Exits { get { return _exits ?? (_exits = new List<Exit>()); } set { _exits = value; } }
+        private List<Exit> _exits;
 
         [BsonIgnore]
         public CommandSource RoomCommandSource
