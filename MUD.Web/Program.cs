@@ -35,6 +35,7 @@ builder.Services.AddSingleton<IRoomCreationService, RoomCreationService>();
 // Blazor Server with Fluent UI (WEB_BLAZOR.md) is the only UI. Interactive server only.
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddFluentUIComponents();
+builder.Services.AddStaticAssetCompression();
 builder.Services.AddScoped<NoticeService>();
 builder.Services.AddScoped<DraftStore>();
 builder.Services.AddScoped<AuthenticationStateProvider, SessionAuthenticationStateProvider>();
@@ -51,6 +52,8 @@ builder.Services.Configure<HubOptions>(o =>
 });
 
 var app = builder.Build();
+// Before static files so blazor.web.js and the Fluent UI css/js are compressed; see CompressionSetup for what is excluded and why.
+app.UseResponseCompression();
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();

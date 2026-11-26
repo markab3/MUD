@@ -435,3 +435,8 @@ layout, policy, gRPC and guard tests are untouched. A new test asserts no `.csht
 Measured with headless Chromium (Playwright) against the published Release build and a stand-in core on a Unix socket (no real core or Mongo; room, player and
 module data were canned). Results and screenshots are attached to the PR. Not verified: a real phone, real touch gestures on the map (pinch, one-finger pan), the
 core-down banner, a role lowered mid-circuit, throttled networks.
+
+## Response compression (first-load size)
+
+`MUD.Web/Services/CompressionSetup.cs`: Brotli and gzip (Fastest level), only for `text/css`, `text/javascript`, `application/javascript`, `application/x-javascript` and `image/svg+xml`, so `blazor.web.js`, Fluent's `lib.module.js`/css and `css/mobile.css`/`js/app.js` are compressed. HTML and JSON are deliberately not in the list (the page HTML carries the antiforgery request token, `/_blazor/negotiate` a connection token: BREACH). `EnableForHttps` is false: the site binds plain http on 127.0.0.1; a TLS proxy in front would see plain http from us. The circuit WebSocket is unaffected.
+Measured (published, curl, page plus referenced css/js, interactive pages also load Fluent `lib.module.js`, 395 KB raw, about 112 KB gzip-1, not counted below): /login 210,438 B before, 73,479 B after (`curl --compressed`); /creator 211,402 B before, 74,463 B after. The Fluent package ships no fonts or icons (only reboot.css, a 104 KB bundle css, lib.module.js and per-component js), so nothing was trimmed.
