@@ -68,6 +68,11 @@ public static class Messages
     public const string StopModuleConfirm = "Stop this module? Anything that depends on it stops working until it is started again.";
     public const string RestartModuleConfirm = "Restart this module? It is replaced by a new instance.";
 
+    // Terrain library pages. The error sentences stay in TerrainLibrary (shared with the Razor pages until the cutover card).
+    // New in the Blazor UI: confirm text for deleting an entry, and the draft restore text of the terrain editor.
+    public const string TerrainDeleteConfirm = "Delete this library entry? Generators stop using it at once.";
+    public const string TerrainDraftFound = "Unsaved changes from an earlier visit were found on this device. The entry may have changed in the meantime; saving them overwrites it (last write wins).";
+
     // Draft restore (WEB_BLAZOR.md 6.4).
     public const string DraftFound = "Unsaved changes from an earlier visit were found on this device. The room may have changed in the meantime; saving them overwrites it (last write wins).";
 }

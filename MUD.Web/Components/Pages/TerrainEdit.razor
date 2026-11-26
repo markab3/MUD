@@ -1,0 +1,286 @@
+@page "/next/creator/terrain/edit"
+@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@inject IAdminClient Core
+@inject NavigationManager Navigation
+@inject NoticeService Notices
+@inject DraftStore Drafts
+<PageTitle>Edit terrain library entry - Planar Realms</PageTitle>
+@if (_presenter == null)
+{
+    <h1>Edit terrain library entry</h1>
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else if (_presenter.IsMissing)
+{
+    <h1>Edit terrain library entry</h1>
+    <p role="alert" class="mud-error">@_presenter.Error</p>
+    <p><a class="mud-btn" href="@WebRoutes.Terrain">Back to the library</a></p>
+}
+else
+{
+    var p = _presenter;
+    <h1>@(p.IsNew ? "New" : "Edit") @p.KindLabel.ToLowerInvariant()</h1>
+    <p><a class="mud-btn" href="@WebRoutes.Terrain">Back to the library</a></p>
+    @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
+    @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
+    @if (p.Problems.Count > 0)
+    {
+        <ul role="alert" class="mud-error">
+            @foreach (var m in p.Problems) { <li>@m</li> }
+        </ul>
+    }
+    @if (p.Unused)
+    {
+        <p role="note"><strong>[!] @TerrainLibrary.UnusedWarning.</strong> With no terrain ticked, no generator will ever pick this entry. It is not "any terrain".</p>
+    }
+    @if (_draftOffer != null)
+    {
+        <div class="mud-draft" role="status">
+            <p>@Messages.TerrainDraftFound</p>
+            <div class="mud-actions">
+                <button type="button" class="mud-btn" @onclick="RestoreDraft">Restore unsaved changes</button>
+                <button type="button" class="mud-btn" @onclick="DiscardDraft">Discard</button>
+            </div>
+        </div>
+    }
+    <form @onsubmit="SaveAsync" @onsubmit:preventDefault novalidate>
+        <div class="mud-field"><label for="te-id">Id</label>
+            @if (p.IsNew)
+            {
+                <input id="te-id" value="@p.NewId" @onchange="e => Edit(() => p.NewId = e.Value?.ToString())" maxlength="100" required />
+            }
+            else
+            {
+                <input id="te-id" value="@p.OriginalId" readonly="readonly" maxlength="100" />
+            }
+            <span class="mud-hint">(letters, digits, '-', '_' and '.'; fixed once created)</span></div>
+        <fieldset class="mud-fieldset mud-terrains">
+            <legend>Terrains (empty = not used by any generator)</legend>
+            <div class="mud-terrain-list">
+                @foreach (var t in p.TerrainChoices)
+                {
+                    var terrain = t;
+                    <div class="mud-check"><label><input type="checkbox" checked="@p.Terrains.Contains(terrain)" @onchange="e => Edit(() => p.SetTerrain(terrain, (bool)(e.Value ?? false)))" /> @terrain</label></div>
+                }
+            </div>
+            <div class="mud-field"><label for="te-extra">Other terrain ids (comma or space separated)</label>
+                <input id="te-extra" value="@p.ExtraTerrains" @oninput="e => Edit(() => p.ExtraTerrains = e.Value?.ToString())" maxlength="400" autocomplete="off" /></div>
+        </fieldset>
+        @if (p.Kind == TerrainLibrary.Fragment)
+        {
+            <div class="mud-field"><label for="te-slot">Slot</label>
+                <input id="te-slot" value="@p.Slot" @onchange="e => Edit(() => p.Slot = e.Value?.ToString())" maxlength="100" required /></div>
+            <div class="mud-field"><label for="te-text">Text</label>
+                <textarea id="te-text" value="@p.Text" @onchange="e => Edit(() => p.Text = e.Value?.ToString())" maxlength="2000" rows="4" required></textarea></div>
+            <div class="mud-field"><label for="te-weight">Weight</label>
+                <input id="te-weight" type="number" inputmode="numeric" min="0" value="@p.Weight" @onchange="e => Edit(() => p.Weight = ParseInt(e.Value, p.Weight))" /></div>
+            <div class="mud-field"><label for="te-tags">Tags</label>
+                <input id="te-tags" value="@p.Tags" @onchange="e => Edit(() => p.Tags = e.Value?.ToString())" />
+                <span class="mud-hint">(comma or space separated)</span></div>
+        }
+        else if (p.Kind == TerrainLibrary.Feature)
+        {
+            <p>Version: @p.Version. @p.VersionHint</p>
+            <div class="mud-field"><label for="te-short">Short</label>
+                <input id="te-short" value="@p.Short" @onchange="e => Edit(() => p.Short = e.Value?.ToString())" maxlength="100" required /></div>
+            <div class="mud-field"><label for="te-long">Long</label>
+                <textarea id="te-long" value="@p.Long" @onchange="e => Edit(() => p.Long = e.Value?.ToString())" maxlength="2000" rows="4" required></textarea></div>
+            <div class="mud-field"><label for="te-roomline">Room line</label>
+                <input id="te-roomline" value="@p.RoomLine" @onchange="e => Edit(() => p.RoomLine = e.Value?.ToString())" maxlength="2000" />
+                <span class="mud-hint">(optional)</span></div>
+            <div class="mud-field"><label for="te-detail">Detail</label>
+                <textarea id="te-detail" value="@p.Detail" @onchange="e => Edit(() => p.Detail = e.Value?.ToString())" maxlength="2000" rows="3"></textarea>
+                <span class="mud-hint">(optional)</span></div>
+            <div class="mud-field"><label for="te-handles">Handles</label>
+                <input id="te-handles" value="@p.Handles" @onchange="e => Edit(() => p.Handles = e.Value?.ToString())" />
+                <span class="mud-hint">(comma or space separated)</span></div>
+            <div class="mud-field"><label for="te-adjectives">Adjectives</label>
+                <input id="te-adjectives" value="@p.Adjectives" @onchange="e => Edit(() => p.Adjectives = e.Value?.ToString())" />
+                <span class="mud-hint">(comma or space separated)</span></div>
+            <div class="mud-pair">
+                <div class="mud-field"><label for="te-weight">Weight</label>
+                    <input id="te-weight" type="number" inputmode="numeric" min="0" value="@p.Weight" @onchange="e => Edit(() => p.Weight = ParseInt(e.Value, p.Weight))" /></div>
+                <div class="mud-field"><label for="te-chance">Chance (0 to 1)</label>
+                    <input id="te-chance" type="number" inputmode="decimal" step="0.01" min="0" max="1" value="@p.Chance.ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="e => Edit(() => p.Chance = ParseDouble(e.Value, p.Chance))" /></div>
+            </div>
+            <div class="mud-field"><label for="te-tags">Tags</label>
+                <input id="te-tags" value="@p.Tags" @onchange="e => Edit(() => p.Tags = e.Value?.ToString())" />
+                <span class="mud-hint">(comma or space separated)</span></div>
+        }
+        else
+        {
+            <div class="mud-field"><label for="te-neighbor">Neighbour terrain</label>
+                <input id="te-neighbor" value="@p.NeighborTerrain" @onchange="e => Edit(() => p.NeighborTerrain = e.Value?.ToString())" maxlength="100" required list="terrain-list" autocomplete="off" /></div>
+            <datalist id="terrain-list">
+                @foreach (var t in p.TerrainChoices) { <option value="@t"></option> }
+            </datalist>
+            <div class="mud-field"><label for="te-text">Text</label>
+                <input id="te-text" value="@p.Text" @onchange="e => Edit(() => p.Text = e.Value?.ToString())" maxlength="2000" required />
+                <span class="mud-hint">(must contain <code>{dir}</code> exactly once)</span></div>
+            <div class="mud-field"><label for="te-weight">Weight</label>
+                <input id="te-weight" type="number" inputmode="numeric" min="0" value="@p.Weight" @onchange="e => Edit(() => p.Weight = ParseInt(e.Value, p.Weight))" /></div>
+            <div class="mud-check"><label><input type="checkbox" checked="@p.Merge" @onchange="e => Edit(() => p.Merge = (bool)(e.Value ?? false))" /> Merge several sides into one phrase ("north and east")</label></div>
+        }
+        <div class="mud-sticky-actions">
+            <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Save</button>
+        </div>
+    </form>
+    @if (p.HasPreview)
+    {
+        <h2>Preview</h2>
+        <p>@p.PreviewText</p>
+        <p><small>Preview of the saved values. Core offers no sample-room render yet.</small></p>
+    }
+}
+
+@code {
+    // The kind and the id come from the query string only.
+    [SupplyParameterFromQuery(Name = "kind")] public string? Kind { get; set; }
+    [SupplyParameterFromQuery(Name = "id")] public string? Id { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private TerrainEditPresenter? _presenter;
+    private TerrainDraft? _draftOffer;
+    private TerrainDraft? _stored;
+    private string? _loadedFor;
+    private string _draftKey = string.Empty;
+    private string _token = string.Empty;
+    private string _user = string.Empty;
+    private bool _busy;
+
+    // The editable fields kept in the browser while editing (WEB_BLAZOR.md 6.4). No secret is in here: the form has none.
+    public sealed class TerrainDraft
+    {
+        public string? NewId { get; set; }
+        public List<string> Terrains { get; set; } = new();
+        public string? ExtraTerrains { get; set; }
+        public string? Slot { get; set; }
+        public string? Text { get; set; }
+        public int Weight { get; set; }
+        public string? Tags { get; set; }
+        public string? Short { get; set; }
+        public string? Long { get; set; }
+        public string? RoomLine { get; set; }
+        public string? Detail { get; set; }
+        public string? Handles { get; set; }
+        public string? Adjectives { get; set; }
+        public double Chance { get; set; }
+        public string? NeighborTerrain { get; set; }
+        public bool Merge { get; set; }
+
+        public bool SameAs(TerrainDraft other) =>
+            System.Text.Json.JsonSerializer.Serialize(this) == System.Text.Json.JsonSerializer.Serialize(other);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var signature = Kind + "|" + Id;
+        if (_loadedFor == signature) { return; }
+        _loadedFor = signature;
+        _draftOffer = null;
+        var user = (await AuthState).User;
+        _token = user.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
+        _user = user.FindFirstValue(ClaimTypes.Name) ?? string.Empty;
+        _draftKey = DraftStore.KeyFor(_user, WebRoutes.TerrainEdit(Kind ?? string.Empty, Id));
+        await LoadAsync(Notices.Take());
+        _firstOffer = true;
+    }
+
+    private bool _firstOffer;
+
+    private async Task LoadAsync(string? notice)
+    {
+        var presenter = new TerrainEditPresenter(Core, _token, Kind, Id);
+        await presenter.LoadAsync();
+        presenter.Notice = notice;
+        _presenter = presenter;
+        _stored = Snapshot();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // JS interop is only available after the first render; the offer is made once per loaded entry.
+        if (!_firstOffer) { return; }
+        _firstOffer = false;
+        if (_presenter == null || _presenter.IsMissing) { return; }
+        var draft = await Drafts.LoadAsync<TerrainDraft>(_draftKey);
+        if (draft != null && _stored != null && !draft.SameAs(_stored))
+        {
+            _draftOffer = draft;
+            StateHasChanged();
+        }
+    }
+
+    private TerrainDraft? Snapshot() => _presenter == null || _presenter.IsMissing ? null : new TerrainDraft
+    {
+        NewId = _presenter.NewId, Terrains = _presenter.Terrains.OrderBy(t => t, StringComparer.Ordinal).ToList(), ExtraTerrains = _presenter.ExtraTerrains,
+        Slot = _presenter.Slot, Text = _presenter.Text, Weight = _presenter.Weight, Tags = _presenter.Tags, Short = _presenter.Short,
+        Long = _presenter.Long, RoomLine = _presenter.RoomLine, Detail = _presenter.Detail, Handles = _presenter.Handles,
+        Adjectives = _presenter.Adjectives, Chance = _presenter.Chance, NeighborTerrain = _presenter.NeighborTerrain, Merge = _presenter.Merge,
+    };
+
+    private static int ParseInt(object? value, int fallback) => int.TryParse(value?.ToString(), out var n) ? n : fallback;
+
+    private static double ParseDouble(object? value, double fallback) =>
+        double.TryParse(value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : fallback;
+
+    private Task Edit(Action change)
+    {
+        change();
+        return SaveDraftAsync();
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        var snapshot = Snapshot();
+        if (snapshot == null) { return; }
+        // Not stored while it equals what core gave us.
+        if (_stored != null && snapshot.SameAs(_stored)) { await Drafts.RemoveAsync(_draftKey); }
+        else { await Drafts.SaveAsync(_draftKey, snapshot); }
+    }
+
+    private void RestoreDraft()
+    {
+        var d = _draftOffer;
+        _draftOffer = null;
+        var p = _presenter;
+        if (d == null || p == null) { return; }
+        if (p.IsNew) { p.NewId = d.NewId; }
+        p.Terrains = d.Terrains.ToList(); p.ExtraTerrains = d.ExtraTerrains;
+        p.Slot = d.Slot; p.Text = d.Text; p.Weight = d.Weight; p.Tags = d.Tags; p.Short = d.Short; p.Long = d.Long; p.RoomLine = d.RoomLine;
+        p.Detail = d.Detail; p.Handles = d.Handles; p.Adjectives = d.Adjectives; p.Chance = d.Chance; p.NeighborTerrain = d.NeighborTerrain; p.Merge = d.Merge;
+    }
+
+    private async Task DiscardDraft()
+    {
+        _draftOffer = null;
+        await Drafts.RemoveAsync(_draftKey);
+    }
+
+    // One write at a time: a double tap cannot send two.
+    private async Task SaveAsync()
+    {
+        var p = _presenter;
+        if (_busy || p == null) { return; }
+        _busy = true;
+        try
+        {
+            var wasNew = p.IsNew;
+            var newId = (p.NewId ?? string.Empty).Trim();
+            var outcome = await p.SaveAsync();
+            if (outcome == TerrainEditOutcome.Ok)
+            {
+                await Drafts.RemoveAsync(_draftKey);
+                Notices.Set(p.Notice ?? "Saved.");
+                if (wasNew) { Navigation.NavigateTo(WebRoutes.TerrainEdit(p.Kind!, newId)); }
+                else { await LoadAsync(Notices.Take()); }
+            }
+            else if (outcome == TerrainEditOutcome.NoChange)
+            {
+                _stored = Snapshot();
+                await Drafts.RemoveAsync(_draftKey);
+            }
+        }
+        finally { _busy = false; }
+    }
+}
