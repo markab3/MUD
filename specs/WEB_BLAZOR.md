@@ -404,6 +404,13 @@ Logic is in `CreatorPresenter`, `CreatorMapPresenter` and `RoomEditPresenter` (m
 Shared: `ExitRows.razor` (exit cards), `RoomMap.razor` + `wwwroot/js/roommap.js` (viewBox pan, pinch, wheel, double-tap, keyboard; a tap on a room smaller than 44px selects the nearest room and shows "Open room"; room squares stay real links), `NoticeService` (replaces TempData), `DraftStore` + `window.mudDraft` in `app.js` (localStorage, 24 h, key `draft:<user>:<route>`, cleared on logout).
 Decisions: status codes become in-page views (7.3); Regen's confirm is an in-page confirmation showing `Messages.RegenWarning` (not a browser dialog, so no script string quoting); row edits (add/remove/move exit and feature) are local and call no core method; inputs bind on change, not per keystroke; a draft is offered only when it differs from what core returned. Not verified here: touch gestures, reconnect behaviour and the 360px layout need a real device (Appendix A); there is no bUnit, so components are covered by presenter tests plus source/reflection guards.
 
+**Room behaviors (card t_031d5843).** `RoomEdit.razor` shows `Shared/RoomBehaviors.razor` in a section after the form (outside it, so nothing is saved
+from it). `RoomEditPresenter` exposes `Behaviors` (`BehaviorRow`: hook, module, type, priority, config pretty-printed by `PrettyJson`; text that is not
+JSON is shown as it came) and `Searches` (`SearchRow`), both read-only, refilled on every load and empty when core sends none. Layout: one card per entry
+at every width (an `<ol>` of `.mud-behavior`, no table), the config in a native `<details>` (collapsed, no script; the `<summary>` is 44px high), the `<pre>`
+scrolls inside its own box (`max-height: 40vh`), long type names wrap. CSS in `mobile.css` under "Room behaviors", palette variables only. Tests:
+`RoomBehaviorsPageTests` renders the real page with `HtmlRenderer` over `FakeAdminClient` (order, empty state, config, search, older core, save leaves them).
+
 ## Appendix C. Player and module pages as built (card t_459edd31)
 
 Components: `/creator/players` (`PlayerList.razor`, `?q=&sort=&page=`), `/creator/players/{NameKey}` (`PlayerEdit.razor`), `/creator/modules` (`Modules.razor`). All use `CreatorOrAdmin`; the shell nav now links to them.

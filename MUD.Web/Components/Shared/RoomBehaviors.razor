@@ -1,0 +1,49 @@
+@* Read-only list of a room's behavior entries and search entries (WEB_BLAZOR.md 4.1). No form fields, nothing is sent back.
+   The config is a native details element: collapsed by default, no script, a 44px summary. *@
+<p class="mud-hint">Read-only. Behaviors are managed with the in-game <code>behavior</code> creator command (<code>behavior here list|add|remove</code>) or the <code>behaviors:</code> list in the area file.</p>
+@if (Behaviors.Count == 0)
+{
+    <p class="mud-empty">No behaviors attached.</p>
+}
+else
+{
+    <ol class="mud-behaviors">
+        @foreach (var b in Behaviors)
+        {
+            <li class="mud-behavior">
+                <dl class="mud-facts">
+                    <dt>Hook</dt><dd>@b.Hook</dd>
+                    <dt>Module</dt><dd>@b.Module</dd>
+                    <dt>Type</dt><dd>@b.Type</dd>
+                    <dt>Priority</dt><dd>@b.Priority</dd>
+                </dl>
+                <details class="mud-config">
+                    <summary>Config</summary>
+                    <pre>@b.Config</pre>
+                </details>
+            </li>
+        }
+    </ol>
+}
+@if (Searches.Count > 0)
+{
+    <h3>Search</h3>
+    <ol class="mud-behaviors mud-searches">
+        @foreach (var s in Searches)
+        {
+            <li class="mud-behavior">
+                <dl class="mud-facts">
+                    <dt>Id</dt><dd>@s.Id</dd>
+                    <dt>Target</dt><dd>@s.Target</dd>
+                    <dt>Refresh</dt><dd>@s.RefreshMs ms</dd>
+                    @if (!string.IsNullOrEmpty(s.RewardShort)) { <dt>Reward</dt><dd>@s.RewardShort</dd> }
+                </dl>
+            </li>
+        }
+    </ol>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<BehaviorRow> Behaviors { get; set; } = Array.Empty<BehaviorRow>();
+    [Parameter] public IReadOnlyList<SearchRow> Searches { get; set; } = Array.Empty<SearchRow>();
+}

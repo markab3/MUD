@@ -91,6 +91,13 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   in the page's error summary, prefixed "Feature N:" (1-based). Behavior and component config is not in the contract: core keeps it for a
   feature whose short is unchanged (`specs/ADMIN_API.md`), so the page shows one general note that renaming or removing a feature drops it
   (it cannot mark individual rows, because `RoomFeature` does not say which have behavior).
+- Behaviors (read-only, card "Website: list a room's behaviors"): a "Behaviors" section after the form, from `RoomDetail.behaviors` and
+  `searches` (`specs/ADMIN_API.md`). Each room-level behavior in stored order is a card with hook, module, type, priority and a collapsed
+  "Config" block with the config as indented JSON. A "Search" subsection (id, target, refresh in ms, reward short) appears only when the
+  room has search entries. Empty: "No behaviors attached." A core that sends neither (older) gives the empty state and the page works as
+  before. A help line says behaviors are managed with the in-game `behavior` creator command (`behavior here list|add|remove`, see
+  `BehaviorCommand`) or the `behaviors:` list of the area file. No controls: Save, Regen, Update, Move and Delete never send them
+  (`RoomEditRequest` has no such field; core ignores them on update).
 - Last write wins (D30): there is no revision, no hidden `Rev` field and no conflict page. Two edits in a row both
   apply; the audit rows hold the previous value of every changed field.
 - Core's answers map to fixed page messages: `OK` (saved), `NO_CHANGE`, `INVALID` (core's field errors are shown and the
