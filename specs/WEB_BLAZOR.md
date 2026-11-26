@@ -435,3 +435,28 @@ layout, policy, gRPC and guard tests are untouched. A new test asserts no `.csht
 Measured with headless Chromium (Playwright) against the published Release build and a stand-in core on a Unix socket (no real core or Mongo; room, player and
 module data were canned). Results and screenshots are attached to the PR. Not verified: a real phone, real touch gestures on the map (pinch, one-finger pan), the
 core-down banner, a role lowered mid-circuit, throttled networks.
+
+## Appendix F. End-to-end verification against a real core and Mongo (card t_a4fd23b9)
+
+Repeatable script: `scripts/e2e/run.sh` (with `core.sh`, `gen_rooms.py`, `driver.mjs`). It touches nothing live: `mongod` on spare port 27391 with a temp dbpath and
+a random database name (`e2e_<hex>`), `MUD.Main` with `MUD_RUN_DIRECTORY` and `MUD_FRONTEND_TOKEN_FILE` in a temp directory, the website on 5391, a telnet host on 7691 (only to run
+`genmap`/`import` once), and a TCP proxy on 5392 that the driver severs. It refuses 27017, 5080 and 7680. Two creator accounts are seeded with `scripts/seed-admin.sh` and random passwords
+that live only in the environment of the run (never printed, never written to the report or the repo). The output (`scripts/e2e/out/report.md` plus PNGs at 1280x800 and 360x640) is git-ignored.
+Needs the .NET 8 SDK, `mongod` and a mongo shell, `python3`, and node with the `playwright` package and a Chromium (`E2E_NODE_MODULES`). Run: `bash scripts/e2e/run.sh` (about 4 minutes; `E2E_KEEP=1 E2E_SKIP_BUILD=1` to reuse a build).
+
+Steps (each at desktop and, where it applies, 360px, with a screenshot, and a 360px horizontal-overflow check): login; character page; create room; room edit save (checked after reload); update and regen
+on a generated room; map view (48 room links); player list; player edit save; modules page; terrain create, edit (checked after reload) and delete; password change and back; logout (`/character` then redirects
+to `/login`). Then: a severed circuit on the create-room form (banner shows, Save disabled, same circuit resumes with all three typed fields intact, Save works afterwards); a role lowered mid-circuit by an admin; core stopped
+mid-session.
+
+First run on `hermes` at 480d55b: 44 PASS, 1 GAP, 0 FAIL (the first draft of the script had five failing steps; all were wrong selectors or wrong expectations in the script, none was a site bug).
+Results worth knowing:
+
+- Role lowered mid-circuit is honoured: a stale circuit that tries to open another player's editor gets "You are not allowed to make that change to this player." (core re-checks), and within the 30 s revalidation the user is signed out to the login page.
+  The user ended on the login page rather than on a page with reduced navigation. Whether core ends the session on a role change or revalidation signs the user out was not isolated. A fresh login as the plain player is refused the creator pages.
+- Forced disconnect keeps the circuit: the retained circuit resumes (retention is 20 minutes), input is intact, mutating buttons are disabled while the banner shows. The *rejected* path (circuit evicted) and the local draft restore were not exercised.
+- **GAP: no shared core-down banner.** 3.1 and 7.2 say a shell banner is shown while core is unavailable. None exists: with core stopped, the idle signed-in page shows nothing; only an action that calls core shows "The game is not reachable right now. Please try again later."
+  The user is correctly not signed out while core is away, and after core restarts the old session was ended at the next revalidation (the cause was not investigated). Backlog card filed.
+- Modules page: no module executables were published in the run, so it showed "No modules found"; start/stop/restart were not exercised.
+
+Not verified: a real phone and touch gestures, throttled networks, HTTPS or a reverse proxy, module start/stop/restart, the rejected-circuit banner and draft restore, concurrent users, the `[!]` Gen "needs update" path with a changed library template.
