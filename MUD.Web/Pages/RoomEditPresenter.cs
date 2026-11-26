@@ -62,6 +62,11 @@ public sealed class RoomEditPresenter
     public string? GenTerrain { get; private set; }
     public bool IsGenerated => GenTerrain != null;
 
+    // Read-only views of the room's behavior entries and search entries, in core's stored order. Never sent back on save
+    // (RoomEditRequest has no field for them). Empty when core is older and does not send them.
+    public IReadOnlyList<BehaviorRow> Behaviors { get; private set; } = Array.Empty<BehaviorRow>();
+    public IReadOnlyList<SearchRow> Searches { get; private set; } = Array.Empty<SearchRow>();
+
     public bool IsMissing => Missing != RoomEditMissing.None;
 
     public async Task<RoomEditOutcome> LoadAsync(CancellationToken cancellation = default)
@@ -396,8 +401,26 @@ public sealed class RoomEditPresenter
         Exits = Exits.Where(e => e != null).ToList();
     }
 
+    // Core sends compact JSON. Indent it for reading; text that is not valid JSON is shown as it came.
+    public static string PrettyJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) { return "{}"; }
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(doc.RootElement, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            });
+        }
+        catch (System.Text.Json.JsonException) { return json; }
+    }
+
     private void Load(RoomDetail room)
     {
+        Behaviors = room.Behaviors.Select(b => new BehaviorRow(b.Hook, b.Module, b.Type, b.Priority, PrettyJson(b.ConfigJson))).ToList();
+        Searches = room.Searches.Select(x => new SearchRow(x.Id, x.Target, x.RefreshMs, x.RewardShort)).ToList();
         var dot = room.Key.IndexOf('.');
         NewArea ??= dot > 0 ? room.Key.Substring(0, dot) : room.Area;
         NewLocalKey ??= dot > 0 ? room.Key.Substring(dot + 1) : room.Key;
@@ -419,6 +442,12 @@ public sealed class RoomEditPresenter
         }).ToList();
     }
 }
+
+/// <summary>One behavior entry of the room as shown read-only on the edit page. Config is pretty-printed JSON text.</summary>
+public sealed record BehaviorRow(string Hook, string Module, string Type, int Priority, string Config);
+
+/// <summary>One entry of the room's search component as shown read-only on the edit page.</summary>
+public sealed record SearchRow(string Id, string Target, int RefreshMs, string RewardShort);
 
 /// <summary>One feature row of the room edit form. Each word list is one text field: words separated by commas or spaces.</summary>
 public class FeatureInput
