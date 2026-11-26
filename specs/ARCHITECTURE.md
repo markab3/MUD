@@ -139,7 +139,7 @@ MUD.Data.Entity                    (abstract; string Id ↔ ObjectId)
     │   └── NPC                    (empty stub)
     ├── Room                       Items, Features, Exits, Occupants,
     │                              RoomCommandSource, EnterRoom/ExitRoom
-    ├── InventoryItem              └── Wand (charges), Food (servings)
+    ├── InventoryItem              (food, wand: behaviors, see ARCHITECTURE_V2)
     └── Feature                    (furniture referenced in descriptions)
 Exit                               (Name, DestinationId; not a GameObject)
 ```
