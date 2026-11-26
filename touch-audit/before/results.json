@@ -1,0 +1,320 @@
+[
+  {
+    "size": "360x640",
+    "page": "login",
+    "hscroll": false,
+    "small": [
+      {
+        "tag": "a",
+        "cls": "mud-skip (focused)",
+        "text": "Skip to content",
+        "w": 112.9,
+        "h": 39.2
+      }
+    ]
+  },
+  {
+    "size": "360x640",
+    "page": "character",
+    "hscroll": false,
+    "small": [
+      {
+        "tag": "a",
+        "cls": "mud-skip (focused)",
+        "text": "Skip to content",
+        "w": 112.9,
+        "h": 39.2
+      }
+    ]
+  },
+  {
+    "size": "360x640",
+    "page": "password",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "360x640",
+    "page": "creator",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "360x640",
+    "page": "map",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "360x640",
+    "page": "room",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "360x640",
+    "page": "players",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "360x640",
+    "page": "player-edit",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "360x640",
+    "page": "modules",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "360x640",
+    "page": "terrain",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "360x640",
+    "page": "terrain-edit",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "360x640",
+    "page": "access-denied",
+    "hscroll": false,
+    "small": [
+      {
+        "tag": "a",
+        "cls": "mud-skip (focused)",
+        "text": "Skip to content",
+        "w": 112.9,
+        "h": 39.2
+      }
+    ]
+  },
+  {
+    "size": "768x1024",
+    "page": "login",
+    "hscroll": false,
+    "small": [
+      {
+        "tag": "a",
+        "cls": "mud-skip (focused)",
+        "text": "Skip to content",
+        "w": 112.9,
+        "h": 39.2
+      }
+    ]
+  },
+  {
+    "size": "768x1024",
+    "page": "character",
+    "hscroll": false,
+    "small": [
+      {
+        "tag": "a",
+        "cls": "mud-skip (focused)",
+        "text": "Skip to content",
+        "w": 112.9,
+        "h": 39.2
+      }
+    ]
+  },
+  {
+    "size": "768x1024",
+    "page": "password",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "768x1024",
+    "page": "creator",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "768x1024",
+    "page": "map",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "768x1024",
+    "page": "room",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "768x1024",
+    "page": "players",
+    "hscroll": false,
+    "small": [
+      {
+        "tag": "a",
+        "cls": "mud-link",
+        "text": "Player",
+        "w": 40.9,
+        "h": 44
+      },
+      {
+        "tag": "a",
+        "cls": "mud-link",
+        "text": "Aldrin",
+        "w": 41.8,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "size": "768x1024",
+    "page": "player-edit",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "768x1024",
+    "page": "modules",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "768x1024",
+    "page": "terrain",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "768x1024",
+    "page": "terrain-edit",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "768x1024",
+    "page": "access-denied",
+    "hscroll": false,
+    "small": [
+      {
+        "tag": "a",
+        "cls": "mud-skip (focused)",
+        "text": "Skip to content",
+        "w": 112.9,
+        "h": 39.2
+      }
+    ]
+  },
+  {
+    "size": "1280x800",
+    "page": "login",
+    "hscroll": false,
+    "small": [
+      {
+        "tag": "a",
+        "cls": "mud-skip (focused)",
+        "text": "Skip to content",
+        "w": 112.9,
+        "h": 39.2
+      }
+    ]
+  },
+  {
+    "size": "1280x800",
+    "page": "character",
+    "hscroll": false,
+    "small": [
+      {
+        "tag": "a",
+        "cls": "mud-skip (focused)",
+        "text": "Skip to content",
+        "w": 112.9,
+        "h": 39.2
+      }
+    ]
+  },
+  {
+    "size": "1280x800",
+    "page": "password",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "1280x800",
+    "page": "creator",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "1280x800",
+    "page": "map",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "1280x800",
+    "page": "room",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "1280x800",
+    "page": "players",
+    "hscroll": false,
+    "small": [
+      {
+        "tag": "a",
+        "cls": "mud-link",
+        "text": "Player",
+        "w": 40.9,
+        "h": 44
+      },
+      {
+        "tag": "a",
+        "cls": "mud-link",
+        "text": "Aldrin",
+        "w": 41.8,
+        "h": 44
+      }
+    ]
+  },
+  {
+    "size": "1280x800",
+    "page": "player-edit",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "1280x800",
+    "page": "modules",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "1280x800",
+    "page": "terrain",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "1280x800",
+    "page": "terrain-edit",
+    "hscroll": false,
+    "small": []
+  },
+  {
+    "size": "1280x800",
+    "page": "access-denied",
+    "hscroll": false,
+    "small": [
+      {
+        "tag": "a",
+        "cls": "mud-skip (focused)",
+        "text": "Skip to content",
+        "w": 112.9,
+        "h": 39.2
+      }
+    ]
+  }
+]
