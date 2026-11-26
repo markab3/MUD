@@ -1,0 +1,210 @@
+@page "/next/creator/players/{NameKey}"
+@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@inject IAdminClient Core
+@inject DraftStore Drafts
+<PageTitle>Edit player - Planar Realms</PageTitle>
+<h1>Edit player</h1>
+@if (_presenter == null)
+{
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else if (_presenter.IsMissing)
+{
+    <p role="alert" class="mud-error">@_presenter.Error</p>
+    <p><a class="mud-btn" href="@WebRoutes.Players">Back to the player list</a></p>
+}
+else
+{
+    var p = _presenter;
+    <p>Player: <strong>@p.Current?.Name</strong> (read-only). Current role: @(p.Current == null ? "" : PlayerListPresenter.RoleText(p.Current.Role))</p>
+    @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
+    @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
+    @if (p.Problems.Count > 0)
+    {
+        <ul role="alert" class="mud-error">
+            @foreach (var m in p.Problems) { <li>@m</li> }
+        </ul>
+    }
+    @if (!p.CanEdit)
+    {
+        <p>@Messages.PlayerCannotEdit</p>
+    }
+    else
+    {
+        @if (_draftOffer != null)
+        {
+            <div class="mud-draft" role="status">
+                <p>@Messages.PlayerDraftFound</p>
+                <div class="mud-actions">
+                    <button type="button" class="mud-btn" @onclick="RestoreDraft">Restore unsaved changes</button>
+                    <button type="button" class="mud-btn" @onclick="DiscardDraft">Discard</button>
+                </div>
+            </div>
+        }
+        <form @onsubmit="SubmitAsync" @onsubmit:preventDefault novalidate>
+            <div class="mud-field"><label for="pe-short">Short description</label>
+                <input id="pe-short" value="@p.Short" @onchange="e => Edit(() => p.Short = e.Value?.ToString())" maxlength="100" required /></div>
+            <div class="mud-field"><label for="pe-long">Long description</label>
+                <textarea id="pe-long" value="@p.Long" @onchange="e => Edit(() => p.Long = e.Value?.ToString())" maxlength="4000" rows="6"></textarea></div>
+            <div class="mud-field"><label for="pe-race">Race</label>
+                <input id="pe-race" value="@p.Race" @onchange="e => Edit(() => p.Race = e.Value?.ToString())" maxlength="32" /></div>
+            <div class="mud-field"><label for="pe-gender">Gender</label>
+                <input id="pe-gender" value="@p.Gender" @onchange="e => Edit(() => p.Gender = e.Value?.ToString())" maxlength="32" /></div>
+            <div class="mud-field"><label for="pe-class">Class</label>
+                <input id="pe-class" value="@p.Class" @onchange="e => Edit(() => p.Class = e.Value?.ToString())" maxlength="32" /></div>
+            @if (p.CanSetRole)
+            {
+                <div class="mud-field"><label for="pe-role">Role</label>
+                    <select id="pe-role" value="@p.Role.ToString()" @onchange="e => Edit(() => p.Role = ParseRole(e.Value))">
+                        <option value="Player" selected="@(p.Role == AccountRole.Player)">Player</option>
+                        <option value="Creator" selected="@(p.Role == AccountRole.Creator)">Creator</option>
+                    </select>
+                    <span class="mud-hint">(Admin changes happen outside the website.)</span></div>
+            }
+            @if (p.CanSetRetired)
+            {
+                <div class="mud-check"><label><input type="checkbox" checked="@p.Retired" @onchange="e => Edit(() => p.Retired = (bool)(e.Value ?? false))" /> Retired (the character can no longer log in)</label></div>
+            }
+            @if (_confirmRetire)
+            {
+                <ConfirmDialog Label="Confirm retire" Text="@Messages.RetirePlayerConfirm" ConfirmText="Retire and save"
+                               Busy="_busy" OnConfirm="ConfirmRetireAsync" OnCancel="CancelRetire" />
+            }
+            <div class="mud-sticky-actions">
+                <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Save player</button>
+            </div>
+        </form>
+    }
+    <p><a class="mud-btn" href="@WebRoutes.Players">Back to the player list</a></p>
+}
+
+@code {
+    // The name key comes from the route only.
+    [Parameter] public string NameKey { get; set; } = string.Empty;
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private PlayerEditPresenter? _presenter;
+    private PlayerEditDraft? _draftOffer;
+    private PlayerEditDraft? _stored;
+    private string? _loadedKey;
+    private string _draftKey = string.Empty;
+    private bool _busy;
+    private bool _confirmRetire;
+
+    // The editable fields kept in the browser while editing (WEB_BLAZOR.md 6.4). No secret is in here: the player edit form has none.
+    public sealed class PlayerEditDraft
+    {
+        public string? Short { get; set; }
+        public string? Long { get; set; }
+        public string? Race { get; set; }
+        public string? Gender { get; set; }
+        public string? Class { get; set; }
+        public bool Retired { get; set; }
+        public AccountRole Role { get; set; }
+
+        public bool SameAs(PlayerEditDraft other) =>
+            System.Text.Json.JsonSerializer.Serialize(this) == System.Text.Json.JsonSerializer.Serialize(other);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedKey == NameKey) { return; }
+        _loadedKey = NameKey;
+        _draftOffer = null;
+        _confirmRetire = false;
+        var user = (await AuthState).User;
+        var token = user.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
+        var editor = Enum.TryParse<AccountRole>(user.FindFirstValue(ClaimTypes.Role), out var role) ? role : AccountRole.Player;
+        _draftKey = DraftStore.KeyFor(user.FindFirstValue(ClaimTypes.Name) ?? string.Empty, WebRoutes.PlayerEdit(NameKey));
+        var presenter = new PlayerEditPresenter(Core, token, editor, NameKey);
+        await presenter.LoadAsync();
+        _presenter = presenter;
+        _stored = Snapshot();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // JS interop is only available after the first render; the offer is made once, when the player loaded.
+        if (!firstRender || _presenter == null || _presenter.IsMissing || !_presenter.CanEdit) { return; }
+        var draft = await Drafts.LoadAsync<PlayerEditDraft>(_draftKey);
+        if (draft != null && _stored != null && !draft.SameAs(_stored))
+        {
+            _draftOffer = draft;
+            StateHasChanged();
+        }
+    }
+
+    private PlayerEditDraft? Snapshot() => _presenter == null || _presenter.IsMissing ? null : new PlayerEditDraft
+    {
+        Short = _presenter.Short, Long = _presenter.Long, Race = _presenter.Race, Gender = _presenter.Gender, Class = _presenter.Class,
+        Retired = _presenter.Retired, Role = _presenter.Role,
+    };
+
+    private static AccountRole ParseRole(object? value) =>
+        Enum.TryParse<AccountRole>(value?.ToString(), out var r) && r != AccountRole.Admin ? r : AccountRole.Player;
+
+    private Task Edit(Action change)
+    {
+        change();
+        return SaveDraftAsync();
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        var snapshot = Snapshot();
+        if (snapshot == null) { return; }
+        // Not stored while it equals what core gave us.
+        if (_stored != null && snapshot.SameAs(_stored)) { await Drafts.RemoveAsync(_draftKey); }
+        else { await Drafts.SaveAsync(_draftKey, snapshot); }
+    }
+
+    private void RestoreDraft()
+    {
+        var d = _draftOffer;
+        _draftOffer = null;
+        if (d == null || _presenter == null) { return; }
+        _presenter.Short = d.Short; _presenter.Long = d.Long; _presenter.Race = d.Race; _presenter.Gender = d.Gender; _presenter.Class = d.Class;
+        // A role or retired flag the editor may not set is not taken from a draft; core would refuse it anyway.
+        if (_presenter.CanSetRetired) { _presenter.Retired = d.Retired; }
+        if (_presenter.CanSetRole) { _presenter.Role = d.Role == AccountRole.Admin ? _presenter.Role : d.Role; }
+    }
+
+    private async Task DiscardDraft()
+    {
+        _draftOffer = null;
+        await Drafts.RemoveAsync(_draftKey);
+    }
+
+    // Newly retiring a character asks first (touch-sized confirmation); every other save goes straight through.
+    private async Task SubmitAsync()
+    {
+        if (_busy || _presenter == null) { return; }
+        if (_presenter.WouldRetire) { _confirmRetire = true; return; }
+        await SaveAsync();
+    }
+
+    private void CancelRetire() => _confirmRetire = false;
+
+    private async Task ConfirmRetireAsync()
+    {
+        _confirmRetire = false;
+        await SaveAsync();
+    }
+
+    // One write at a time: a double tap cannot send two.
+    private async Task SaveAsync()
+    {
+        if (_busy || _presenter == null) { return; }
+        _busy = true;
+        try
+        {
+            var outcome = await _presenter.SaveAsync();
+            if (outcome is PlayerEditOutcome.Ok or PlayerEditOutcome.NoChange)
+            {
+                _stored = Snapshot();
+                await Drafts.RemoveAsync(_draftKey);
+            }
+        }
+        finally { _busy = false; }
+    }
+}

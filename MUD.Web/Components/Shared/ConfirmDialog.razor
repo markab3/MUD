@@ -1,0 +1,17 @@
+@* Touch-sized in-page confirmation for destructive actions (WEB_BLAZOR.md 4.1). Not a browser confirm(): no script, big buttons. *@
+<div class="mud-confirm" role="alertdialog" aria-label="@Label">
+    <p>@Text</p>
+    <div class="mud-actions">
+        <button type="button" class="mud-btn mud-btn-danger mud-save" disabled="@Busy" @onclick="OnConfirm">@ConfirmText</button>
+        <button type="button" class="mud-btn" @onclick="OnCancel">Cancel</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = string.Empty;
+    [Parameter] public string ConfirmText { get; set; } = "Confirm";
+    [Parameter] public string Label { get; set; } = "Confirm";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+}
