@@ -152,6 +152,12 @@ A circuit lives longer than a request and has no `HttpContext` after start, so:
 
 ### 3.3 Login, logout, cookie
 
+**Proxy and redirects.** The site is served on the tailnet by `tailscale serve` (https to http://127.0.0.1:5080). `UseForwardedHeaders` is first in the
+pipeline and trusts only loopback peers (`ProxyHeaders`), so `IsHttps` is true behind the proxy and the cookie is `Secure`; plain local http keeps a
+non-Secure cookie. `NavigateTo` in static SSR (and `Results.Redirect`) builds an absolute `Location` from the request's scheme and host; behind the proxy that
+was `http://persephone.../character` (port 80, nothing listening: "Unable to connect" after every login). `ProxyHeaders.UsePathOnlyRedirects` now rewrites any 3xx
+`Location` on the request's own host to path and query, so redirects are path-only; Locations to other hosts are untouched. See DEPLOYMENT.md.
+
 Unchanged mechanism and cookie (`mud.session`, HttpOnly, SameSite=Lax, Secure on HTTPS, browser-session). `Login.razor` is a static page with `<EditForm Model=... FormName="login" method="post">`
 (`[SupplyParameterFromForm]`, antiforgery enforced by `UseAntiforgery`); its handler is `LoginModel.OnPostAsync` logic moved verbatim: remote IP from the connection, `WebAuthenticate`,
 `AuthOk` appends the cookie and redirects (`NavigationManager.NavigateTo` in static SSR issues a redirect), `AuthRetired`, `AuthTryAgainLater` / core down, generic error after the 500 ms delay. The first interactive

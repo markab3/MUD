@@ -86,6 +86,23 @@ they show a fixed "not reachable" message and sign-in does not work.
 The site speaks plain HTTP and the login sends the password in clear, so keep the default
 localhost bind unless something in front of it provides HTTPS (see WEB.md).
 
+### Behind `tailscale serve`
+
+The live site is `https://persephone.tail901d99.ts.net` (443, tailnet only) proxied to `http://127.0.0.1:5080`; `tailscale serve`
+only listens on 443 and 8443. It terminates TLS and forwards the original `Host` plus `X-Forwarded-For`, `X-Forwarded-Proto` and
+`X-Forwarded-Host`; Kestrel only sees plain http from 127.0.0.1.
+
+- **Forwarded headers.** `MUD.Web` applies `X-Forwarded-For/Proto/Host` (`UseForwardedHeaders`, `ProxyHeaders.Configure`) only when the peer is
+  loopback (`KnownProxies` = 127.0.0.1 and ::1, `KnownNetworks` empty, `ForwardLimit` 1). From any other peer they are ignored. Behind the proxy
+  `Request.IsHttps` is therefore true and `mud.session` is `Secure`; on plain `http://127.0.0.1:5080` (no forwarded headers) it is not, so local use works.
+- **Post-login "Unable to connect" (root cause).** The login redirect was an absolute `Location: http://persephone.tail901d99.ts.net/character`
+  (scheme from Kestrel's plain-http view, host from the forwarded `Host`). The phone followed it to port 80, where nothing listens; reload worked
+  because the browser then upgraded to https. Reproduced with a local proxy that mimics `tailscale serve` in front of a throwaway core (scripts/e2e
+  setup): `POST /login -> 302 Location: http://persephone.tail901d99.ts.net/character`. Now every redirect leaves as a path (`/character`, `/login`),
+  which the browser resolves against the https origin it used. Nothing on the phone needs changing (the `phone.` in the screenshot was most
+  likely the clipped left of `persephone`).
+- Not changed here: the antiforgery cookie is still not `Secure` behind the proxy (separate concern).
+
 Install after the first deploy has produced `current/web` (nothing here is done by `deploy.sh`):
 
 ```bash
