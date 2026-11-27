@@ -182,10 +182,37 @@ in-memory fakes (`MUD.Tests/AdminApiTests.cs`).
 
 ## Room map (`/creator/map`)
 
-Read-only map of the rooms, protected by `CreatorOrAdmin` (anonymous -> `/login`, plain
+Map of the rooms, protected by `CreatorOrAdmin` (anonymous -> `/login`, plain
 player -> `/access-denied`). Rooms come from `ListRooms` on the Admin service (via `IAdminClient`, with the session token),
 mapped to `RoomRecord`; only definition fields are used (short description, area, `X`, `Y`, `Z`, exits). A coordinate
-absent in the message is unplaced, never 0. Nothing is written, and the page does not reference MUD.Core. If core
+absent in the message is unplaced, never 0. The page does not reference MUD.Core. **The page is no longer purely read-only:** the black
+x marker (below) writes one exit through the audited `UpdateRoom`, so it needs the same authorisation as editing a room
+(`CreatorOrAdmin`) and runs on the interactive circuit like the other edit pages (antiforgery and circuit rules unchanged). Every other
+control on the map only navigates.
+
+**Expansion arrows** (`MapArrow`, built by `RoomMapLayout`; palette variables only: black = `--mud-text`, gray = `--mud-muted`):
+- Every room gets eight compass arrows (north, northeast, east, southeast, south, southwest, west, northwest) in the gap just outside its
+  side or corner, shifted along the edge so the line or stub stays visible. Each has an `aria-label` and a visible focus ring; the hit
+  area is an invisible circle kept at least 44 CSS px across by `roommap.js` at any zoom.
+- **Black arrow**: the room has an exit that way (any alias). It goes to the target's edit page when the target is on this level, else to the
+  map of the target's area and level (`&center=<key>`); a target room that does not exist leaves the arrow unlinked.
+- **Gray arrow**: no exit and no room. It links to `/creator?area=&x=&y=&z=` with the origin's area, X/Y plus the direction offset (north = +Y,
+  east = +X) and the same Z. No exit is prefilled and nothing is linked back; nothing is created until the form is saved.
+- **Black x**: no exit, but a room is there: (a) a placed room of the same area and level at the adjacent coordinates, or (b) a room with a
+  compass exit into this room (the direction is the opposite of that exit). Clicking it adds ONE exit (full-word direction name -> target
+  key) from this room only, never the reverse: `GetRoom` fresh, add the exit, send the whole form through `UpdateRoom` so core diffs and
+  audits only the exit. No new rpc. Fixed messages: success `Exit added.`; room gone, direction taken meanwhile, or core `Refused`/`NotFound`/
+  `NoChange` -> "The room changed in the meantime..."; `Invalid` (key validation) -> fixed text, core's text is not echoed; `Forbidden` or a
+  refused session -> "You are not allowed to edit rooms."; `AuditFailed`; core unavailable. The map is then redrawn from core.
+- **Up and down** arrows sit inside the box (up top-left, down bottom-right; black when the room has such an exit). They only switch the
+  map level, never create or wire: black = level (and area) of the target room, gray = Z+1 / Z-1 of the same area. The link carries
+  `gx`/`gy` (the origin X,Y); if the destination level has no room there, a dashed ghost square "No room here" with a "Create room here"
+  link (prefilled area, X, Y, Z) is drawn; the ghost is display only. The Level dropdown includes a level reached this way even with no
+  rooms. These replace the old up/down badges; named non-compass exits keep their badge.
+- **After Create room** saves (every creation) the browser goes to `/creator/map?area=&z=&center=<key>&created=1`: the new room is centred
+  by `roommap.js` and outlined until the next touch or key press, with the notice "Created <key>" and an "Edit room" link. A room without
+  X and Y has no level in the link; the notice says it is not on the grid and is in the Unplaced list.
+- Create room reads `area`, `x`, `y`, `z` from the query string (area only if it is an existing area). If core
 cannot be reached the page shows a fixed message instead of a map; a token core refuses goes to `/access-denied`.
 Query string: `?area=<prefix>&z=<level>` (defaults to the first area and level 0), driven by the Area and Level selectors. The Area select
 (`#map-area`) lists the area records (`ListAreas`, "prefix - Name") plus any room area that has no record, so an area with no rooms yet
@@ -202,8 +229,8 @@ appears (its map is empty); when core cannot list the records the rooms alone gi
   (arrowheads at both ends); otherwise it is a one-way line with one arrowhead.
 - If the destination's coordinates disagree with the exit direction, the line is dashed in the warning
   colour and listed under the map as a mismatch. Coordinates never create movement; exits are the truth.
-- `up`/`down` and non-compass exits (e.g. `enter hut`) cannot be placed on the grid: they appear as badges
-  on the square (up/down arrow or the exit name) with the destination key.
+- Non-compass exits (e.g. `enter hut`) cannot be placed on the grid: they appear as badges
+  on the square (the exit name) with the destination key. `up`/`down` are the arrows inside the square (above).
 - A compass exit to a missing room, another area, another level or an unplaced room is a short stub with
   the target key as a label (red when the room does not exist).
 - Rooms in the area with null X or Y are listed in the Unplaced panel and are still clickable.

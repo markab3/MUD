@@ -73,6 +73,11 @@ else
 
 @code {
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    // Prefill from the map's arrows: area, x, y, z only (never an exit).
+    [SupplyParameterFromQuery(Name = "area")] public string? Area { get; set; }
+    [SupplyParameterFromQuery(Name = "x")] public int? X { get; set; }
+    [SupplyParameterFromQuery(Name = "y")] public int? Y { get; set; }
+    [SupplyParameterFromQuery(Name = "z")] public int? Z { get; set; }
     private CreatorPresenter? _presenter;
     private bool _busy;
     private string _draftKey = string.Empty;
@@ -86,6 +91,7 @@ else
         RoomsDirectory.Invalidate();
         var presenter = new CreatorPresenter(Rooms, token);
         await presenter.LoadAreasAsync();
+        presenter.Prefill(Area, X, Y, Z);
         _presenter = presenter;
     }
 
@@ -148,7 +154,7 @@ else
             if (await _presenter.CreateAsync() == CreatorOutcome.Created)
             {
                 await Drafts.RemoveAsync(_draftKey);
-                Navigation.NavigateTo(WebRoutes.RoomEdit(_presenter.CreatedKey!));
+                Navigation.NavigateTo(_presenter.MapAfterCreate());
             }
         }
         finally { _busy = false; }

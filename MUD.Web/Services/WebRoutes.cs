@@ -17,8 +17,24 @@ public static class WebRoutes
     public const string Creator = Prefix + "/creator";
     public const string Map = Prefix + "/creator/map";
 
-    public static string MapFor(string area, int? z) =>
-        Map + "?area=" + Uri.EscapeDataString(area) + (z.HasValue ? "&z=" + z.Value : string.Empty);
+    // gx/gy: the X,Y a level switch started from (the map shows a dashed "No room here" square there if that level has no room at it).
+    // center: a room key to centre the map on; created: the page then also says "Created <key>" (after Create room).
+    public static string MapFor(string area, int? z, int? gx = null, int? gy = null, string? center = null, bool created = false) =>
+        Map + "?area=" + Uri.EscapeDataString(area) + (z.HasValue ? "&z=" + z.Value : string.Empty)
+        + (gx.HasValue && gy.HasValue ? "&gx=" + gx.Value + "&gy=" + gy.Value : string.Empty)
+        + (string.IsNullOrEmpty(center) ? string.Empty : "&center=" + Uri.EscapeDataString(center))
+        + (created ? "&created=1" : string.Empty);
+
+    // Create room, prefilled: area and coordinates only, never an exit. Parts that are null are left out.
+    public static string CreatorAt(string? area, int? x, int? y, int? z)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(area)) { parts.Add("area=" + Uri.EscapeDataString(area)); }
+        if (x.HasValue) { parts.Add("x=" + x.Value); }
+        if (y.HasValue) { parts.Add("y=" + y.Value); }
+        if (z.HasValue) { parts.Add("z=" + z.Value); }
+        return Creator + (parts.Count == 0 ? string.Empty : "?" + string.Join("&", parts));
+    }
 
     public static string RoomEdit(string key) => Prefix + "/creator/rooms/" + Uri.EscapeDataString(key);
 

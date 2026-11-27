@@ -34,7 +34,79 @@ public sealed class CreatorMapPresenter
     public RoomMap? Map { get; private set; }
     public string? Error { get; private set; }
 
-    public async Task<MapOutcome> LoadAsync(string? area, int? z, CancellationToken cancellation = default)
+    // Clicking a black x: adds ONE exit (direction -> target) to the room core has right now, through the audited UpdateRoom.
+    // The whole form goes back so core diffs and audits only the exit. Never adds the reverse exit. Messages are fixed strings.
+    public string? WireError { get; private set; }
+    public string? WireNotice { get; private set; }
+
+    // The page draws the map again with a fresh presenter after a write; this keeps the answer of the write on it.
+    public void CarryWire(string? notice, string? error) { WireNotice = notice; WireError = error; }
+
+    public async Task<bool> WireAsync(string roomKey, string direction, string targetKey, CancellationToken cancellation = default)
+    {
+        WireError = null;
+        WireNotice = null;
+        if (!RoomMapLayout.TryCompass(direction, out var dir) || string.IsNullOrWhiteSpace(targetKey))
+        {
+            WireError = Messages.MapWireChanged;
+            return false;
+        }
+        var name = RoomMapLayout.Directions.First(d => d.Dx == dir.Dx && d.Dy == dir.Dy).Name;
+        try
+        {
+            var room = await _core.GetRoomAsync(_token, roomKey, cancellation);
+            // Gone, or the direction got an exit (under any alias) since the map was drawn: refuse, change nothing.
+            if (room == null || room.Exits.Any(e => RoomMapLayout.TryCompass(e.Name, out var v) && v.Dx == dir.Dx && v.Dy == dir.Dy))
+            {
+                WireError = Messages.MapWireChanged;
+                return false;
+            }
+            var request = new MUD.Contracts.RoomEditRequest
+            {
+                Key = room.Key,
+                ShortDescription = room.ShortDescription,
+                LongDescription = room.LongDescription,
+                Area = room.Area,
+            };
+            if (room.HasX) { request.X = room.X; }
+            if (room.HasY) { request.Y = room.Y; }
+            if (room.HasZ) { request.Z = room.Z; }
+            request.Exits.AddRange(room.Exits.Select(e => new MUD.Contracts.RoomExit { Name = e.Name, To = e.To }));
+            request.Exits.Add(new MUD.Contracts.RoomExit { Name = name, To = targetKey });
+            request.FeaturesPresent = true;
+            request.Features.AddRange(room.Features);
+            var reply = await _core.UpdateRoomAsync(_token, request, cancellation);
+            switch (reply.Result)
+            {
+                case MUD.Contracts.AdminResult.Ok:
+                    WireNotice = Messages.MapWired;
+                    return true;
+                case MUD.Contracts.AdminResult.Invalid:
+                    WireError = Messages.MapWireInvalid;
+                    return false;
+                case MUD.Contracts.AdminResult.NotFound:
+                case MUD.Contracts.AdminResult.Refused:
+                case MUD.Contracts.AdminResult.NoChange:
+                    WireError = Messages.MapWireChanged;
+                    return false;
+                case MUD.Contracts.AdminResult.Forbidden:
+                    WireError = Messages.RoomForbidden;
+                    return false;
+                case MUD.Contracts.AdminResult.AuditFailed:
+                    WireError = Messages.RoomAuditFailed;
+                    return false;
+                default:
+                    WireError = Messages.RoomSaveFailed;
+                    return false;
+            }
+        }
+        catch (CoreUnavailableException) { WireError = Messages.Unavailable; return false; }
+        catch (CoreRefusedException) { WireError = Messages.RoomForbidden; return false; }
+    }
+
+    // gx/gy: a level switch started at that X,Y; when this level has no room there the map shows the dashed "No room here" square,
+    // and the level is listed even if it has no rooms yet.
+    public async Task<MapOutcome> LoadAsync(string? area, int? z, CancellationToken cancellation = default, int? gx = null, int? gy = null)
     {
         Error = null;
         Map = null;
@@ -75,7 +147,9 @@ public sealed class CreatorMapPresenter
         Levels = all.Where(r => RoomMapLayout.AreaOf(r) == Area && RoomMapLayout.IsPlaced(r))
             .Select(RoomMapLayout.LevelOf).Distinct().OrderBy(l => l).ToList();
         Z = z.HasValue ? z.Value : Levels.Count == 0 || Levels.Contains(0) ? 0 : Levels[0];
-        Map = new RoomMapLayout().Build(all, Area, Z);
+        (int X, int Y)? ghostAt = gx.HasValue && gy.HasValue ? (gx.Value, gy.Value) : null;
+        if (ghostAt.HasValue && !Levels.Contains(Z)) { Levels = Levels.Append(Z).OrderBy(l => l).ToList(); }
+        Map = new RoomMapLayout().Build(all, Area, Z, ghostAt);
         if (Map.Rects.Any(r => r.GenTerrain != null))
         {
             // Colours are cosmetic: when core cannot give them, generated rooms get the neutral generated colour.

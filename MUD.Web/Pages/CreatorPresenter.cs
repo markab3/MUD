@@ -42,6 +42,25 @@ public sealed class CreatorPresenter
         Areas = await _rooms.ListAreasAsync(_token, cancellation);
     }
 
+    // Prefill from the query string (the map's arrows): area, x, y, z only. Never an exit, never a key. The area is taken only when it is one
+    // of the offered areas (call after LoadAreasAsync); nothing is created until the user saves.
+    public void Prefill(string? area, int? x, int? y, int? z)
+    {
+        if (!string.IsNullOrEmpty(area) && Areas.Any(a => a.Id == area)) { Form.Area = area; }
+        if (x.HasValue) { Form.X = x; }
+        if (y.HasValue) { Form.Y = y; }
+        if (z.HasValue) { Form.Z = z; }
+    }
+
+    // Where the page goes after a successful create: the map of the new room's area and level, centred on it, with the "Created" notice.
+    // A room without X and Y is not on the grid: the map shows level 0 and the room appears in the Unplaced list.
+    public string MapAfterCreate()
+    {
+        var area = (Form.Area ?? string.Empty).Trim();
+        var placed = Form.X.HasValue && Form.Y.HasValue;
+        return WebRoutes.MapFor(area, placed ? Form.Z ?? 0 : null, null, null, CreatedKey, created: true);
+    }
+
     public async Task<CreatorOutcome> CreateAsync(CancellationToken cancellation = default)
     {
         Error = null;

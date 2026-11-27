@@ -4,7 +4,7 @@
 @inject IJSRuntime Js
 @* The SVG from the unchanged RoomMapLayout, rendered by the server. Room squares are real links, so a tap navigates even if the script
    fails. roommap.js does pan, pinch, wheel and double-tap zoom by editing the viewBox in the browser; no event goes to the server during a gesture. *@
-<div class="mud-map" @ref="_host" id="@_id" tabindex="0" aria-label="Room map. Arrow keys pan, plus and minus zoom.">
+<div class="mud-map" @ref="_host" id="@_id" data-center="@Center" tabindex="0" aria-label="Room map. Arrow keys pan, plus and minus zoom.">
     <div class="mud-map-tools">
         <button type="button" class="mud-btn" data-map="in" aria-label="Zoom in">+</button>
         <button type="button" class="mud-btn" data-map="out" aria-label="Zoom out">&minus;</button>
@@ -28,15 +28,51 @@
         }
         @foreach (var r in Map.Rects)
         {
-            <a href="@WebRoutes.RoomEdit(r.Key)" data-room="@r.Key" data-x="@N(r.X + r.W / 2)" data-y="@N(r.Y + r.H / 2)">
+            <a href="@WebRoutes.RoomEdit(r.Key)" data-room="@r.Key" class="@(r.Key == Center ? "mud-room mud-room-new" : "mud-room")" data-x="@N(r.X + r.W / 2)" data-y="@N(r.Y + r.H / 2)">
                 <rect x="@N(r.X)" y="@N(r.Y)" width="@N(r.W)" height="@N(r.H)" fill="@FillFor(r)" stroke="#111" stroke-width="1.5"><title>@r.Key@(r.GenTerrain != null ? " (" + r.GenTerrain + ")" : "")</title></rect>
                 <text x="@N(r.X + r.W / 2)" y="@N(r.Y + 28)" font-size="11" text-anchor="middle">@Clip(r.Short, 20)</text>
                 <text x="@N(r.X + r.W / 2)" y="@N(r.Y + 44)" font-size="9" text-anchor="middle" fill="#555">@Clip(r.Key, 24)</text>
             </a>
         }
+        @if (Map.Ghost != null)
+        {
+            var g = Map.Ghost;
+            <g class="mud-ghost" data-ghost="">
+                <rect x="@N(g.X)" y="@N(g.Y)" width="@N(g.W)" height="@N(g.H)" fill="none" stroke-width="2" stroke-dasharray="8 6" />
+                <text x="@N(g.X + g.W / 2)" y="@N(g.Y + 52)" font-size="12" text-anchor="middle">@RoomMapLayout.GhostText</text>
+                <a href="@g.CreateHref" class="mud-ghost-link" aria-label="Create room here at @g.GridX, @g.GridY, level @g.Z">
+                    <rect x="@N(g.X + 10)" y="@N(g.Y + 66)" width="@N(g.W - 20)" height="40" rx="6" class="mud-ghost-hit" />
+                    <text x="@N(g.X + g.W / 2)" y="@N(g.Y + 90)" font-size="12" text-anchor="middle">@RoomMapLayout.GhostLink</text>
+                </a>
+            </g>
+        }
         @foreach (var b in Map.Badges)
         {
             @:<text x="@N(b.X + 6)" y="@N(b.Y)" font-size="10" fill="@(b.Missing ? "#dc2626" : "#1d4ed8")">@b.Text @Clip(b.Target, 16)<title>@b.Text → @b.Target</title></text>
+        }
+        @foreach (var a in Map.Arrows)
+        {
+            var cls = "mud-arrow " + (a.Black ? "mud-arrow-black" : "mud-arrow-gray") + (a.Kind == MapArrowKind.Level ? " mud-arrow-level" : string.Empty);
+            if (a.Kind == MapArrowKind.Wire)
+            {
+                <g class="@(cls + " mud-arrow-wire")" role="button" tabindex="0" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey"
+                   @onclick="() => OnWire.InvokeAsync(a)" @onkeydown="e => WireKey(e, a)">
+                    <circle class="mud-arrow-hit" cx="@N(a.X)" cy="@N(a.Y)" r="14" /><text x="@N(a.X)" y="@N(a.Y + 5)" text-anchor="middle" font-size="16">@a.Glyph</text>
+                    <title>@a.Label</title>
+                </g>
+            }
+            else if (a.Href != null)
+            {
+                <a class="@cls" href="@a.Href" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey">
+                    <circle class="mud-arrow-hit" cx="@N(a.X)" cy="@N(a.Y)" r="14" /><text x="@N(a.X)" y="@N(a.Y + 5)" text-anchor="middle" font-size="@(a.Kind == MapArrowKind.Level ? 14 : 13)">@a.Glyph</text>
+                    <title>@a.Label</title>
+                </a>
+            }
+            else
+            {
+                @* A black arrow whose target room no longer exists: shown, not a link. *@
+                <g class="@cls" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey"><text x="@N(a.X)" y="@N(a.Y + 5)" text-anchor="middle" font-size="13">@a.Glyph</text><title>@a.Label</title></g>
+            }
         }
     </svg>
     <div class="mud-map-sheet" hidden>
@@ -48,6 +84,12 @@
 @code {
     [Parameter, EditorRequired] public MUD.Web.Services.RoomMap Map { get; set; } = default!;
     [Parameter, EditorRequired] public Func<MUD.Web.Services.MapRect, string> FillFor { get; set; } = default!;
+    // Room key to centre on at first render (and outline until the next touch); a click on a black x is reported through OnWire.
+    [Parameter] public string? Center { get; set; }
+    [Parameter] public EventCallback<MUD.Web.Services.MapArrow> OnWire { get; set; }
+
+    private Task WireKey(KeyboardEventArgs e, MUD.Web.Services.MapArrow a) =>
+        e.Key is "Enter" or " " ? OnWire.InvokeAsync(a) : Task.CompletedTask;
 
     private readonly string _id = "map-" + Guid.NewGuid().ToString("N").Substring(0, 8);
     private ElementReference _host;
@@ -63,7 +105,7 @@
         try
         {
             _module ??= await Js.InvokeAsync<IJSObjectReference>("import", "/js/roommap.js");
-            await _module.InvokeVoidAsync("attach", _host);
+            await _module.InvokeVoidAsync("attach", _host, Center);
         }
         catch (Exception e) when (e is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException) { }
     }

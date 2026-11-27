@@ -137,17 +137,16 @@ public class RoomMapLayoutTests
     }
 
     [Fact]
-    public void UpDownAndNamedExits_AreBadgesWithDestinationKey()
+    public void NamedExits_AreBadgesWithDestinationKey_AndUpDownAreArrowsNotBadges()
     {
-        var map = Build("a", 0, Room("a.a", 0, 0, 0, "a", ("up", "a.roof"), ("down", "a.cellar"), ("enter hut", "a.hut"), ("d", "gone.room")));
+        // Up and down used to be badges; they are the arrows inside the square now (MapArrowTests). Named exits keep their badge.
+        var map = Build("a", 0, Room("a.a", 0, 0, 0, "a", ("up", "a.roof"), ("down", "a.cellar"), ("enter hut", "a.hut"), ("climb", "gone.room")));
         Assert.Empty(map.Lines);
         Assert.Empty(map.Stubs);
-        Assert.Equal(4, map.Badges.Count);
-        Assert.Contains(map.Badges, b => b.Text == RoomMapLayout.Up && b.Target == "a.roof");
-        Assert.Contains(map.Badges, b => b.Text == RoomMapLayout.Down && b.Target == "a.cellar");
+        Assert.Equal(2, map.Badges.Count);
         Assert.Contains(map.Badges, b => b.Text == "enter hut" && b.Target == "a.hut");
-        Assert.Contains(map.Badges, b => b.Text == RoomMapLayout.Down && b.Target == "gone.room" && b.Missing);
-        Assert.Equal(4, map.Badges.Select(b => b.Y).Distinct().Count());
+        Assert.Contains(map.Badges, b => b.Text == "climb" && b.Target == "gone.room" && b.Missing);
+        Assert.Equal(2, map.Badges.Select(b => b.Y).Distinct().Count());
     }
 
     [Fact]

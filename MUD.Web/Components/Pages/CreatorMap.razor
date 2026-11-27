@@ -6,6 +6,18 @@
 <PageTitle>Room map - Planar Realms</PageTitle>
 <h1>Room map</h1>
 @if (_notice != null) { <p role="status" class="mud-ok">@_notice</p> }
+@if (_presenter?.WireNotice != null) { <p role="status" class="mud-ok">@_presenter.WireNotice</p> }
+@if (_presenter?.WireError != null) { <p role="alert" class="mud-error">@_presenter.WireError</p> }
+@if (Created == 1 && !string.IsNullOrEmpty(Center))
+{
+    <p role="status" class="mud-ok" id="map-created">Created @Center.
+        <a class="mud-link" href="@WebRoutes.RoomEdit(Center)">Edit room</a>
+        @if (_presenter?.Map != null && _presenter.Map.Unplaced.Any(u => u.Key == Center))
+        {
+            <span> It has no X and Y, so it is not on the grid: find it in the Unplaced rooms list below.</span>
+        }
+    </p>
+}
 @if (_presenter == null)
 {
     <p class="mud-loading" aria-busy="true">Loading...</p>
@@ -42,14 +54,16 @@ else
                 }
             </select></div>
     </div>
-    <p>North is up. Arrowheads show direction; a line with arrowheads at both ends is a two-way exit. Drag to pan and pinch to zoom; tap a room to open it.</p>
+    <p>North is up. Arrowheads show direction; a line with arrowheads at both ends is a two-way exit. Drag to pan and pinch to zoom; tap a room to open it.
+        Around each room: a black arrow follows an exit, a gray arrow opens Create room for the room next to it, and a black &times; adds the missing exit to a room that is already there (one direction only; click the &times; at the other end for the way back).
+        The &#8657; and &#8659; arrows inside a room switch the map to another level.</p>
     @if (map.Rects.Count == 0)
     {
         <p>No placed rooms on this level.</p>
     }
     else
     {
-        <RoomMap Map="map" FillFor="_presenter.FillFor" />
+        <RoomMap Map="map" FillFor="_presenter.FillFor" Center="@Center" OnWire="WireAsync" />
     }
     @if (map.Mismatches.Count > 0)
     {
@@ -86,6 +100,12 @@ else
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
     [SupplyParameterFromQuery(Name = "area")] public string? Area { get; set; }
     [SupplyParameterFromQuery(Name = "z")] public int? Z { get; set; }
+    // gx/gy: X,Y of the room a level arrow was clicked on (ghost square when this level has no room there).
+    [SupplyParameterFromQuery(Name = "gx")] public int? Gx { get; set; }
+    [SupplyParameterFromQuery(Name = "gy")] public int? Gy { get; set; }
+    // center: room key to centre and outline; created=1: say "Created <key>" (set by Create room).
+    [SupplyParameterFromQuery(Name = "center")] public string? Center { get; set; }
+    [SupplyParameterFromQuery(Name = "created")] public int? Created { get; set; }
 
     private CreatorMapPresenter? _presenter;
     private string? _notice;
@@ -99,7 +119,7 @@ else
             _notice = Notices.Take();
         }
         var presenter = new CreatorMapPresenter(Core, _token);
-        var outcome = await presenter.LoadAsync(Area, Z);
+        var outcome = await presenter.LoadAsync(Area, Z, default, Gx, Gy);
         if (outcome == MapOutcome.Denied)
         {
             // The session ended or the role was lowered since the page was authorised (D31).
@@ -110,6 +130,20 @@ else
     }
 
     private Task ReloadAsync() => OnParametersSetAsync();
+
+    // A click on a black x: one real write through the audited UpdateRoom (the page's CreatorOrAdmin policy applies, as on the edit page).
+    // The map is then drawn again from core, whatever the answer.
+    private async Task WireAsync(MapArrow arrow)
+    {
+        if (_presenter == null || arrow.TargetKey == null) { return; }
+        var wire = new CreatorMapPresenter(Core, _token);
+        var ok = await wire.WireAsync(arrow.RoomKey, arrow.Direction, arrow.TargetKey);
+        var presenter = new CreatorMapPresenter(Core, _token);
+        var outcome = await presenter.LoadAsync(Area, Z, default, Gx, Gy);
+        if (outcome == MapOutcome.Denied) { Navigation.NavigateTo(WebRoutes.AccessDenied); return; }
+        presenter.CarryWire(wire.WireNotice, wire.WireError);
+        _presenter = presenter;
+    }
 
     private void OnAreaChanged(ChangeEventArgs e) => Navigation.NavigateTo(WebRoutes.MapFor(e.Value?.ToString() ?? string.Empty, null));
 

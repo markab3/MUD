@@ -6,16 +6,17 @@ const HIT = 44;
 const MAX_ZOOM = 8;   // times the fitted size
 const MIN_ZOOM = 0.25;
 
-export function attach(host) {
+export function attach(host, center) {
   if (!host) return;
   const svg = host.querySelector('svg');
   if (!svg) return;
   const w = parseFloat(svg.dataset.w), h = parseFloat(svg.dataset.h);
   let st = states.get(host);
-  if (st && st.w === w && st.h === h && st.svg === svg) return; // same map, same element: keep the user's view
+  if (st && st.w === w && st.h === h && st.svg === svg) { st.centerOn(center); return; } // same map, same element: keep the user's view
   if (st) st.dispose();
   st = create(host, svg, w, h);
   states.set(host, st);
+  st.centerOn(center);
 }
 
 export function detach(host) {
@@ -29,7 +30,12 @@ function create(host, svg, w, h) {
   let pinch = null, dragMoved = false, lastTap = 0;
   const sheet = host.querySelector('.mud-map-sheet');
 
-  const apply = () => svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+  // --map-hit: the radius (in SVG units) of an arrow's invisible hit circle, so it is at least 22 CSS px (44px across) at any zoom.
+  const apply = () => {
+    svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+    const r = rect();
+    if (r.width > 0) svg.style.setProperty('--map-hit', `${Math.min(Math.max(22 * view.w / r.width, 14), 40)}px`);
+  };
   const rect = () => svg.getBoundingClientRect();
   const clampZoom = (nw) => Math.min(Math.max(nw, w / MAX_ZOOM), w / MIN_ZOOM);
   const toSvg = (cx, cy) => { const r = rect(); return { x: view.x + (cx - r.left) / r.width * view.w, y: view.y + (cy - r.top) / r.height * view.h }; };
@@ -63,6 +69,24 @@ function create(host, svg, w, h) {
       if (d < bestD) { bestD = d; best = a; }
     }
     return bestD <= 22 + squarePx() / 2 ? best : null;
+  }
+
+  // Centre the view on a room once per key and outline it until the next touch or key press.
+  let centred = null;
+  function centerOn(key) {
+    if (!key || centred === key) return;
+    const a = [...svg.querySelectorAll('a[data-room]')].find((n) => n.dataset.room === key);
+    if (!a) return;
+    centred = key;
+    const r = rect();
+    const nw = Math.min(view.w, 760);
+    const nh = r.width > 0 ? nw * r.height / r.width : view.h;
+    view = { x: parseFloat(a.dataset.x) - nw / 2, y: parseFloat(a.dataset.y) - nh / 2, w: nw, h: nh };
+    apply();
+    a.classList.add('mud-room-new');
+    const clear = () => { a.classList.remove('mud-room-new'); host.removeEventListener('pointerdown', clear); host.removeEventListener('keydown', clear); };
+    host.addEventListener('pointerdown', clear);
+    host.addEventListener('keydown', clear);
   }
 
   function onDown(e) {
@@ -100,6 +124,8 @@ function create(host, svg, w, h) {
     const now = Date.now();
     if (now - lastTap < 300) { zoomAt(2, e.clientX, e.clientY); lastTap = 0; return; }
     lastTap = now;
+    // A tap on an arrow or the ghost link acts on that control; the "nearest room" sheet is only for room squares.
+    if (e.target.closest && e.target.closest('.mud-arrow, .mud-ghost-link')) { hideSheet(); return; }
     if (squarePx() < HIT) {
       const room = nearestRoom(e.clientX, e.clientY);
       if (room) { showSheet(room); suppressClickUntil = Date.now() + 400; } else hideSheet();
@@ -141,8 +167,9 @@ function create(host, svg, w, h) {
   host.addEventListener('keydown', onKey);
   host.querySelector('.mud-map-tools')?.addEventListener('click', onTool);
 
+  apply();
   return {
-    w, h, svg,
+    w, h, svg, centerOn,
     dispose() {
       host.removeEventListener('pointerdown', onDown);
       host.removeEventListener('pointermove', onMove);
