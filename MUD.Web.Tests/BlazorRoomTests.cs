@@ -616,15 +616,14 @@ public class CreatorPresenterTests
     }
 
     [Fact]
-    public async Task Areas_AreDistinctAndSorted()
+    public async Task Areas_AreTheAreaRecords_Sorted()
     {
-        var core = new FakeAdminClient();
-        core.Rooms["b.one"] = new RoomDetail { Key = "b.one", Area = "b" };
-        core.Rooms["a.one"] = new RoomDetail { Key = "a.one", Area = "a" };
-        core.Rooms["a.two"] = new RoomDetail { Key = "a.two", Area = "a" };
+        // The dropdown is fed by the area records, not derived from rooms: an area with no rooms is offered, a room area with no record is not.
+        var core = new FakeAdminClient().AddArea("b", "Bee").AddArea("a", "Ay").AddArea("empty", "Nothing here yet");
+        core.Rooms["z.one"] = new RoomDetail { Key = "z.one", Area = "z" };
         var (p, _) = Make(core);
         await p.LoadAreasAsync();
-        Assert.Equal(new[] { "a", "b" }, p.Areas);
+        Assert.Equal(new[] { "a", "b", "empty" }, p.Areas.Select(a => a.Id));
     }
 
     [Fact]

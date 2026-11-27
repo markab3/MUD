@@ -156,13 +156,16 @@ else
     <details class="mud-section mud-collapse" open="@IsOpen(SecMove)" @key="KeyOf(SecMove)">
         <summary><h2 id="re-move-h">Move room (change its key)</h2></summary>
         <section class="mud-section-body" aria-labelledby="re-move-h">
-        <div class="mud-field"><label for="re-newarea">Area prefix</label>
-            <input id="re-newarea" value="@p.NewArea" @onchange="e => p.NewArea = e.Value?.ToString()" maxlength="128" list="re-area-list" autocomplete="off" autocapitalize="none" required /></div>
-        <datalist id="re-area-list">
-            @foreach (var a in _areas) { <option value="@a"></option> }
-        </datalist>
+        <div class="mud-field"><label for="re-newarea">Area</label>
+            <select id="re-newarea" @onchange="e => p.NewArea = e.Value?.ToString()" required>
+                @if (!_areas.Any(a => a.Id == p.NewArea)) { <option value="" selected="selected">(choose an area)</option> }
+                @foreach (var a in _areas) { <option value="@a.Id" selected="@(a.Id == p.NewArea)">@AreaLabel(a)</option> }
+            </select></div>
         <div class="mud-field"><label for="re-newlocal">Local key</label>
-            <input id="re-newlocal" value="@p.NewLocalKey" @onchange="e => p.NewLocalKey = e.Value?.ToString()" maxlength="64" autocomplete="off" autocapitalize="none" required /></div>
+            <span class="mud-keyrow">
+                <span class="mud-keyprefix" id="re-newprefix" aria-hidden="true">@(_areas.Any(a => a.Id == p.NewArea) ? p.NewArea + "." : string.Empty)</span>
+                <input id="re-newlocal" value="@p.NewLocalKey" @onchange="e => p.NewLocalKey = e.Value?.ToString()" maxlength="64" autocomplete="off" autocapitalize="none" required aria-describedby="re-newprefix" />
+            </span></div>
         <div class="mud-actions"><button type="button" class="mud-btn mud-save" disabled="@_busy" @onclick="MoveAsync">Move room</button></div>
         <p class="mud-hint">The new key is <code>area prefix.local key</code>. Exits that lead here, players standing here, and everything inside follow the room. The default room cannot be moved.</p>
         </section>
@@ -183,7 +186,10 @@ else
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
 
     private RoomEditPresenter? _presenter;
-    private IReadOnlyList<string> _areas = Array.Empty<string>();
+    private IReadOnlyList<Contracts.AreaRecord> _areas = Array.Empty<Contracts.AreaRecord>();
+
+    // "prefix - Name": the prefix is what the key starts with, the name says which region it is.
+    private static string AreaLabel(Contracts.AreaRecord a) => string.IsNullOrWhiteSpace(a.Name) ? a.Id : a.Id + " - " + a.Name;
     private string _draftKey = string.Empty;
     private bool _busy;
     private bool _confirmRegen;

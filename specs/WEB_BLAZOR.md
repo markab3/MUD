@@ -45,6 +45,7 @@ From the repo at `d5ed91a` (`hermes`).
 | `/creator/modules` | `Modules` (108) | CreatorOrAdmin (buttons admin only) | `ListModules`; `Start/Stop/RestartModule`; `TempData["Notice"]` |
 | `/creator/terrain` | `TerrainList` (145) | CreatorOrAdmin | tabs + filters over fragments / features / phrases; Delete per row |
 | `/creator/terrain/edit?kind=&id=` | `TerrainEdit` (194) + `TerrainLibrary.cs` (56) | CreatorOrAdmin | Get / Create / Update one library entity; `TempData["Notice"]` |
+| `/creator/areas` | `AreaList` (new, no Razor original) | CreatorOrAdmin | `ListAreas`, `CreateArea`, `UpdateArea`, `DeleteArea`; inline form, `ConfirmDialog` on delete |
 
 Plus `Pages/Shared/_Layout.cshtml`: a bare `<nav>`; **no CSS, no stylesheet, no responsive layout exists today.** 14 pages.
 
@@ -146,7 +147,7 @@ A circuit lives longer than a request and has no `HttpContext` after start, so:
 | Component | Attribute |
 |---|---|
 | Character, Password | `[Authorize]` |
-| Creator, CreatorMap, RoomEdit, Modules, TerrainList, TerrainEdit | `[Authorize(Policy = WebPolicies.CreatorOrAdmin)]` |
+| Creator, CreatorMap, RoomEdit, Modules, TerrainList, TerrainEdit, AreaList | `[Authorize(Policy = WebPolicies.CreatorOrAdmin)]` |
 | PlayerList, PlayerEdit | `[Authorize(Policy = WebPolicies.AdminOnly)]` |
 | Module Start/Stop/Restart buttons | rendered in `<AuthorizeView Roles="Admin">`, and the handler re-checks the role (defence in depth; core is authoritative) |
 | Login, access-denied | anonymous |
@@ -220,7 +221,7 @@ reads `matchMedia` once through JS interop and subscribes to changes. Alternativ
 
 ### 5.2 Navigation
 
-Three labelled sections, in this order; a section with no visible items is not rendered (no empty headings): **Player** (signed in): Character, Change password; **Creator** (CreatorOrAdmin): Map, Modules, Terrain, Create room (the page at `/creator`, renamed from "Creator"; URL unchanged); **Admin** (admins only): Players. Log out (a POST form, never a link) follows the sections, outside them. The sections are `NavMenu.SectionsFor(creatorOrAdmin, admin)` in `MUD.Web/Pages/NavMenu.cs`; `NavShell.razor` renders each as an `<h2 id="mud-nav-<id>">` heading followed by a `<ul aria-labelledby="mud-nav-<id>">`, all inside the one `<nav aria-label="Main">`, so the dialog focus trap (which looks at all links and buttons in `#mud-menu`) and the 44px targets apply unchanged. The drawer has `overflow-y:auto` and full height, so a list taller than the viewport (360x640) scrolls inside the drawer. Players is admin only on the menu, the pages (`AdminOnly`) and the API.
+Three labelled sections, in this order; a section with no visible items is not rendered (no empty headings): **Player** (signed in): Character, Change password; **Creator** (CreatorOrAdmin): Map, Modules, Terrain, Areas, Create room (the page at `/creator`, renamed from "Creator"; URL unchanged); **Admin** (admins only): Players. Log out (a POST form, never a link) follows the sections, outside them. The sections are `NavMenu.SectionsFor(creatorOrAdmin, admin)` in `MUD.Web/Pages/NavMenu.cs`; `NavShell.razor` renders each as an `<h2 id="mud-nav-<id>">` heading followed by a `<ul aria-labelledby="mud-nav-<id>">`, all inside the one `<nav aria-label="Main">`, so the dialog focus trap (which looks at all links and buttons in `#mud-menu`) and the 44px targets apply unchanged. The drawer has `overflow-y:auto` and full height, so a list taller than the viewport (360x640) scrolls inside the drawer. Players is admin only on the menu, the pages (`AdminOnly`) and the API.
 
 - **Top bar** (`<header class="mud-topbar">`, sticky, at every width), left to right: a three-line menu button (44x44, `aria-label="Menu"`, `aria-haspopup="dialog"`, `aria-expanded`, `aria-controls="mud-menu"`), the site logo (`img/planar-realms-logo.png`, a luminance-keyed transparent PNG shown at 116x40 with `alt="Planar Realms"`, inside a link to `/` with a 44px minimum hit area; the `<title>` and `<PageTitle>` stay as words), and on the far right the signed-in user's name as a link to `/character`. The name is one line and truncates with an ellipsis (`min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap`), so there is no horizontal scroll at 360px however long the name. **Anonymous visitors** (login page, access denied before sign-in) get the bar with the logo only: no button, no name, no menu.
 - **Pull-out menu**: `#mud-menu`, `role="dialog" aria-modal="true"` around a `<nav aria-label="Main">`, slides in from the left (`transform` transition, 0.25s; no animation under `prefers-reduced-motion`) over a dimmed backdrop. Closed, it is `visibility:hidden` so it is neither focusable nor read. Width `min(280px, 85vw)`.
@@ -523,3 +524,11 @@ Results worth knowing:
 - Modules page: no module executables were published in the run, so it showed "No modules found"; start/stop/restart were not exercised.
 
 Not verified: a real phone and touch gestures, throttled networks, HTTPS or a reverse proxy, module start/stop/restart, the rejected-circuit banner and draft restore, concurrent users, the `[!]` Gen "needs update" path with a changed library template.
+
+## Appendix F. Areas page and area dropdowns as built (card t_85cba74a)
+
+Components: `/creator/areas` (`AreaList.razor`, `AreaListPresenter`), a new page with no Razor Pages original. Policy `CreatorOrAdmin`; the shell's Creator section gets an Areas link after Terrain. Backend and rules: `specs/ADMIN_API.md` "Areas"; page behaviour: `specs/WEB.md` "Areas page".
+The list renders a table and a card list from the same rows (CSS, 600px, as the terrain list). New and Edit share one inline form (`#ar-id`, `#ar-name`, `#ar-desc`); the edit form's id is read-only and the presenter writes the original id. Delete asks first in `ConfirmDialog`; core's refusal (rooms still use the area, with the count) is shown as the error and the row stays. Buttons carry `data-mutating` like the other list pages, so the reconnect guard disables them.
+Every area text box is now a real `<select>` fed by `ListAreas`: Create room `#cr-area` (placed before the local key `#cr-key`), Move room `#re-newarea` (preselected to the room's current area), and the map's `#map-area` (area records plus any room area without a record, so empty areas appear). Option text is "prefix - Name". Choosing an area shows its prefix as fixed text before the local key input (`#cr-prefix`, `#re-newprefix`; `aria-hidden` on the text, the input points at it with `aria-describedby`), so "key prefix = area" holds by construction; it is empty until an area is chosen or when the room's own area has no record (placeholder option "(choose an area)"). `#re-area` stays read-only text. `.mud-keyrow` / `.mud-keyprefix` in `mobile.css` lay the prefix and input out in one row (palette variables only; the prefix wraps rather than scrolling at 360px).
+`IRoomCreationService.ListAreasAsync` and `RoomEditPresenter.GetAreasAsync` now return `AreaRecord`s (they returned prefixes derived from `ListRooms`); they answer empty when core cannot, so the dropdown is then just the placeholder.
+Not verified here: layout at 360px and touch targets in a real browser, and the screen-reader reading order of the prefix and input (no browser in the run); the rendered HTML is asserted in `AreaWebTests`.

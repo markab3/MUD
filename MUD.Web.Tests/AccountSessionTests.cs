@@ -354,6 +354,72 @@ public class FakeAdminClient : IAdminClient
         return reply;
     }
 
+    // Areas. Tests seed AreaRecords and set AreaResult (what create/update/delete answer); every call records its token and name.
+    public AdminResult AreaResult { get; set; } = AdminResult.Ok;
+    public string AreaMessage { get; set; } = string.Empty;
+    public List<FieldError> AreaErrors { get; } = new();
+    public bool RefuseAreaCalls { get; set; }
+    public List<string> AreaTokens { get; } = new();
+    public List<string> AreaCalls { get; } = new();
+    public Dictionary<string, AreaRecord> Areas { get; } = new();
+
+    public FakeAdminClient AddArea(string id, string name = "", string description = "", int rooms = 0)
+    {
+        Areas[id] = new AreaRecord { Id = id, Name = string.IsNullOrEmpty(name) ? id : name, Description = description, RoomCount = rooms };
+        return this;
+    }
+
+    private void CheckAreaCall(string token, string call)
+    {
+        if (Unavailable) { throw new CoreUnavailableException(); }
+        AreaTokens.Add(token);
+        AreaCalls.Add(call);
+        if (RefuseAreaCalls) { throw new CoreRefusedException(false); }
+    }
+
+    private AreaEditReply AreaReply()
+    {
+        var reply = new AreaEditReply { Result = AreaResult, Message = AreaMessage };
+        reply.Errors.AddRange(AreaErrors);
+        return reply;
+    }
+
+    public Task<IReadOnlyList<AreaRecord>> ListAreasAsync(string token, CancellationToken cancellation = default)
+    {
+        CheckAreaCall(token, "ListAreas");
+        return Task.FromResult<IReadOnlyList<AreaRecord>>(Areas.Values.OrderBy(a => a.Id, StringComparer.Ordinal).ToList());
+    }
+
+    public Task<AreaRecord?> GetAreaAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckAreaCall(token, "GetArea");
+        return Task.FromResult(Areas.TryGetValue(id, out var a) ? a : null);
+    }
+
+    public Task<AreaEditReply> CreateAreaAsync(string token, AreaRecord area, CancellationToken cancellation = default)
+    {
+        CheckAreaCall(token, "CreateArea");
+        var reply = AreaReply();
+        if (reply.Result == AdminResult.Ok) { Areas[area.Id] = area; reply.Area = area; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<AreaEditReply> UpdateAreaAsync(string token, AreaRecord area, CancellationToken cancellation = default)
+    {
+        CheckAreaCall(token, "UpdateArea");
+        var reply = AreaReply();
+        if (reply.Result == AdminResult.Ok) { Areas[area.Id] = area; reply.Area = area; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<AreaEditReply> DeleteAreaAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckAreaCall(token, "DeleteArea:" + id);
+        var reply = AreaReply();
+        if (reply.Result == AdminResult.Ok) { Areas.Remove(id); }
+        return Task.FromResult(reply);
+    }
+
     // Terrain library. Tests set LibraryResult (what the create/update/delete calls answer) and seed the stores; every call records its token.
     public AdminResult LibraryResult { get; set; } = AdminResult.Ok;
     public string LibraryMessage { get; set; } = string.Empty;

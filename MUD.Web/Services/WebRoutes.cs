@@ -24,6 +24,7 @@ public static class WebRoutes
 
     public const string Players = Prefix + "/creator/players";
     public const string Modules = Prefix + "/creator/modules";
+    public const string Areas = Prefix + "/creator/areas";
 
     public static string PlayerEdit(string nameKey) => Players + "/" + Uri.EscapeDataString(nameKey);
 

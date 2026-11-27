@@ -482,6 +482,22 @@ namespace MUD.Core
                 libraryStore = null;
                 libraryCache = null;
             }
+            // Area records (specs/ADMIN_API.md "Areas"): every distinct Room.Area gets a record when it has none. Idempotent; never overwrites.
+            // The importer ran before this (ImportContent), so an area file's own name and description win over the readable-name fallback.
+            MUD.Core.Areas.MongoAreaStore areaStore = null;
+            try
+            {
+                areaStore = new MUD.Core.Areas.MongoAreaStore(database);
+                var queries = new MUD.Core.Administration.MongoAdminQueries(database);
+                var roomAreas = queries.ListRooms().Select(d => d.TryGetValue("Area", out var v) && v.IsString ? v.AsString : null).ToList();
+                var backfilled = MUD.Core.Areas.AreaBackfill.Run(areaStore, roomAreas);
+                if (backfilled.Created > 0 || backfilled.Invalid > 0) { Console.WriteLine(string.Format("Area records: {0} created, {1} room area(s) skipped as not a valid prefix.", backfilled.Created, backfilled.Invalid)); }
+            }
+            catch (Exception ex) when (!(ex is OutOfMemoryException))
+            {
+                Console.WriteLine("The area records are not available (" + ex.GetType().Name + ").");
+                areaStore = null;
+            }
             return new MUD.Core.Administration.AdminApi(
                 new MUD.Core.Administration.WorldAdminHost(this, _settings.StartRoomKey),
                 GetPlayerRepository(),
@@ -495,7 +511,8 @@ namespace MUD.Core
                 new MUD.Core.Administration.SupervisorModuleControl(() => ModuleSupervisor),
                 libraryStore,
                 libraryCache,
-                _settings.ContentDirectory);
+                _settings.ContentDirectory,
+                areaStore);
         }
 
         // Runs work on the game thread and waits for it, at most ApiCallTimeout. Called on the game thread itself the
@@ -896,7 +913,7 @@ namespace MUD.Core
             if (string.IsNullOrWhiteSpace(_settings.ContentDirectory) || !_settings.ImportOnStartup) { return; }
 
             var store = new MUD.Core.Import.RoomRepositoryImportStore(_serviceProvider.GetService<IRoomRepository>());
-            var service = new MUD.Core.Import.AreaFileService(new MUD.Core.Import.AreaImporter(store), _settings.ContentDirectory);
+            var service = new MUD.Core.Import.AreaFileService(new MUD.Core.Import.AreaImporter(store, new MUD.Core.Areas.MongoAreaStore(_serviceProvider.GetService<IMongoDatabase>())), _settings.ContentDirectory);
             foreach (var line in service.ImportAll())
             {
                 Console.WriteLine(line);

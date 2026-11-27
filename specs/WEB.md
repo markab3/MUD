@@ -43,8 +43,9 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/creator/modules` | list: `CreatorOrAdmin`; start/stop/restart buttons: admin only | module list with state (see "Modules page") |
 | `/creator/terrain` | `CreatorOrAdmin` | terrain library list with tabs and Delete (see "Terrain library pages") |
 | `/creator/terrain/edit?kind=&id=` | `CreatorOrAdmin` | create or edit one library entity (see "Terrain library pages") |
+| `/creator/areas` | `CreatorOrAdmin` | list, create, edit and delete areas (see "Areas page") |
 
-The pull-out menu has three labelled sections, in this order, and a section with no visible links is not rendered: **Player** (every signed-in user): Character, Change password; **Creator** (the `CreatorOrAdmin` policy): Map, Modules, Terrain, Create room (`/creator`); **Admin** (admins only): Players. Log out is a POST form after the sections. The Players link is shown to admins only, and the player pages and their core rpcs are admin only too (policy `AdminOnly`), so a creator who opens `/creator/players` by URL gets the access-denied page.
+The pull-out menu has three labelled sections, in this order, and a section with no visible links is not rendered: **Player** (every signed-in user): Character, Change password; **Creator** (the `CreatorOrAdmin` policy): Map, Modules, Terrain, Areas, Create room (`/creator`); **Admin** (admins only): Players. Log out is a POST form after the sections. The Players link is shown to admins only, and the player pages and their core rpcs are admin only too (policy `AdminOnly`), so a creator who opens `/creator/players` by URL gets the access-denied page.
 
 ## Create room page (`/creator`, room creation)
 
@@ -53,8 +54,11 @@ redirected to `/login`; signed-in players get a 403 page at `/access-denied` (no
 
 - The form has fields named after `specs/ROOM_FILES.md`: `Key` (local room key), `Short`, `Long`,
   `Area` (area prefix), optional `X`/`Y`/`Z` (blank = unplaced, stored as null, never 0), up to 4
-  exit rows `Dir` + `To` (target room key) and a "save exits to rooms that do not exist" checkbox. The Area field offers
-  the distinct area prefixes of existing rooms as browser autocomplete suggestions (`ListRooms`; none when core cannot answer).
+  exit rows `Dir` + `To` (target room key) and a "save exits to rooms that do not exist" checkbox. The Area field is a real
+  `<select id="cr-area">` with a label, listing the area records (`ListAreas`, "prefix - Name"; none when core cannot answer) and shown BEFORE
+  the room key. Picking an area shows its prefix as fixed text (`sample_area.`, `#cr-prefix`, read with the field through `aria-describedby`)
+  in front of the local key input `#cr-key`, so the key prefix and the area cannot disagree. A free-typed area is no longer possible; new
+  areas are made on the Areas page.
 - The stored room key is `<Area>.<Key>`. POST validates server side with antiforgery, then calls
   `IRoomCreationService.CreateAsync`. `RoomCreationService` checks the local key and area prefix with
   `MUD.Data.RoomRules`, then sends `CreateRoom` on the Admin service with the session token from the cookie. Core
@@ -79,7 +83,7 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   live room, writes one audit row per changed field (audit first) and applies the change to the live room on the game
   thread. The reply carries the room as it is now, which the page shows. The web holds no `Rev`, no allow-list and no
   Mongo access for rooms.
-- Move: a second form on the page gives the room a new key (`<area prefix>.<local key>`, area autocompletes) through the Admin
+- Move: a second form on the page gives the room a new key (`<area prefix>.<local key>`; the area is a real `<select id="re-newarea">` of the area records, preselected to the room's current one, and its prefix is shown as fixed text `#re-newprefix` before the local key input `#re-newlocal`; the read-only `#re-area` field above stays plain text) through the Admin
   `MoveRoom` call. Core inserts the room under the new key, deletes the old one, repoints exits in other rooms and players'
   stored locations, keeps occupants inside, and audits a `Key` change. Refused for the default room and for a key that
   already exists.
@@ -176,7 +180,9 @@ player -> `/access-denied`). Rooms come from `ListRooms` on the Admin service (v
 mapped to `RoomRecord`; only definition fields are used (short description, area, `X`, `Y`, `Z`, exits). A coordinate
 absent in the message is unplaced, never 0. Nothing is written, and the page does not reference MUD.Core. If core
 cannot be reached the page shows a fixed message instead of a map; a token core refuses goes to `/access-denied`.
-Query string: `?area=<prefix>&z=<level>` (defaults to the first area and level 0), driven by the Area and Level selectors.
+Query string: `?area=<prefix>&z=<level>` (defaults to the first area and level 0), driven by the Area and Level selectors. The Area select
+(`#map-area`) lists the area records (`ListAreas`, "prefix - Name") plus any room area that has no record, so an area with no rooms yet
+appears (its map is empty); when core cannot list the records the rooms alone give the list.
 
 - Layout lives in `RoomMapLayout` (pure; returns rects, polylines with arrowhead flags, stubs, badges,
   mismatches and the unplaced list). The page renders it as inline SVG, no JavaScript or external requests.
@@ -236,6 +242,22 @@ Built (`Components/Pages/Modules.razor`, `ModulesPresenter`). Policy `CreatorOrA
 - Core unavailable shows the usual "game is not reachable" message with a 503; a refused session shows a 403 message.
 - Manual refresh only (a Refresh link); no auto refresh, no JavaScript, no CDN. All text is Razor-encoded.
 - Tests: `MUD.Web.Tests/ModulesPageTests.cs`, over `FakeAdminClient` (`AddModule`, `ModuleStarts`, `ModuleStops`, `ModuleRestarts`).
+
+## Areas page (`/creator/areas`)
+
+Built (`Components/Pages/AreaList.razor`, `AreaListPresenter`). Policy `CreatorOrAdmin`; Creator menu section, after Terrain. Everything goes
+through `IAdminClient` (`ListAreas`, `CreateArea`, `UpdateArea`, `DeleteArea`; backend in `specs/ADMIN_API.md` "Areas"). An area is an
+organisational label for the back end that usually lines up with a region of the game: prefix (its id), name, short description.
+
+- **List**: one row per area (prefix, name, description, room count), sorted by prefix, as a table from 600px and the same rows as stacked cards
+  below (CSS shows one of them). Help text under the heading says the prefix is fixed once created and that renaming an area means moving its rooms.
+- **New area / Edit**: one inline form (prefix typed for a new area, `#ar-id`; name `#ar-name`, required, 100 characters; short description
+  `#ar-desc`, optional, 200 characters). On edit the prefix is read-only and the presenter writes the original id, so only name and description
+  can change. Core validates and answers per field; the page shows core's messages and keeps the input.
+- **Delete**: Delete asks first in `ConfirmDialog` ("Delete this area? Rooms must be moved out of it first. (prefix)"). Core refuses while rooms use
+  the area; the page shows core's message, which names the count, and keeps the row.
+- Palette variables only, 44px targets (shared `.mud-btn` / `.mud-field` rules), no horizontal scroll at 360px (cards under 600px).
+- Tests: `MUD.Web.Tests/AreaWebTests.cs` (gRPC client over a socket, fake client, presenter branches, rendered pages).
 
 ## Terrain library pages (`/creator/terrain`, `/creator/terrain/edit`)
 

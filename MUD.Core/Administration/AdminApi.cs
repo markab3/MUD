@@ -91,8 +91,9 @@ namespace MUD.Core.Administration
 
         public AdminApi(IAdminHost host, IPlayerRepository players, IRoomRepository rooms, IAdminQueries queries, IAuditStore audit,
             AdminSessions sessions, IClock clock, Action<string> log, Func<int, int> random = null, IModuleControl modules = null,
-            ILibraryStore library = null, StoreLibrary libraryCache = null, string contentDirectory = null)
+            ILibraryStore library = null, StoreLibrary libraryCache = null, string contentDirectory = null, MUD.Core.Areas.IAreaStore areas = null)
         {
+            _areas = areas;
             _contentDirectory = contentDirectory;
             _host = host ?? throw new ArgumentNullException(nameof(host));
             _players = players ?? throw new ArgumentNullException(nameof(players));
@@ -348,6 +349,8 @@ namespace MUD.Core.Administration
                 string localProblem = RoomRules.CheckLocalKey(key.Substring(checkedRoom.Area.Length + 1));
                 if (localProblem != null) { errors.Add(new FieldError { Field = "Key", Message = char.ToUpperInvariant(localProblem[0]) + localProblem.Substring(1) }); }
             }
+            // Backstop: the area must have a record (the website offers only existing areas).
+            if (errors.Count == 0) { FieldError noArea = MissingAreaError(checkedRoom.Area, "Area"); if (noArea != null) { errors.Add(noArea); } }
             if (errors.Count > 0) { return RoomReply(AdminResult.Invalid, null, errors); }
             FieldError dangling = DanglingError(checkedRoom, request.ConfirmDangling);
             if (dangling != null) { return RoomReply(AdminResult.Invalid, null, new[] { dangling }); }
@@ -432,6 +435,7 @@ namespace MUD.Core.Administration
 
             Room old = string.IsNullOrWhiteSpace(key) ? null : _rooms.Get(key);
             if (old == null) { return RoomReply(AdminResult.NotFound); }
+            if (errors.Count == 0) { FieldError noArea = MissingAreaError(area, "NewArea"); if (noArea != null) { errors.Add(noArea); } }
             if (errors.Count > 0) { return RoomReply(AdminResult.Invalid, RoomFrom(old), errors); }
             string startKey = _host.StartRoomKey;
             if (startKey == null) { return RoomReply(AdminResult.Refused, RoomFrom(old), null, DefaultRoomNotConfiguredMessage); }

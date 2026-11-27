@@ -21,7 +21,13 @@ public sealed class CreatorMapPresenter
         _token = token;
     }
 
+    private readonly Dictionary<string, string> _names = new(StringComparer.Ordinal);
+
     public IReadOnlyList<string> Areas { get; private set; } = Array.Empty<string>();
+
+    // "prefix - Name" for an area with a record, the bare prefix otherwise; "(no area)" for rooms without one.
+    public string LabelFor(string area) =>
+        area.Length == 0 ? "(no area)" : _names.TryGetValue(area, out var name) && !string.IsNullOrWhiteSpace(name) ? area + " - " + name : area;
     public IReadOnlyList<int> Levels { get; private set; } = Array.Empty<int>();
     public string? Area { get; private set; }
     public int Z { get; private set; }
@@ -48,7 +54,21 @@ public sealed class CreatorMapPresenter
             // The session ended or the role was lowered since the page was authorised (D31).
             return MapOutcome.Denied;
         }
-        Areas = all.Select(RoomMapLayout.AreaOf).Distinct(StringComparer.Ordinal).OrderBy(a => a, StringComparer.Ordinal).ToList();
+        // The dropdown lists the area records (so an area with no rooms yet appears) plus any room area that has no record (legacy data).
+        // When core cannot list the records the rooms alone give the list.
+        _names.Clear();
+        var recordIds = new List<string>();
+        try
+        {
+            foreach (var a in await _core.ListAreasAsync(_token, cancellation))
+            {
+                recordIds.Add(a.Id);
+                _names[a.Id] = a.Name;
+            }
+        }
+        catch (CoreUnavailableException) { }
+        catch (CoreRefusedException) { }
+        Areas = all.Select(RoomMapLayout.AreaOf).Concat(recordIds).Distinct(StringComparer.Ordinal).OrderBy(a => a, StringComparer.Ordinal).ToList();
         if (Areas.Count == 0) { return MapOutcome.Ok; }
 
         Area = area != null && Areas.Contains(area) ? area : Areas[0];

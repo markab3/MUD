@@ -67,6 +67,13 @@ service Admin {
   rpc UpdateNeighborPhrase(SaveNeighborPhraseRequest) returns (LibraryEditReply);
   rpc DeleteNeighborPhrase(LibraryIdRequest) returns (LibraryEditReply);
 
+  // Areas (creator or admin; specs/ADMIN_API.md "Areas").
+  rpc ListAreas(TokenRequest) returns (ListAreasReply);
+  rpc GetArea(AreaIdRequest) returns (GetAreaReply);
+  rpc CreateArea(SaveAreaRequest) returns (AreaEditReply);
+  rpc UpdateArea(SaveAreaRequest) returns (AreaEditReply);
+  rpc DeleteArea(AreaIdRequest) returns (AreaEditReply);
+
   // Regen and update of generated rooms (specs/TERRAIN_GENERATORS.md section 9). Creator or admin. A room is generated when it has
   // provenance (RoomDetail.gen). RegenerateMap and RegenerateRooms replace description, ALL features (hand-added too), properties and
   // behaviors with the generator's output; exits follow the map; items and occupants stay. UpdateRooms rewrites only features that carry
@@ -504,6 +511,32 @@ message LibraryEditReply {
   FragmentRecord fragment = 5;
   FeatureTemplateRecord template = 6;
   NeighborPhraseRecord phrase = 7;
+}
+
+// ---- Areas (specs/ADMIN_API.md "Areas") ----
+
+// id is the area prefix and never changes. room_count is read-only (filled by core on every reply; ignored on create and update).
+message AreaRecord {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  int32 room_count = 4;
+}
+
+message AreaIdRequest { string token = 1; string id = 2; }
+message SaveAreaRequest { string token = 1; AreaRecord area = 2; }
+message ListAreasReply { repeated AreaRecord areas = 1; }
+message GetAreaReply { bool found = 1; AreaRecord area = 2; }
+
+// result: OK; NO_CHANGE (update with nothing changed); INVALID (errors lists the fields); NOT_FOUND (update/delete: unknown id);
+// ALREADY_EXISTS (create: the id is taken); REFUSED (delete: rooms still use the area, message names the count; or the area store is
+// not available); AUDIT_FAILED; FAILED (the database write failed). area is the record as stored after a create or update.
+message AreaEditReply {
+  AdminResult result = 1;
+  repeated FieldError errors = 2;
+  // A fixed sentence. Never contains stored values (a count is the only number it may carry).
+  string message = 3;
+  AreaRecord area = 4;
 }
 
 // ---- Regen and update of generated rooms (specs/TERRAIN_GENERATORS.md sections 9 and 10) ----

@@ -56,6 +56,13 @@ namespace MUD.Core.Import
         // They go through the normal merge, never a replace. Only filled with ReplaceGenerated.
         public List<string> NotOwned { get; set; } = new List<string>();
 
+        // What the importer did about the area record (collection "area"): "created", "exists" (left untouched: web edits win),
+        // or null when no area store is attached, on a dry run, or when the import failed. Never an overwrite.
+        public string AreaRecord { get; set; }
+
+        // Set when the file's name or description could not be stored as is on a new area record, or the record could not be written.
+        public string AreaRecordNote { get; set; }
+
         public bool DryRun { get; set; }
 
         public bool Success { get { return Errors.Count == 0; } }
@@ -98,10 +105,14 @@ namespace MUD.Core.Import
         };
 
         private readonly IRoomImportStore _store;
+        private readonly MUD.Core.Areas.IAreaStore _areas;
 
-        public AreaImporter(IRoomImportStore store)
+        // areas: when given, importing a file creates the area record if it is missing (name and description from the file) and never
+        // touches a record that exists (specs/ROOM_FILES.md section 4). Without it the importer writes rooms only.
+        public AreaImporter(IRoomImportStore store, MUD.Core.Areas.IAreaStore areas = null)
         {
             _store = store;
+            _areas = areas;
         }
 
         // replaceBehaviors: by default a behavior entry in the file whose (hook, module, type) already exists on the
@@ -175,6 +186,7 @@ namespace MUD.Core.Import
             // Phase 3: apply.
             if (!dryRun)
             {
+                EnsureAreaRecord(area, result);
                 foreach (var write in writes)
                 {
                     try
@@ -191,6 +203,37 @@ namespace MUD.Core.Import
                 }
             }
             return result;
+        }
+
+        // Creates the area record when missing; an existing record is never changed (web edits win). A failure here does not stop the rooms.
+        private void EnsureAreaRecord(AreaDefinition area, ImportResult result)
+        {
+            if (_areas == null) { return; }
+            try
+            {
+                if (_areas.Get(area.Prefix) != null) { result.AreaRecord = "exists"; return; }
+                string name = MUD.Data.RoomRules.NormalizeText(area.Name ?? string.Empty);
+                string description = MUD.Data.RoomRules.NormalizeText(area.Description ?? string.Empty);
+                string nameProblem = MUD.Data.AreaRules.CheckName(name);
+                if (nameProblem != null)
+                {
+                    result.AreaRecordNote = "The area " + nameProblem + " The name was made from the prefix.";
+                    name = MUD.Data.AreaRules.ReadableName(area.Prefix);
+                }
+                string descriptionProblem = MUD.Data.AreaRules.CheckDescription(description);
+                if (descriptionProblem != null)
+                {
+                    result.AreaRecordNote = (result.AreaRecordNote == null ? string.Empty : result.AreaRecordNote + " ")
+                        + "The area " + descriptionProblem + " The description was left empty.";
+                    description = string.Empty;
+                }
+                // Insert refuses an id that exists, so a record created by someone else in between is not overwritten either.
+                result.AreaRecord = _areas.Insert(new MUD.Core.Areas.AreaEntry { Id = area.Prefix, Name = name, Description = description }, "import") ? "created" : "exists";
+            }
+            catch (Exception ex)
+            {
+                result.AreaRecordNote = "The area record could not be checked or created (" + ex.GetType().Name + "). Re-run the import to create it.";
+            }
         }
 
         // Field-level write of the Features of one stored room and nothing else (UPDATE of template-referenced features,
