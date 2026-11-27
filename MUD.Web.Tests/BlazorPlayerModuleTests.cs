@@ -716,13 +716,13 @@ public class PlayerModuleComponentTests
     [Fact]
     public void TheNav_LinksToTheBlazorPlayerAndModulePages_UnderTheCreatorPolicy()
     {
-        // The links moved into the pull-out menu's item list (NavMenu); creator-only items sit inside the creatorOrAdmin branch.
+        // The links are in the pull-out menu's sections (NavMenu): Modules in the creatorOrAdmin branch, Players in the admin-only branch.
         var nav = Read("MUD.Web/Pages/NavMenu.cs");
         var creator = nav.IndexOf("if (creatorOrAdmin)", StringComparison.Ordinal);
         Assert.True(creator >= 0);
-        Assert.True(nav.IndexOf("WebRoutes.Players", StringComparison.Ordinal) > creator);
         Assert.True(nav.IndexOf("WebRoutes.Modules", StringComparison.Ordinal) > creator);
-        Assert.Contains("NavMenu.ItemsFor(_creator)", Read("MUD.Web/Components/Layout/NavShell.razor"));
+        Assert.True(nav.IndexOf("WebRoutes.Players", StringComparison.Ordinal) > nav.IndexOf("if (admin)", StringComparison.Ordinal));
+        Assert.Contains("NavMenu.SectionsFor(_creator, _admin)", Read("MUD.Web/Components/Layout/NavShell.razor"));
         Assert.DoesNotContain("LegacyPlayers", nav);
         Assert.DoesNotContain("LegacyModules", nav);
     }

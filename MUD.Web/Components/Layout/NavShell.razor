@@ -25,11 +25,17 @@
             <div id="mud-menu" class="mud-drawer" role="dialog" aria-modal="true" aria-label="Main menu">
                 <button type="button" class="mud-btn mud-drawer-close" @onclick="CloseAndReturnFocus">Close menu</button>
                 <nav aria-label="Main">
+                    @foreach (var sec in NavMenu.SectionsFor(_creator, _admin))
+                    {
+                        <h2 id="mud-nav-@sec.Id" class="mud-nav-heading">@sec.Heading</h2>
+                        <ul aria-labelledby="mud-nav-@sec.Id">
+                            @foreach (var item in sec.Items)
+                            {
+                                <li><NavLink href="@item.Href" Match="@(item.ExactMatch ? NavLinkMatch.All : NavLinkMatch.Prefix)" @onclick="CloseForNavigation">@item.Label</NavLink></li>
+                            }
+                        </ul>
+                    }
                     <ul>
-                        @foreach (var item in NavMenu.ItemsFor(_creator))
-                        {
-                            <li><NavLink href="@item.Href" Match="@(item.ExactMatch ? NavLinkMatch.All : NavLinkMatch.Prefix)" @onclick="CloseForNavigation">@item.Label</NavLink></li>
-                        }
                         <li class="mud-nav-logout">
                             <form method="post" action="@WebRoutes.Logout">
                                 <input type="hidden" name="@Tokens.FormFieldName" value="@Tokens.RequestToken" />
@@ -50,6 +56,7 @@
     [Inject] private IJSRuntime Js { get; set; } = default!;
     private readonly NavMenu _menu = new();
     private bool _creator;
+    private bool _admin;
     private bool _wasOpen;
     private bool _returnFocus;
 
@@ -58,6 +65,7 @@
         if (AuthState == null) { return; }
         var user = (await AuthState).User;
         _creator = user.Identity?.IsAuthenticated == true && (await Authz.AuthorizeAsync(user, WebPolicies.CreatorOrAdmin)).Succeeded;
+        _admin = user.Identity?.IsAuthenticated == true && user.IsInRole(nameof(AccountRole.Admin));
     }
 
     protected override void OnInitialized() => Navigation.LocationChanged += OnLocationChanged;

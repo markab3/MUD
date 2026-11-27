@@ -14,23 +14,58 @@ namespace MUD.Web.Tests;
 // the rendered result was checked in a headless browser (see the PR).
 public class NavMenuTests
 {
-    private static readonly string[] CreatorLabels = { "Map", "Creator", "Players", "Modules", "Terrain", "Character", "Change password" };
+    private static string[][] Labels(bool creatorOrAdmin, bool admin) =>
+        NavMenu.SectionsFor(creatorOrAdmin, admin).Select(s => s.Items.Select(i => i.Label).ToArray()).ToArray();
+
+    private static string[] Headings(bool creatorOrAdmin, bool admin) =>
+        NavMenu.SectionsFor(creatorOrAdmin, admin).Select(s => s.Heading).ToArray();
 
     [Fact]
-    public void ACreatorOrAdmin_GetsAllTheLinks_InTheOldOrder()
+    public void APlayer_GetsOnlyThePlayerSection()
     {
-        var items = NavMenu.ItemsFor(creatorOrAdmin: true);
-        Assert.Equal(CreatorLabels, items.Select(i => i.Label).ToArray());
-        Assert.Equal(new[] { WebRoutes.Map, WebRoutes.Creator, WebRoutes.Players, WebRoutes.Modules, WebRoutes.Terrain, WebRoutes.Character, WebRoutes.Password },
-            items.Select(i => i.Href).ToArray());
-        Assert.True(items.Single(i => i.Label == "Creator").ExactMatch);
+        Assert.Equal(new[] { "Player" }, Headings(false, false));
+        Assert.Equal(new[] { new[] { "Character", "Change password" } }, Labels(false, false));
     }
 
     [Fact]
-    public void APlayer_GetsCharacterAndChangePasswordOnly()
+    public void ACreator_GetsPlayerThenCreator_AndNoAdminSection()
     {
-        var items = NavMenu.ItemsFor(creatorOrAdmin: false);
-        Assert.Equal(new[] { "Character", "Change password" }, items.Select(i => i.Label).ToArray());
+        Assert.Equal(new[] { "Player", "Creator" }, Headings(true, false));
+        Assert.Equal(new[] { new[] { "Character", "Change password" }, new[] { "Map", "Modules", "Terrain", "Create room" } }, Labels(true, false));
+        Assert.DoesNotContain(NavMenu.SectionsFor(true, false).SelectMany(s => s.Items), i => i.Label == "Players");
+    }
+
+    [Fact]
+    public void AnAdmin_GetsPlayerCreatorAndAdminSections_InThatOrder()
+    {
+        Assert.Equal(new[] { "Player", "Creator", "Admin" }, Headings(true, true));
+        Assert.Equal(new[] { new[] { "Character", "Change password" }, new[] { "Map", "Modules", "Terrain", "Create room" }, new[] { "Players" } }, Labels(true, true));
+    }
+
+    [Fact]
+    public void TheMenuItems_KeepTheirRoutes_AndOnlyCreateRoomMatchesExactly()
+    {
+        var items = NavMenu.SectionsFor(true, true).SelectMany(s => s.Items).ToDictionary(i => i.Label);
+        Assert.Equal(WebRoutes.Creator, items["Create room"].Href);
+        Assert.Equal("/creator", items["Create room"].Href);
+        Assert.Equal(WebRoutes.Players, items["Players"].Href);
+        Assert.Equal(WebRoutes.Map, items["Map"].Href);
+        Assert.Equal(WebRoutes.Modules, items["Modules"].Href);
+        Assert.Equal(WebRoutes.Terrain, items["Terrain"].Href);
+        Assert.Equal(WebRoutes.Character, items["Character"].Href);
+        Assert.Equal(WebRoutes.Password, items["Change password"].Href);
+        Assert.Equal(new[] { "Create room" }, items.Values.Where(i => i.ExactMatch).Select(i => i.Label).ToArray());
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void NoSectionIsEmpty_AndSectionIdsAreUnique(bool creatorOrAdmin, bool admin)
+    {
+        var sections = NavMenu.SectionsFor(creatorOrAdmin, admin);
+        Assert.All(sections, s => Assert.NotEmpty(s.Items));
+        Assert.Equal(sections.Count, sections.Select(s => s.Id).Distinct().Count());
     }
 
     [Fact]
@@ -158,8 +193,12 @@ public class SiteChromeMarkupTests
     public void TheNav_ListsItsLinksFromNavMenu_UnderTheCreatorPolicy()
     {
         var nav = Nav();
-        Assert.Contains("NavMenu.ItemsFor(_creator)", nav);
+        Assert.Contains("NavMenu.SectionsFor(_creator, _admin)", nav);
         Assert.Contains("WebPolicies.CreatorOrAdmin", nav);
+        Assert.Contains("<h2 id=\"mud-nav-@sec.Id\"", nav);
+        Assert.Contains("<ul aria-labelledby=\"mud-nav-@sec.Id\">", nav);
+        // Log out stays outside the sections, after them.
+        Assert.True(nav.IndexOf("mud-nav-logout", StringComparison.Ordinal) > nav.IndexOf("aria-labelledby", StringComparison.Ordinal));
         foreach (var gone in new[] { "mud-nav-more", "mud-nav-extra", ">More<", "LegacyPlayers", "LegacyModules", "LegacyTerrain" }) { Assert.DoesNotContain(gone, nav); }
     }
 
