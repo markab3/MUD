@@ -74,6 +74,13 @@ service Admin {
   rpc UpdateArea(SaveAreaRequest) returns (AreaEditReply);
   rpc DeleteArea(AreaIdRequest) returns (AreaEditReply);
 
+  // Item templates (creator or admin; specs/ITEM_TEMPLATES.md and specs/ADMIN_API.md "Item templates").
+  rpc ListItemTemplates(ListItemTemplatesRequest) returns (ListItemTemplatesReply);
+  rpc GetItemTemplate(ItemTemplateIdRequest) returns (GetItemTemplateReply);
+  rpc CreateItemTemplate(SaveItemTemplateRequest) returns (ItemTemplateEditReply);
+  rpc UpdateItemTemplate(SaveItemTemplateRequest) returns (ItemTemplateEditReply);
+  rpc DeleteItemTemplate(ItemTemplateIdRequest) returns (ItemTemplateEditReply);
+
   // Regen and update of generated rooms (specs/TERRAIN_GENERATORS.md section 9). Creator or admin. A room is generated when it has
   // provenance (RoomDetail.gen). RegenerateMap and RegenerateRooms replace description, ALL features (hand-added too), properties and
   // behaviors with the generator's output; exits follow the map; items and occupants stay. UpdateRooms rewrites only features that carry
@@ -537,6 +544,42 @@ message AreaEditReply {
   // A fixed sentence. Never contains stored values (a count is the only number it may carry).
   string message = 3;
   AreaRecord area = 4;
+}
+
+// ---- Item templates (specs/ITEM_TEMPLATES.md) ----
+
+// id is "<area>.<local>" and never changes; area must equal the id's prefix and have an area record. version is read-only (core sets 1 on
+// create and +1 on every edit that changes something; ignored on input). components_json is a JSON object or empty (= none).
+// behaviors use the room behavior shape (RoomBehavior); config_json is a JSON object text, empty is read as "{}".
+message ItemTemplateRecord {
+  string id = 1;
+  string area = 2;
+  string short = 3;
+  string long = 4;
+  repeated string handles = 5;
+  repeated string adjectives = 6;
+  repeated string plurals = 7;
+  string components_json = 8;
+  repeated RoomBehavior behaviors = 9;
+  int32 version = 10;
+}
+
+// area empty = every area.
+message ListItemTemplatesRequest { string token = 1; string area = 2; }
+message ItemTemplateIdRequest { string token = 1; string id = 2; }
+message SaveItemTemplateRequest { string token = 1; ItemTemplateRecord template = 2; }
+message ListItemTemplatesReply { repeated ItemTemplateRecord templates = 1; }
+message GetItemTemplateReply { bool found = 1; ItemTemplateRecord template = 2; }
+
+// result: OK; NO_CHANGE (update with nothing changed); INVALID (errors lists the fields); NOT_FOUND (update/delete: unknown id);
+// ALREADY_EXISTS (create: the id is taken); REFUSED (delete: still referenced; or the store is not available); AUDIT_FAILED; FAILED
+// (the database write failed). template is the record as stored after a create or update.
+message ItemTemplateEditReply {
+  AdminResult result = 1;
+  repeated FieldError errors = 2;
+  // A fixed sentence. Never contains stored values.
+  string message = 3;
+  ItemTemplateRecord template = 4;
 }
 
 // ---- Regen and update of generated rooms (specs/TERRAIN_GENERATORS.md sections 9 and 10) ----

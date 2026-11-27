@@ -15,6 +15,7 @@ commit `ce8f7b9`).
 | [WEB.md](WEB.md) | MUD.Web site: config, routes, cookie auth model, plaintext password caveat |
 | [WEB_BLAZOR.md](WEB_BLAZOR.md) | **Built (cutover done):** the Blazor Server + Fluent UI site that replaced the Razor Pages: components per page, auth/circuit flow, mobile-first layout, reconnect strategy, tests, CI/deploy impact, migration and rollback, open questions |
 | [ROOM_FILES.md](ROOM_FILES.md) | Area YAML format and import semantics. **Partly superseded by V2 (D39)**: sections 4.5, 6, 7, 9 obsolete; YAML is an optional one-off import/export format |
+| [ITEM_TEMPLATES.md](ITEM_TEMPLATES.md) | Item templates: Mongo library of reusable item definitions keyed `<area>.<local>`, rules, version, relation to areas, open questions |
 | [TERRAIN_GENERATORS.md](TERRAIN_GENERATORS.md) | Terrain generators for ASCII maps (draft): `ITerrainGenerator` classes, Mongo-backed library seeded from YAML, neighbour-aware text, `x-gen` provenance, regen/update/map re-import semantics, admin gRPC surface and web pages, open questions |
 | [WEB_EDITING.md](WEB_EDITING.md) | Web editing vs the live game: allow-lists, roles, audit. **Rev/poll parts removed in P6-5 (D30)** |
 | [ARCHITECTURE_V2.md](ARCHITECTURE_V2.md) | V2 redesign revised to the owner's decisions D1..D39: core / front-end split, composition via entity behavior lists, process-per-module over gRPC on Unix sockets. Current-state inventory, target architecture, entity and behavior model, phase summary |

@@ -372,6 +372,7 @@ public class FakeAdminClient : IAdminClient
     private void CheckAreaCall(string token, string call)
     {
         if (Unavailable) { throw new CoreUnavailableException(); }
+        if (Crash) { throw new InvalidOperationException("boom"); }
         AreaTokens.Add(token);
         AreaCalls.Add(call);
         if (RefuseAreaCalls) { throw new CoreRefusedException(false); }
@@ -417,6 +418,80 @@ public class FakeAdminClient : IAdminClient
         CheckAreaCall(token, "DeleteArea:" + id);
         var reply = AreaReply();
         if (reply.Result == AdminResult.Ok) { Areas.Remove(id); }
+        return Task.FromResult(reply);
+    }
+
+    // Item templates. Tests seed ItemTemplateRecords and set ItemTemplateResult (what create/update/delete answer); every call records its token and name.
+    public AdminResult ItemTemplateResult { get; set; } = AdminResult.Ok;
+    public string ItemTemplateMessage { get; set; } = string.Empty;
+    public List<FieldError> ItemTemplateErrors { get; } = new();
+    public bool RefuseItemTemplateCalls { get; set; }
+    public List<string> ItemTemplateTokens { get; } = new();
+    public List<string> ItemTemplateCalls { get; } = new();
+    public List<ItemTemplateRecord> ItemTemplateSaves { get; } = new();
+    public Dictionary<string, ItemTemplateRecord> ItemTemplates { get; } = new();
+
+    public FakeAdminClient AddItemTemplate(string id, string shortText = "", string area = "")
+    {
+        var item = new ItemTemplateRecord { Id = id, Area = string.IsNullOrEmpty(area) ? id.Substring(0, id.IndexOf('.')) : area, Short = string.IsNullOrEmpty(shortText) ? id : shortText, Long = "Long " + id, Version = 1 };
+        ItemTemplates[id] = item;
+        return this;
+    }
+
+    // Any other failure (not core unavailable, not refused): what the presenters must turn into a generic error.
+    public bool Crash { get; set; }
+
+    private void CheckItemTemplateCall(string token, string call)
+    {
+        if (Unavailable) { throw new CoreUnavailableException(); }
+        if (Crash) { throw new InvalidOperationException("boom"); }
+        ItemTemplateTokens.Add(token);
+        ItemTemplateCalls.Add(call);
+        if (RefuseItemTemplateCalls) { throw new CoreRefusedException(false); }
+    }
+
+    private ItemTemplateEditReply ItemTemplateReply()
+    {
+        var reply = new ItemTemplateEditReply { Result = ItemTemplateResult, Message = ItemTemplateMessage };
+        reply.Errors.AddRange(ItemTemplateErrors);
+        return reply;
+    }
+
+    public Task<IReadOnlyList<ItemTemplateRecord>> ListItemTemplatesAsync(string token, string? area = null, CancellationToken cancellation = default)
+    {
+        CheckItemTemplateCall(token, "ListItemTemplates:" + area);
+        return Task.FromResult<IReadOnlyList<ItemTemplateRecord>>(ItemTemplates.Values.Where(i => string.IsNullOrEmpty(area) || i.Area == area).OrderBy(i => i.Id, StringComparer.Ordinal).ToList());
+    }
+
+    public Task<ItemTemplateRecord?> GetItemTemplateAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckItemTemplateCall(token, "GetItemTemplate");
+        return Task.FromResult(ItemTemplates.TryGetValue(id, out var i) ? i : null);
+    }
+
+    public Task<ItemTemplateEditReply> CreateItemTemplateAsync(string token, ItemTemplateRecord template, CancellationToken cancellation = default)
+    {
+        CheckItemTemplateCall(token, "CreateItemTemplate");
+        ItemTemplateSaves.Add(template);
+        var reply = ItemTemplateReply();
+        if (reply.Result == AdminResult.Ok) { template.Version = 1; ItemTemplates[template.Id] = template; reply.Template = template; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<ItemTemplateEditReply> UpdateItemTemplateAsync(string token, ItemTemplateRecord template, CancellationToken cancellation = default)
+    {
+        CheckItemTemplateCall(token, "UpdateItemTemplate");
+        ItemTemplateSaves.Add(template);
+        var reply = ItemTemplateReply();
+        if (reply.Result == AdminResult.Ok) { template.Version = ItemTemplates.TryGetValue(template.Id, out var old) ? old.Version + 1 : 1; ItemTemplates[template.Id] = template; reply.Template = template; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<ItemTemplateEditReply> DeleteItemTemplateAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckItemTemplateCall(token, "DeleteItemTemplate:" + id);
+        var reply = ItemTemplateReply();
+        if (reply.Result == AdminResult.Ok) { ItemTemplates.Remove(id); }
         return Task.FromResult(reply);
     }
 

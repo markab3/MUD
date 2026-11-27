@@ -498,6 +498,7 @@ namespace MUD.Core
                 Console.WriteLine("The area records are not available (" + ex.GetType().Name + ").");
                 areaStore = null;
             }
+            MUD.Core.ItemTemplates.IItemTemplateStore itemTemplateStore = new MUD.Core.ItemTemplates.MongoItemTemplateStore(database);
             return new MUD.Core.Administration.AdminApi(
                 new MUD.Core.Administration.WorldAdminHost(this, _settings.StartRoomKey),
                 GetPlayerRepository(),
@@ -512,7 +513,8 @@ namespace MUD.Core
                 libraryStore,
                 libraryCache,
                 _settings.ContentDirectory,
-                areaStore);
+                areaStore,
+                itemTemplateStore);
         }
 
         // Runs work on the game thread and waits for it, at most ApiCallTimeout. Called on the game thread itself the

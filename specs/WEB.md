@@ -44,8 +44,10 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/creator/terrain` | `CreatorOrAdmin` | terrain library list with tabs and Delete (see "Terrain library pages") |
 | `/creator/terrain/edit?kind=&id=` | `CreatorOrAdmin` | create or edit one library entity (see "Terrain library pages") |
 | `/creator/areas` | `CreatorOrAdmin` | list, create, edit and delete areas (see "Areas page") |
+| `/creator/items` | `CreatorOrAdmin` | item templates grouped by area, filter, delete (see "Item templates pages") |
+| `/creator/items/edit?id=&area=` | `CreatorOrAdmin` | create or edit one item template (see "Item templates pages") |
 
-The pull-out menu has three labelled sections, in this order, and a section with no visible links is not rendered: **Player** (every signed-in user): Character, Change password; **Creator** (the `CreatorOrAdmin` policy): Map, Modules, Terrain, Areas, Create room (`/creator`); **Admin** (admins only): Players. Log out is a POST form after the sections. The Players link is shown to admins only, and the player pages and their core rpcs are admin only too (policy `AdminOnly`), so a creator who opens `/creator/players` by URL gets the access-denied page.
+The pull-out menu has three labelled sections, in this order, and a section with no visible links is not rendered: **Player** (every signed-in user): Character, Change password; **Creator** (the `CreatorOrAdmin` policy): Map, Modules, Terrain, Areas, Items, Create room (`/creator`); **Admin** (admins only): Players. Log out is a POST form after the sections. The Players link is shown to admins only, and the player pages and their core rpcs are admin only too (policy `AdminOnly`), so a creator who opens `/creator/players` by URL gets the access-denied page.
 
 ## Create room page (`/creator`, room creation)
 
@@ -258,6 +260,31 @@ organisational label for the back end that usually lines up with a region of the
   the area; the page shows core's message, which names the count, and keeps the row.
 - Palette variables only, 44px targets (shared `.mud-btn` / `.mud-field` rules), no horizontal scroll at 360px (cards under 600px).
 - Tests: `MUD.Web.Tests/AreaWebTests.cs` (gRPC client over a socket, fake client, presenter branches, rendered pages).
+
+## Item templates pages (`/creator/items`, `/creator/items/edit`)
+
+Built (`Components/Pages/ItemTemplateList.razor`, `ItemTemplateEdit.razor`, `ItemTemplateListPresenter`, `ItemTemplateEditPresenter`). Policy
+`CreatorOrAdmin`; Creator menu section, "Items", after Areas. Everything goes through `IAdminClient` (backend in `specs/ADMIN_API.md` "Item templates",
+the entity in `specs/ITEM_TEMPLATES.md`).
+
+- **List** (`/creator/items`): one native `<details>` per area, in prefix order, collapsed by default (open while a filter is applied). The summary
+  (44px) shows the area name, its prefix and a count of the templates; inside are the area's description, one card per template (short, id, handles,
+  version, Edit, Delete), and "New item in <prefix>" (opens the edit page with that area chosen). An area without templates is listed with
+  count 0. A template whose area has no record gets a group named by its prefix. `#it-filter` filters on a submit (id, short, handles and adjectives,
+  case-insensitive); areas with no match are hidden. Delete asks first in `ConfirmDialog`; core's refusal message is shown and the row stays.
+- **Edit** (`/creator/items/edit`): new: `#it-area` dropdown of the area records (required), then the fixed prefix (`#it-prefix`, `.mud-keyrow`) and
+  the local key `#it-local`; the full id is built from the two. Existing: the id and area are read-only and the page shows the version and what
+  saving does to it. Fields: short `#it-short`, long `#it-long`, handles / adjectives / plurals (one text box each, comma or space separated, a
+  null-safe list on the wire), component data `#it-components` (a JSON object, optional) and a Behaviors section (native `<details>`, one fieldset per
+  entry: hook with a datalist of the known hooks, module, type, priority, config JSON; Add and Remove buttons). JSON that does not parse is reported
+  by the page and nothing is sent; every other rule is core's and its messages are shown as they come, with the input kept. Core owns the version.
+  The terrain editor has no list input component (its handles and adjectives are plain text boxes), so the same comma-or-space text box is reused.
+- **Preview** (`#it-preview`, updates as you type): the short description, the long description, and "A player can type: ..." built from the handles
+  alone and each adjective in front of each handle (at most 12, then "..."); with no handle it says a player cannot name the item.
+- Palette variables only, 44px targets (shared rules), no horizontal scroll at 360px (cards, wrapping text, `min-width: 0`). `.mud-itemgroup*` and
+  `.mud-code` in `mobile.css`.
+- Tests: `MUD.Web.Tests/ItemTemplateWebTests.cs` (gRPC client over a socket, fake client, both presenters, rendered pages). Not verified: the layout
+  at 360px in a real browser.
 
 ## Terrain library pages (`/creator/terrain`, `/creator/terrain/edit`)
 

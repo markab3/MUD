@@ -115,6 +115,19 @@ public interface IAdminClient
     Task<AreaEditReply> UpdateAreaAsync(string token, AreaRecord area, CancellationToken cancellation = default);
 
     Task<AreaEditReply> DeleteAreaAsync(string token, string id, CancellationToken cancellation = default);
+
+    // Item templates (creator or admin; specs/ADMIN_API.md "Item templates"). Same exceptions as the room calls. List takes an optional area
+    // (null or empty = all). Get returns null for an unknown id. Create, update and delete answer in the reply's result (Ok, NoChange, Invalid,
+    // NotFound, AlreadyExists, Refused, AuditFailed, Failed). The id never changes; core owns the version.
+    Task<IReadOnlyList<ItemTemplateRecord>> ListItemTemplatesAsync(string token, string? area = null, CancellationToken cancellation = default);
+
+    Task<ItemTemplateRecord?> GetItemTemplateAsync(string token, string id, CancellationToken cancellation = default);
+
+    Task<ItemTemplateEditReply> CreateItemTemplateAsync(string token, ItemTemplateRecord template, CancellationToken cancellation = default);
+
+    Task<ItemTemplateEditReply> UpdateItemTemplateAsync(string token, ItemTemplateRecord template, CancellationToken cancellation = default);
+
+    Task<ItemTemplateEditReply> DeleteItemTemplateAsync(string token, string id, CancellationToken cancellation = default);
 }
 
 // Core refused the session token (SessionEnded: unknown, revoked, or its player is retired) or the caller's current role is too low.
@@ -385,6 +398,24 @@ public sealed class GrpcAdminClient : IAdminClient
 
     public Task<AreaEditReply> DeleteAreaAsync(string token, string id, CancellationToken cancellation = default) =>
         Call(() => _client.DeleteAreaAsync(new AreaIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public async Task<IReadOnlyList<ItemTemplateRecord>> ListItemTemplatesAsync(string token, string? area = null, CancellationToken cancellation = default) =>
+        (await Call(() => _client.ListItemTemplatesAsync(new ListItemTemplatesRequest { Token = token ?? string.Empty, Area = area ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Templates.ToList();
+
+    public async Task<ItemTemplateRecord?> GetItemTemplateAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        var reply = await Call(() => _client.GetItemTemplateAsync(new ItemTemplateIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+        return reply.Found ? reply.Template : null;
+    }
+
+    public Task<ItemTemplateEditReply> CreateItemTemplateAsync(string token, ItemTemplateRecord template, CancellationToken cancellation = default) =>
+        Call(() => _client.CreateItemTemplateAsync(new SaveItemTemplateRequest { Token = token ?? string.Empty, Template = template }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<ItemTemplateEditReply> UpdateItemTemplateAsync(string token, ItemTemplateRecord template, CancellationToken cancellation = default) =>
+        Call(() => _client.UpdateItemTemplateAsync(new SaveItemTemplateRequest { Token = token ?? string.Empty, Template = template }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<ItemTemplateEditReply> DeleteItemTemplateAsync(string token, string id, CancellationToken cancellation = default) =>
+        Call(() => _client.DeleteItemTemplateAsync(new ItemTemplateIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
 
     // Unauthenticated and PermissionDenied are core's answers about the caller; any other failure means core could not answer.
     private static async Task<T> Call<T>(Func<Grpc.Core.AsyncUnaryCall<T>> call)

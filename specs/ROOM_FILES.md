@@ -679,7 +679,10 @@ write path:
 4. Should miss messages for `search` be configurable (`miss_message`)?
 5. Are items (InventoryItem templates) going to get their own keyed files? The
    `reward` is currently an inline template; a keyed item catalog would let
-   rewards reference by key.
+   rewards reference by key. Partly answered: item templates now exist as Mongo
+   documents keyed `<area>.<local>` (specs/ITEM_TEMPLATES.md), not as files.
+   Whether they also get a file form, and whether `reward` and features can
+   reference them, are still open.
 6. Relationship of this format to the existing Creator `ExportCommand`.
 7. Do creator edits that arrive via a future `local_modified` flag apply to
    feature/property elements as well as room-level fields? (Spec says
