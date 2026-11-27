@@ -66,7 +66,13 @@ else
             <section class="mud-section-body" aria-labelledby="re-exits-h">
             <ExitRows Id="re-exit" Exits="p.Exits" Max="RoomEditPresenter.MaxFormExits" AllowAdd="true" AllowRemove="true"
                       ConfirmDangling="p.ConfirmDangling" ConfirmDanglingChanged="v => Edit(() => p.ConfirmDangling = v)"
-                      OnAdd="p.AddExit" OnRemove="p.RemoveExit" Changed="SaveDraftAsync" />
+                      OnAdd="p.AddExit" OnRemove="p.RemoveExit" Changed="SaveDraftAsync" Marked="_newExits" />
+            <div class="mud-actions"><button type="button" class="mud-btn" id="re-link-adjacent" aria-describedby="re-link-status" @onclick="LinkAdjacentAsync">Link Adjacent Rooms</button></div>
+            <p class="mud-hint">Adds exits to the form for rooms next to this one (the 8 compass directions, same Z; up and down are left out). Nothing is saved until you press Save room.</p>
+            <div id="re-link-status" aria-live="polite" role="status">
+                @if (_linkStatus != null) { <p class="mud-ok">@_linkStatus</p> }
+                @foreach (var w in _linkWarnings) { <p class="mud-link-warn">@w</p> }
+            </div>
             </section>
         </details>
 
@@ -222,6 +228,9 @@ else
         _loadedKey = Key;
         _forcedOpen.Clear();
         _generation.Clear();
+        _newExits.Clear();
+        _linkStatus = null;
+        _linkWarnings = new();
         _confirmRegen = false;
         _draftOffer = null;
         var user = (await AuthState).User;
@@ -240,6 +249,26 @@ else
     }
 
     private RoomEditDraft? _stored;
+
+    // "Link Adjacent Rooms": the added rows stay marked until a save succeeds or a draft replaces the rows.
+    private readonly HashSet<ExitInput> _newExits = new(ReferenceEqualityComparer.Instance);
+    private string? _linkStatus;
+    private List<string> _linkWarnings = new();
+
+    // Changes the form only: no write, no rpc of its own (the room list is the one RoomDirectory already holds for the key inputs).
+    // The draft is stored in the browser like any other exit edit; Save sends the rows through the normal UpdateRoom.
+    private async Task LinkAdjacentAsync()
+    {
+        if (_presenter == null) { return; }
+        _linkWarnings = new();
+        var rooms = await RoomsDirectory.GetAsync(_token);
+        if (rooms == null) { _linkStatus = Messages.LinkAdjacentUnavailable; return; }
+        var result = _presenter.LinkAdjacent(rooms);
+        foreach (var e in result.Added) { _newExits.Add(e); }
+        _linkStatus = result.Status;
+        _linkWarnings = result.Warnings.ToList();
+        if (result.Added.Count > 0) { await SaveDraftAsync(); }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -291,6 +320,9 @@ else
         _presenter.X = d.X; _presenter.Y = d.Y; _presenter.Z = d.Z;
         _presenter.ConfirmDangling = d.ConfirmDangling;
         _presenter.Exits = (d.Exits ?? new()).Where(e => e != null).Take(RoomEditPresenter.MaxFormExits).ToList();
+        _newExits.Clear();
+        _linkStatus = null;
+        _linkWarnings = new();
         _presenter.Features = (d.Features ?? new()).Where(f => f != null).Take(RoomEditPresenter.MaxFormFeatures).ToList();
     }
 
@@ -314,6 +346,7 @@ else
                     OpenSectionsForProblems(origin);
                     break;
                 case RoomEditOutcome.Ok:
+                    _newExits.Clear();
                     _stored = Snapshot();
                     await Drafts.RemoveAsync(_draftKey);
                     break;

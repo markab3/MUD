@@ -148,6 +148,24 @@ public sealed class RoomEditPresenter
         if (index >= 0 && index < Exits.Count) { Exits.RemoveAt(index); }
     }
 
+    // "Link Adjacent Rooms": adds exits to the form only (no write, no core call). The user reviews them and presses Save.
+    public LinkAdjacentResult LinkAdjacent(IReadOnlyList<RoomRecord> rooms)
+    {
+        ClearMessages();
+        Exits ??= new List<ExitInput>();
+        var plan = AdjacentRoomLinker.Plan(Key, Area, X, Y, Z, rooms, Exits.Where(e => e != null).Select(e => e.Dir));
+        var added = new List<ExitInput>();
+        var skipped = 0;
+        foreach (var exit in plan.Add)
+        {
+            if (Exits.Count >= MaxFormExits) { skipped++; continue; }
+            var input = new ExitInput { Dir = exit.Name, To = exit.To };
+            Exits.Add(input);
+            added.Add(input);
+        }
+        return new LinkAdjacentResult(added, skipped, plan.Conflicts);
+    }
+
     public void AddFeature()
     {
         ClearMessages();
@@ -447,6 +465,26 @@ public sealed class RoomEditPresenter
             Handles = string.Join(", ", f.Handles), Adjectives = string.Join(", ", f.Adjectives), Plurals = string.Join(", ", f.Plurals),
         }).ToList();
     }
+}
+
+/// <summary>The outcome of "Link Adjacent Rooms". Status is the fixed-text line the page shows; nothing was written anywhere.</summary>
+public sealed record LinkAdjacentResult(IReadOnlyList<ExitInput> Added, int NotAddedForLimit, IReadOnlyList<AdjacentConflict> Conflicts)
+{
+    public string Status
+    {
+        get
+        {
+            var text = Added.Count == 0
+                ? Messages.LinkAdjacentNone
+                : "Added " + Added.Count + (Added.Count == 1 ? " exit" : " exits") + " to the form: "
+                  + string.Join(", ", Added.Select(e => e.Dir + " -> " + e.To)) + ". Save to apply.";
+            if (NotAddedForLimit > 0) { text += " " + NotAddedForLimit + " more not added: the form holds at most " + RoomEditPresenter.MaxFormExits + " exits."; }
+            return text;
+        }
+    }
+
+    public IEnumerable<string> Warnings => Conflicts.Select(c =>
+        "Not linked " + c.Direction + ": these rooms share the same coordinates: " + string.Join(", ", c.Keys) + ".");
 }
 
 /// <summary>One behavior entry of the room as shown read-only on the edit page. Config is pretty-printed JSON text.</summary>

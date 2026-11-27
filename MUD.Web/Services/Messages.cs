@@ -32,6 +32,8 @@ public static class Messages
     public const string RoomSaveFailed = "The room could not be saved. Please try again later.";
     public const string RoomAuditFailed = "The change could not be recorded, so nothing was saved. Please try again later.";
     public const string RoomForbidden = "You are not allowed to edit rooms.";
+    public const string LinkAdjacentNone = "No adjacent rooms to link.";
+    public const string LinkAdjacentUnavailable = "The room list could not be read, so nothing was added.";
     public const string RoomSaved = "Saved. The running game has the change now.";
     public const string RoomNoChange = "Nothing was changed.";
     public const string RoomMoved = "Room moved.";
