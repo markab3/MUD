@@ -1,5 +1,5 @@
 @page "/creator/players"
-@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@attribute [Authorize(Policy = WebPolicies.AdminOnly)]
 @inject IAdminClient Core
 @inject NavigationManager Navigation
 <PageTitle>Players - Planar Realms</PageTitle>

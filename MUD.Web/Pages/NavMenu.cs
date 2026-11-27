@@ -13,7 +13,7 @@ public sealed class NavMenu
 {
     // Three sections in this order: Player (every signed-in user), Creator (CreatorOrAdmin), Admin (admins only).
     // A section with no visible items is left out, so the menu never shows an empty heading.
-    // The Players link is under Admin only; the page itself is still authorised for CreatorOrAdmin (not changed here).
+    // The Players link is under Admin only, and the player pages are authorised for AdminOnly.
     public static IReadOnlyList<NavSection> SectionsFor(bool creatorOrAdmin, bool admin)
     {
         var sections = new List<NavSection>

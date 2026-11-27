@@ -28,7 +28,7 @@ reference, so the web no longer reads or writes the database itself.
 | Token empty, unknown, revoked, or its player is retired or gone | `Unauthenticated` |
 | Token good, current role too low for the call | `PermissionDenied` |
 | The game thread did not run the call (stopping, queue full, took too long) | `Unavailable` |
-| A rule refused an edit (invalid field, creator editing an admin, default room) | status OK, reason in the reply's `result` |
+| A rule refused an edit (invalid field, editing an admin, default room) | status OK, reason in the reply's `result` |
 
 Messages are fixed sentences. No token, password or stored value is put in a status or a log line.
 
@@ -38,15 +38,15 @@ Messages are fixed sentences. No token, password or stored value is put in a sta
 |---|---|
 | `WebAuthenticate`, `Logout` | none |
 | `GetSession`, `GetOwnPlayer`, `ChangePassword` | any signed-in player |
-| `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListPlayers`, `GetPlayer`, `UpdatePlayer`, `ListModules` | creator or admin |
-| `ListAudit`, `StartModule`, `StopModule`, `RestartModule` | admin only |
+| `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListModules` | creator or admin |
+| `ListPlayers`, `GetPlayer`, `UpdatePlayer`, `ListAudit`, `StartModule`, `StopModule`, `RestartModule` | admin only |
 
 Not in this card: `GetRoomMap` (the map is laid out by the web from `ListRooms`, as `RoomMapLayout` does today), `GetStats` and `Flush` (sketched in
 CORE_API 7.2, not needed by any page). Each is a later addition if a page turns out to need it.
 
 ## GetOwnPlayer (website player page)
 
-`GetOwnPlayer(TokenRequest) returns (OwnPlayerReply)`: read-only, any signed-in role. The player is the one behind the token; the request has no name, so a caller cannot ask for anyone else (`GetPlayer` stays creator-only). The reply: `name`, `role` (current), `short_description`, `long_description`, `race`, `gender`, `class`, `location` (current room key). It never carries a password, token, inventory or the retired flag. Token failures are `Unauthenticated` as for every call. Logic: `AdminApi.GetOwnPlayer`; tests in `AdminApiTests`.
+`GetOwnPlayer(TokenRequest) returns (OwnPlayerReply)`: read-only, any signed-in role. The player is the one behind the token; the request has no name, so a caller cannot ask for anyone else (`GetPlayer` is admin only). The reply: `name`, `role` (current), `short_description`, `long_description`, `race`, `gender`, `class`, `location` (current room key). It never carries a password, token, inventory or the retired flag. Token failures are `Unauthenticated` as for every call. Logic: `AdminApi.GetOwnPlayer`; tests in `AdminApiTests`.
 
 ## Rules (carried over from `specs/WEB_EDITING.md` section 15)
 

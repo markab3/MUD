@@ -38,13 +38,13 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/logout` | POST only | antiforgery protected sign-out; GET just redirects |
 | `/character` | signed in | the signed-in player's own details (name, role, race, gender, class, location, descriptions) from `GetOwnPlayer`; never another player, never a credential; core down shows the "not reachable" message |
 | `/account/password` | signed in | change-password form (current, new, confirm), antiforgery protected; see below |
-| `/creator/players` | `CreatorOrAdmin` | player list (see "Player pages") |
-| `/creator/players/{nameKey}` | `CreatorOrAdmin` | player edit page (see "Player pages") |
+| `/creator/players` | `AdminOnly` | player list (see "Player pages") |
+| `/creator/players/{nameKey}` | `AdminOnly` | player edit page (see "Player pages") |
 | `/creator/modules` | list: `CreatorOrAdmin`; start/stop/restart buttons: admin only | module list with state (see "Modules page") |
 | `/creator/terrain` | `CreatorOrAdmin` | terrain library list with tabs and Delete (see "Terrain library pages") |
 | `/creator/terrain/edit?kind=&id=` | `CreatorOrAdmin` | create or edit one library entity (see "Terrain library pages") |
 
-The pull-out menu has three labelled sections, in this order, and a section with no visible links is not rendered: **Player** (every signed-in user): Character, Change password; **Creator** (the `CreatorOrAdmin` policy): Map, Modules, Terrain, Create room (`/creator`); **Admin** (admins only): Players. Log out is a POST form after the sections. Note: the Players link is shown to admins only, but `/creator/players` and the player edit page are still authorised for `CreatorOrAdmin` (unchanged), so a creator can open them by URL; tightening that is a separate decision for the owner.
+The pull-out menu has three labelled sections, in this order, and a section with no visible links is not rendered: **Player** (every signed-in user): Character, Change password; **Creator** (the `CreatorOrAdmin` policy): Map, Modules, Terrain, Create room (`/creator`); **Admin** (admins only): Players. Log out is a POST form after the sections. The Players link is shown to admins only, and the player pages and their core rpcs are admin only too (policy `AdminOnly`), so a creator who opens `/creator/players` by URL gets the access-denied page.
 
 ## Create room page (`/creator`, room creation)
 
@@ -140,8 +140,8 @@ Admin service, and (in `MUD.Tests`, card P6-1) core's `AdminApi` over in-memory 
 
 ## Player pages (`/creator/players`, `/creator/players/{nameKey}`)
 
-Implements `specs/WEB_EDITING.md` section 15 for players. Policy `CreatorOrAdmin` (anonymous -> `/login`, plain player
--> `/access-denied`). The web cannot create, delete or rename players. Both pages call core's Admin service (`ListPlayers`,
+Implements `specs/WEB_EDITING.md` section 15 for players. Policy `AdminOnly` (`WebPolicies.AdminOnly`: authenticated and role claim Admin; anonymous -> `/login`, plain player
+or creator -> `/access-denied`). Owner decision: creators have no access to the player pages or to the player rpcs. The web cannot create, delete or rename players. Both pages call core's Admin service (`ListPlayers`,
 `GetPlayer`, `UpdatePlayer`, see `specs/ADMIN_API.md`) with the cookie token; the web reads and writes no player or audit data itself.
 
 - List: name, race, class, gender, current location, role (Player/Creator/Admin), online and status (Active/Retired).
@@ -152,7 +152,7 @@ Implements `specs/WEB_EDITING.md` section 15 for players. Policy `CreatorOrAdmin
   editable (owner decision Q12). The name key comes from the route only. There is no password, name, inventory or
   equipment field in the contract's player messages or on the page model.
 - Authority is core's: it re-reads the editor's CURRENT role on every call (D31). You may edit only players whose role is
-  strictly lower than yours: a Creator edits Players; an Admin edits Creators and Players; nobody edits an Admin through the web.
+  strictly lower than yours; since the rpcs are admin only, in practice an Admin edits Creators and Players and nobody edits an Admin through the web.
   Only an Admin may change roles (nobody grants a role above their own) or retire/un-retire another player. A last-Admin check
   refuses lowering the only Admin. The page only hides controls the editor may not use (`PlayerRules`); core re-checks every change
   and answers with a result (`Ok`, `NoChange`, `Invalid` with field messages, `Forbidden`, `LastAdmin`, `AuditFailed`, `NotFound`, `Failed`).
@@ -219,7 +219,7 @@ Query string: `?area=<prefix>&z=<level>` (defaults to the first area and level 0
 
 ## Modules page (`/creator/modules`)
 
-Built (`Components/Pages/Modules.razor`, `ModulesPresenter`). Policy `CreatorOrAdmin`, like the player pages (there is no `/admin` area). Its backend is in
+Built (`Components/Pages/Modules.razor`, `ModulesPresenter`). Policy `CreatorOrAdmin` (there is no `/admin` area). Its backend is in
 `specs/ADMIN_API.md` ("Modules"); the web reaches it only through `IAdminClient` (`ListModulesAsync`, `StartModuleAsync`, `StopModuleAsync`,
 `RestartModuleAsync`).
 

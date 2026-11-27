@@ -830,7 +830,7 @@ namespace MUD.Tests
         public void ListPlayersFiltersSortsPagesAndNeverCarriesAPassword()
         {
             var f = new Fixture();
-            f.AddPlayer("Cris", creator: true);
+            f.AddPlayer("Cris", admin: true);
             f.AddPlayer("Anna");
             f.AddPlayer("Bob");
             string token = f.Login("cris");
@@ -840,7 +840,7 @@ namespace MUD.Tests
             Assert.Equal(new[] { "cris" }, f.Api.ListPlayers(new ListPlayersRequest { Token = token, Page = 2, PageSize = 2 }).Items.Select(i => i.NameKey).ToArray());
             Assert.Equal(new[] { "cris", "bob", "anna" }, f.Api.ListPlayers(new ListPlayersRequest { Token = token, Descending = true }).Items.Select(i => i.NameKey).ToArray());
             Assert.Equal(new[] { "bob" }, f.Api.ListPlayers(new ListPlayersRequest { Token = token, NameFilter = "BO" }).Items.Select(i => i.NameKey).ToArray());
-            Assert.Equal(AdminRole.Creator, all.Items.Concat(f.Api.ListPlayers(new ListPlayersRequest { Token = token, Page = 2, PageSize = 2 }).Items).Single(i => i.NameKey == "cris").Role);
+            Assert.Equal(AdminRole.Admin, all.Items.Concat(f.Api.ListPlayers(new ListPlayersRequest { Token = token, Page = 2, PageSize = 2 }).Items).Single(i => i.NameKey == "cris").Role);
             Assert.DoesNotContain("secret1", all.ToString());
         }
 
@@ -848,7 +848,7 @@ namespace MUD.Tests
         public void GetPlayerShowsTheEditableFieldsOnlyAndReportsAMissingPlayer()
         {
             var f = new Fixture();
-            f.AddPlayer("Cris", creator: true);
+            f.AddPlayer("Cris", admin: true);
             f.AddPlayer("Pat");
             string token = f.Login("cris");
             GetPlayerReply got = f.Api.GetPlayer(new GetPlayerRequest { Token = token, NameKey = "pat" });
@@ -889,10 +889,10 @@ namespace MUD.Tests
         }
 
         [Fact]
-        public void ACreatorEditsAPlayersTextAndTheOnlinePlayerIsTold()
+        public void AnAdminEditsAPlayersTextAndTheOnlinePlayerIsTold()
         {
             var f = new Fixture();
-            f.AddPlayer("Cris", creator: true);
+            f.AddPlayer("Cris", admin: true);
             Person pat = f.AddPlayer("Pat");
             f.Host.Online.Add(pat);
             string token = f.Login("cris");
@@ -911,8 +911,8 @@ namespace MUD.Tests
         public void APlayerEditAfterTheGameChangedTheTextKeepsLastWriteWinsAndNeedsNoRevision()
         {
             var f = new Fixture();
-            f.AddPlayer("Cris", creator: true);
-            f.AddPlayer("Cleo", creator: true);
+            f.AddPlayer("Cris", admin: true);
+            f.AddPlayer("Cleo", admin: true);
             Person pat = f.AddPlayer("Pat");
             string cris = f.Login("cris"), cleo = f.Login("cleo");
             Assert.Equal(AdminResult.Ok, f.Api.UpdatePlayer(PlayerEdit(cris, "pat", shortText: "first")).Result);
@@ -924,7 +924,7 @@ namespace MUD.Tests
         public void AnInvalidPlayerEditIsRejectedWithFieldErrors()
         {
             var f = new Fixture();
-            f.AddPlayer("Cris", creator: true);
+            f.AddPlayer("Cris", admin: true);
             Person pat = f.AddPlayer("Pat");
             string token = f.Login("cris");
             UpdatePlayerReply reply = f.Api.UpdatePlayer(PlayerEdit(token, "pat", shortText: "", race: new string('x', 33)));
@@ -936,29 +936,36 @@ namespace MUD.Tests
         }
 
         [Fact]
-        public void ACreatorCannotEditAnotherCreatorOrAnAdminOrThemselves()
+        public void ACreatorIsRefusedByListPlayersGetPlayerAndUpdatePlayer_AndAnAdminSucceeds()
         {
             var f = new Fixture();
             f.AddPlayer("Cris", creator: true);
-            f.AddPlayer("Cleo", creator: true);
             f.AddPlayer("Adam", admin: true);
-            string token = f.Login("cris");
-            Assert.Equal(AdminResult.Forbidden, f.Api.UpdatePlayer(PlayerEdit(token, "cleo")).Result);
-            Assert.Equal(AdminResult.Forbidden, f.Api.UpdatePlayer(PlayerEdit(token, "adam")).Result);
-            Assert.Equal(AdminResult.Forbidden, f.Api.UpdatePlayer(PlayerEdit(token, "cris")).Result);
+            Person patPerson = f.AddPlayer("Pat");
+            string cris = f.Login("cris"), adam = f.Login("adam"), pat = f.Login("pat");
+            foreach (string token in new[] { cris, pat })
+            {
+                Assert.Equal(AdminFailure.Forbidden, Refused(() => f.Api.ListPlayers(new ListPlayersRequest { Token = token })).Failure);
+                Assert.Equal(AdminFailure.Forbidden, Refused(() => f.Api.GetPlayer(new GetPlayerRequest { Token = token, NameKey = "pat" })).Failure);
+                Assert.Equal(AdminFailure.Forbidden, Refused(() => f.Api.UpdatePlayer(PlayerEdit(token, "pat", shortText: "changed"))).Failure);
+            }
+            Assert.Equal("Pat", patPerson.ShortDescription);
             Assert.Empty(f.Audit.Rows);
+            Assert.Equal(3, f.Api.ListPlayers(new ListPlayersRequest { Token = adam }).Total);
+            Assert.True(f.Api.GetPlayer(new GetPlayerRequest { Token = adam, NameKey = "pat" }).Found);
+            Assert.Equal(AdminResult.Ok, f.Api.UpdatePlayer(PlayerEdit(adam, "pat", shortText: "changed")).Result);
         }
 
         [Fact]
-        public void OnlyAnAdminMaySetARoleOrRetire()
+        public void GetOwnPlayerStillWorksForAPlayerACreatorAndAnAdmin()
         {
             var f = new Fixture();
-            f.AddPlayer("Cris", creator: true);
             f.AddPlayer("Pat");
-            string token = f.Login("cris");
-            Assert.Equal(AdminResult.Forbidden, f.Api.UpdatePlayer(PlayerEdit(token, "pat", role: AdminRole.Creator)).Result);
-            Assert.Equal(AdminResult.Forbidden, f.Api.UpdatePlayer(PlayerEdit(token, "pat", retired: true)).Result);
-            Assert.Empty(f.Audit.Rows);
+            f.AddPlayer("Cris", creator: true);
+            f.AddPlayer("Adam", admin: true);
+            Assert.Equal(AdminRole.Player, f.Api.GetOwnPlayer(new TokenRequest { Token = f.Login("pat") }).Role);
+            Assert.Equal(AdminRole.Creator, f.Api.GetOwnPlayer(new TokenRequest { Token = f.Login("cris") }).Role);
+            Assert.Equal(AdminRole.Admin, f.Api.GetOwnPlayer(new TokenRequest { Token = f.Login("adam") }).Role);
         }
 
         [Fact]
@@ -1029,7 +1036,7 @@ namespace MUD.Tests
         public void APlayerEditWithNothingChangedIsNoChange()
         {
             var f = new Fixture();
-            f.AddPlayer("Cris", creator: true);
+            f.AddPlayer("Cris", admin: true);
             f.AddPlayer("Pat");
             string token = f.Login("cris");
             Assert.Equal(AdminResult.NoChange, f.Api.UpdatePlayer(PlayerEdit(token, "pat")).Result);
@@ -1040,7 +1047,7 @@ namespace MUD.Tests
         public void PlayerEditAuditFailureRefusesTheEditAndMissingPlayersAreNotFound()
         {
             var f = new Fixture();
-            f.AddPlayer("Cris", creator: true);
+            f.AddPlayer("Cris", admin: true);
             Person pat = f.AddPlayer("Pat");
             string token = f.Login("cris");
             Assert.Equal(AdminResult.NotFound, f.Api.UpdatePlayer(PlayerEdit(token, "nobody")).Result);
