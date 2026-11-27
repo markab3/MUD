@@ -51,7 +51,12 @@ builder.Services.Configure<HubOptions>(o =>
     o.KeepAliveInterval = TimeSpan.FromSeconds(15);
 });
 
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(ProxyHeaders.Configure);
+
 var app = builder.Build();
+// First: the proxy's X-Forwarded-* (loopback peer only) must be applied before anything reads IsHttps, the host or the remote address.
+app.UseForwardedHeaders();
+ProxyHeaders.UsePathOnlyRedirects(app);
 // Before static files so blazor.web.js and the Fluent UI css/js are compressed; see CompressionSetup for what is excluded and why.
 app.UseResponseCompression();
 app.UseStaticFiles();
