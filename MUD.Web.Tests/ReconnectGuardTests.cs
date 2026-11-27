@@ -24,7 +24,7 @@ public class ReconnectGuardTests
     // Buttons that only change local form state or the draft: not mutating, so they need no marker.
     private static readonly string[] LocalOnly =
     {
-        "Restore unsaved changes", "Discard", "Cancel", "Move up", "Move down", "Remove", "Add feature", "Add exit", "Refresh", "Retry", "Filter",
+        "Restore unsaved changes", "Discard", "Cancel", "Move up", "Move down", "Remove", "Add feature", "Add exit", "Link Adjacent Rooms", "Refresh", "Retry", "Filter",
     };
 
     [Theory]

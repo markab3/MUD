@@ -102,6 +102,17 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   in the page's error summary, prefixed "Feature N:" (1-based). Behavior and component config is not in the contract: core keeps it for a
   feature whose short is unchanged (`specs/ADMIN_API.md`), so the page shows one general note that renaming or removing a feature drops it
   (it cannot mark individual rows, because `RoomFeature` does not say which have behavior).
+- Link Adjacent Rooms (card "Website: 'Link Adjacent Rooms' button on the room edit page"): a button in the Exits section. A click
+  ADDS exit rows to the form and writes nothing: no confirm, no new rpc, no `UpdateRoom`. The user reviews the rows (each is marked
+  "New, not saved yet") and presses Save room; the normal `UpdateRoom` path validates and audits them then. The rule: rooms in the same
+  area (null area = ""), placed, at the same Z (null = 0), one step away in one of the **8 compass directions** (north = +Y, east = +X, as
+  `RoomMapLayout`), for each direction this room has no exit with in the current form (any spelling the map knows, so `n` blocks
+  `north`; includes rows typed or added but not saved). **Up and down are intentionally excluded**, whatever rooms lie above or below. An
+  existing row is never changed, whatever it points at. Two rooms on the same coordinates add nothing for that direction and show a
+  warning naming them. One-way: neighbours are never edited. Rooms come from the `RoomDirectory` list the key inputs already use (no
+  per-click rpc beyond a first read if it is not loaded). The status line ("Added N exits to the form: north -> key, ... Save to apply."
+  or "No adjacent rooms to link.") is `aria-live`. Unsaved added rows are kept in the browser draft like any other exit edit and are lost
+  on reload unless the draft is restored. The 32-row form limit applies; extra exits are reported, not added.
 - Collapsible sections (card "Website: collapsible sections on the room edit page"): every section (Basics, Exits, Features, Behaviors,
   Generated room when present, Move room, Delete) is a native `<details>` whose `<summary>` holds the section's `<h2>` (44px target, chevron,
   focus ring, palette variables only; no script). Basics starts open, all others closed. Collapsing is display only: the fields stay in the page

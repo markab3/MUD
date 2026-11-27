@@ -5,7 +5,8 @@
     {
         var index = i;
         var exit = Exits[index];
-        <div class="mud-row-card">
+        <div class="mud-row-card @(Marked != null && Marked.Contains(exit) ? "mud-row-new" : null)">
+            @if (Marked != null && Marked.Contains(exit)) { <p class="mud-new-badge">New, not saved yet</p> }
             <div class="mud-field"><label for="@(Id)-dir-@index">Direction</label>
                 <input id="@(Id)-dir-@index" value="@exit.Dir" @onchange="e => Set(exit, true, e.Value?.ToString())" maxlength="32" placeholder="north" aria-label="Exit direction" autocomplete="off" autocapitalize="none" /></div>
             <div class="mud-field"><label for="@(Id)-to-@index">Target room key</label>
@@ -36,6 +37,8 @@
     // The create form has a fixed number of rows; the edit form adds and removes rows.
     [Parameter] public bool AllowAdd { get; set; }
     [Parameter] public bool AllowRemove { get; set; }
+    // Rows to mark as new and unsaved (compared by reference).
+    [Parameter] public ISet<MUD.Web.Services.ExitInput>? Marked { get; set; }
     [Parameter] public Action? OnAdd { get; set; }
     [Parameter] public Action<int>? OnRemove { get; set; }
     // Messages by row index, from the page (for the create form: (Exits[i].Dir|To) errors).

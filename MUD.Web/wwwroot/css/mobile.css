@@ -236,3 +236,8 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-code { font-family: monospace; }
 .mud-preview-long { white-space: pre-wrap; overflow-wrap: anywhere; }
 fieldset.mud-behavior { min-width: 0; margin: 0 0 12px; }
+
+/* Link Adjacent Rooms: rows added to the form and not saved yet, and the duplicate-coordinate warning */
+.mud-row-new { border-left: 6px solid var(--mud-cyan-ink); background: var(--mud-hover); }
+.mud-new-badge { margin: 0 0 8px; font-weight: 600; color: var(--mud-cyan-ink); }
+.mud-link-warn { margin: 4px 0; padding: 8px 12px; background: var(--mud-warn-bg); border: 1px solid var(--mud-warn-border); border-radius: 6px; color: var(--mud-text); overflow-wrap: anywhere; }
