@@ -61,7 +61,7 @@ else
     {
         <p>No placed rooms on this level.</p>
     }
-    else
+    @if (map.ShowMap)
     {
         <RoomMap Map="map" FillFor="_presenter.FillFor" Center="@Center" OnWire="WireAsync" />
     }

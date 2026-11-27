@@ -231,6 +231,15 @@ public class MapArrowLayoutTests
         Assert.Empty(map.Rects);
         Assert.Equal("/creator?area=a&x=5&y=6&z=1", map.Ghost!.CreateHref);
         Assert.True(map.Width >= RoomMapLayout.Size);
+        Assert.True(map.Height >= RoomMapLayout.Size);
+        Assert.True(map.ShowMap);
+    }
+
+    [Fact]
+    public void ShowMap_IsFalse_OnlyWhenNoRoomsAndNoGhost()
+    {
+        Assert.False(new RoomMapLayout().Build(new[] { Room("a.o", 5, 6, 0) }, "a", 1).ShowMap);
+        Assert.True(new RoomMapLayout().Build(new[] { Room("a.o", 5, 6, 0) }, "a", 0).ShowMap);
     }
 
     [Fact]

@@ -39,6 +39,8 @@ public record RoomMap(IReadOnlyList<MapRect> Rects, IReadOnlyList<MapLine> Lines
 {
     public IReadOnlyList<MapArrow> Arrows { get; init; } = Array.Empty<MapArrow>();
     public MapGhost? Ghost { get; init; }
+    // The page draws the SVG when there is anything to show; an empty level with a ghost must still render.
+    public bool ShowMap => Rects.Count > 0 || Ghost != null;
 }
 
 // Pure layout: rooms in, primitive shapes out. NORTH IS UP: screen y = -Y (+x east, +z is the level selector).
