@@ -4,6 +4,7 @@
 @inject NavigationManager Navigation
 @inject NoticeService Notices
 @inject DraftStore Drafts
+@inject RoomDirectory RoomsDirectory
 <PageTitle>Create room - Planar Realms</PageTitle>
 <h1>Create room</h1>
 <p>Create a room. Choose its area first: the stored key is the area prefix, a dot, then the room key you type. More exits can be added on the room's edit page afterwards. Areas are managed on the <a class="mud-link" href="@WebRoutes.Areas">Areas page</a>.</p>
@@ -42,10 +43,8 @@ else
             </select>
             @foreach (var m in _presenter.ErrorsFor("Area")) { <span class="mud-error">@m</span> }</div>
         <div class="mud-field"><label for="cr-key">Room key</label>
-            <span class="mud-keyrow">
-                <span class="mud-keyprefix" id="cr-prefix" aria-hidden="true">@_presenter.KeyPrefix</span>
-                <input id="cr-key" value="@f.Key" @onchange="e => Edit(() => f.Key = e.Value?.ToString())" maxlength="64" required autocomplete="off" autocapitalize="none" aria-describedby="cr-prefix" />
-            </span>
+            <RoomKeyInput Id="cr-key" Mode="RoomKeyMode.New" Prefix="@_presenter.KeyPrefix" PrefixId="cr-prefix" Value="@f.Key" ValueChanged="v => f.Key = v"
+                          Committed="SaveDraftAsync" MaxLength="64" AriaLabel="Room key" />
             @foreach (var m in _presenter.ErrorsFor("Key")) { <span class="mud-error">@m</span> }</div>
         <div class="mud-field"><label for="cr-short">Short description</label>
             <input id="cr-short" value="@f.Short" @onchange="e => Edit(() => f.Short = e.Value?.ToString())" maxlength="100" required />
@@ -84,6 +83,7 @@ else
         var user = (await AuthState).User;
         var token = user.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
         _draftKey = DraftStore.KeyFor(user.FindFirstValue(ClaimTypes.Name) ?? string.Empty, WebRoutes.Creator);
+        RoomsDirectory.Invalidate();
         var presenter = new CreatorPresenter(Rooms, token);
         await presenter.LoadAreasAsync();
         _presenter = presenter;

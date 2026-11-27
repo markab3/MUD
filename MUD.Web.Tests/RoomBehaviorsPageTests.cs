@@ -54,6 +54,7 @@ public class RoomBehaviorsPageTests
         services.AddSingleton<NoticeService>();
         services.AddSingleton<IJSRuntime>(new NoJs());
         services.AddSingleton<DraftStore>();
+        services.AddScoped<RoomDirectory>();
         services.AddLogging();
         using var provider = services.BuildServiceProvider();
         await using var renderer = new HtmlRenderer(provider, NullLoggerFactory.Instance);

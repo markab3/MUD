@@ -215,6 +215,19 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-keyprefix:empty { display: none; }
 .mud-keyrow input { flex: 1 1 8rem; min-width: 0; }
 
+
+/* Room key autocomplete (RoomKeyInput): an in-flow listbox under the input, 44px rows, key / short description / area stacked so
+   nothing forces a sideways scroll at 360px. Palette variables only. */
+.mud-combo { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mud-combo-list { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; border: 1px solid var(--mud-border); border-radius: 6px; background: var(--mud-surface); }
+.mud-combo-opt { display: flex; flex-direction: column; justify-content: center; min-height: var(--mud-hit); padding: 4px 8px; box-sizing: border-box; border-bottom: 1px solid var(--mud-border-soft); cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
+.mud-combo-opt:last-child { border-bottom: 0; }
+.mud-combo-opt:hover { background: var(--mud-hover); }
+.mud-combo-active, .mud-combo-active:hover { background: var(--mud-cyan-ink); color: var(--mud-on-dark); }
+.mud-combo-key { font-family: monospace; }
+.mud-combo-short, .mud-combo-area { color: inherit; font-size: 0.9em; }
+.mud-combo-opt:not(.mud-combo-active) .mud-combo-short, .mud-combo-opt:not(.mud-combo-active) .mud-combo-area { color: var(--mud-text-soft); }
+.mud-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* Item templates: one collapsible group per area; the count sits at the end of the summary row. */
 .mud-itemgroup { margin-bottom: 8px; }
 .mud-itemgroup > summary { justify-content: space-between; }

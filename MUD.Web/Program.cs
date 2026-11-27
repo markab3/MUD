@@ -38,6 +38,7 @@ builder.Services.AddFluentUIComponents();
 builder.Services.AddStaticAssetCompression();
 builder.Services.AddScoped<NoticeService>();
 builder.Services.AddScoped<DraftStore>();
+builder.Services.AddScoped<RoomDirectory>();
 builder.Services.AddScoped<AuthenticationStateProvider, SessionAuthenticationStateProvider>();
 builder.Services.Configure<CircuitOptions>(o =>
 {

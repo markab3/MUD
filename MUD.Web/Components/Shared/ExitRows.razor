@@ -9,7 +9,8 @@
             <div class="mud-field"><label for="@(Id)-dir-@index">Direction</label>
                 <input id="@(Id)-dir-@index" value="@exit.Dir" @onchange="e => Set(exit, true, e.Value?.ToString())" maxlength="32" placeholder="north" aria-label="Exit direction" autocomplete="off" autocapitalize="none" /></div>
             <div class="mud-field"><label for="@(Id)-to-@index">Target room key</label>
-                <input id="@(Id)-to-@index" value="@exit.To" @onchange="e => Set(exit, false, e.Value?.ToString())" maxlength="128" placeholder="area.room" aria-label="Exit target room key" autocomplete="off" autocapitalize="none" /></div>
+                <RoomKeyInput Id="@(Id + "-to-" + index)" Value="@exit.To" ValueChanged="v => SetTo(exit, v)" Committed="Changed"
+                              AriaLabel="Exit target room key" Placeholder="area.room" /></div>
             @foreach (var m in ErrorsFor(index)) { <p class="mud-error" role="alert">@m</p> }
             @if (AllowRemove)
             {
@@ -41,6 +42,9 @@
     [Parameter] public Func<int, IEnumerable<string>>? RowErrors { get; set; }
 
     private IEnumerable<string> ErrorsFor(int index) => RowErrors?.Invoke(index) ?? Enumerable.Empty<string>();
+
+    // Typing only updates the row; the draft is saved when the user picks a room or leaves the field (Committed).
+    private Task SetTo(MUD.Web.Services.ExitInput exit, string? value) { exit.To = value; return Task.CompletedTask; }
 
     private Task Set(MUD.Web.Services.ExitInput exit, bool dir, string? value)
     {

@@ -1,0 +1,115 @@
+@* Room key input with a custom listbox of matching rooms (WEB_BLAZOR.md 4.4). Existing: exit targets, the key must be a room.
+   New: the key of a room to create, the list only warns about rooms that exist. Matching is RoomKeyMatcher over the circuit's
+   RoomDirectory (ListRooms once); typing never calls core. Behaviour is RoomKeyCombo. The list is in the page flow (not a floating
+   layer), so it cannot overflow sideways at 360px and pushes the form down instead of hiding behind the on-screen keyboard.
+   Enter is cancelled (no form submit) only while a row is highlighted; with no row highlighted Enter behaves as before. *@
+@inject RoomDirectory Directory
+<span class="mud-combo">
+    <span class="mud-keyrow">
+        @if (Prefix != null) { <span class="mud-keyprefix" id="@PrefixDomId" aria-hidden="true">@Prefix</span> }
+        <input id="@Id" type="text" role="combobox" data-roomkey="true" value="@_combo.Text"
+               @oninput="OnInput" @onkeydown="OnKeyDown" @onkeydown:preventDefault="@(_combo.ShowList && _combo.Active >= 0)" @onfocus="OnFocus" @onblur="OnBlur"
+               maxlength="@MaxLength" placeholder="@Placeholder" aria-label="@AriaLabel" aria-describedby="@Describedby"
+               aria-autocomplete="list" aria-haspopup="listbox" aria-expanded="@(_combo.ShowList ? "true" : "false")"
+               aria-controls="@(Id)-list" aria-activedescendant="@ActiveId" aria-invalid="@(_combo.Problem != null ? "true" : null)"
+               autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" />
+    </span>
+    @if (_combo.ShowList)
+    {
+        <ul id="@(Id)-list" class="mud-combo-list" role="listbox" aria-label="Matching rooms">
+            @for (var i = 0; i < _combo.Results.Count; i++)
+            {
+                var index = i;
+                var room = _combo.Results[index];
+                <li id="@(Id)-opt-@index" role="option" class="mud-combo-opt @(index == _combo.Active ? "mud-combo-active" : null)"
+                    aria-selected="@(index == _combo.Active ? "true" : "false")" data-room="@room.Key"
+                    @onmousedown:preventDefault @onclick="() => Pick(index)">
+                    <span class="mud-combo-key">@room.Key</span>
+                    <span class="mud-combo-short">@room.Short</span>
+                    <span class="mud-combo-area">@RoomKeyMatcher.AreaOf(room)</span>
+                </li>
+            }
+        </ul>
+    }
+    <span class="mud-sr" role="status" aria-live="polite">@_combo.Announcement</span>
+    @if (_combo.Problem != null) { <span class="mud-error mud-combo-problem" id="@(Id)-problem" role="alert">@_combo.Problem</span> }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "roomkey";
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    // Raised when the user is done with a value (a suggestion picked, the field left): pages save drafts here, not per key.
+    [Parameter] public EventCallback Committed { get; set; }
+    [Parameter] public RoomKeyMode Mode { get; set; } = RoomKeyMode.Existing;
+    // New mode: the fixed key prefix shown before the input ("area."); the list then shows rooms in that area only.
+    [Parameter] public string? Prefix { get; set; }
+    [Parameter] public string? PrefixId { get; set; }
+    [Parameter] public string? AriaLabel { get; set; }
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public int MaxLength { get; set; } = 128;
+    [Parameter] public string? AriaDescribedBy { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private RoomKeyCombo _combo = new(RoomKeyMode.Existing);
+    private bool _loaded;
+
+    private string PrefixDomId => PrefixId ?? Id + "-prefix";
+    private string? ActiveId => _combo.ShowList && _combo.Active >= 0 ? Id + "-opt-" + _combo.Active : null;
+
+    private string? Describedby
+    {
+        get
+        {
+            var ids = new List<string>();
+            if (Prefix != null) { ids.Add(PrefixDomId); }
+            if (!string.IsNullOrEmpty(AriaDescribedBy)) { ids.Add(AriaDescribedBy); }
+            if (_combo.Problem != null) { ids.Add(Id + "-problem"); }
+            return ids.Count == 0 ? null : string.Join(' ', ids);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_combo.Mode != Mode) { _combo = new RoomKeyCombo(Mode); _loaded = false; }
+        _combo.Scope = Mode == RoomKeyMode.New && !string.IsNullOrEmpty(Prefix) ? Prefix : null;
+        _combo.SetFromParent(Value);
+        if (_loaded) { return; }
+        _loaded = true;
+        var token = string.Empty;
+        if (AuthState != null) { token = (await AuthState).User.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty; }
+        _combo.Rooms = await Directory.GetAsync(token);
+    }
+
+    private Task OnInput(ChangeEventArgs e)
+    {
+        _combo.Type(e.Value?.ToString());
+        return ValueChanged.InvokeAsync(_combo.Text);
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        var press = _combo.KeyDown(e.Key);
+        if (press.Chosen != null) { await Chosen(press.Chosen); }
+    }
+
+    private void OnFocus() => _combo.Focus();
+
+    private async Task OnBlur()
+    {
+        _combo.Blur();
+        await Committed.InvokeAsync();
+    }
+
+    private async Task Pick(int index)
+    {
+        var key = _combo.Choose(index);
+        if (key != null) { await Chosen(key); }
+    }
+
+    private async Task Chosen(string key)
+    {
+        await ValueChanged.InvokeAsync(key);
+        await Committed.InvokeAsync();
+    }
+}
