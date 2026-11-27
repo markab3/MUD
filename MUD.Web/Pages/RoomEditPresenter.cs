@@ -55,6 +55,8 @@ public sealed class RoomEditPresenter
     public RoomEditMissing Missing { get; private set; }
     // Core's validation sentences (with "Feature N: " where it names a feature), in core's order.
     public List<string> Problems { get; } = new();
+    // Core's field name for each entry of Problems (same order), so the page can open the section that holds the field.
+    public List<string> ProblemFields { get; } = new();
     public string? NewKey { get; private set; }
 
     // Generator provenance of the loaded room (null for authored rooms). Regen and Update show only when it is set.
@@ -117,7 +119,7 @@ public sealed class RoomEditPresenter
                     Notice = Messages.RoomNoChange;
                     return RoomEditOutcome.Ok;
                 case AdminResult.Invalid:
-                    foreach (var e in reply.Errors) { Problems.Add(FeatureErrorText(e)); }
+                    foreach (var e in reply.Errors) { Problems.Add(FeatureErrorText(e)); ProblemFields.Add(e.Field ?? string.Empty); }
                     return RoomEditOutcome.Problem;
                 case AdminResult.NotFound:
                     return NotFoundPage();
@@ -205,7 +207,7 @@ public sealed class RoomEditPresenter
                     Notice = Messages.RoomNoChange;
                     break;
                 case AdminResult.Invalid:
-                    foreach (var e in reply.Errors) { Problems.Add(e.Message); }
+                    foreach (var e in reply.Errors) { Problems.Add(e.Message); ProblemFields.Add(e.Field ?? string.Empty); }
                     break;
                 case AdminResult.AlreadyExists:
                     Error = Messages.RoomKeyExists;
@@ -312,6 +314,7 @@ public sealed class RoomEditPresenter
         var error = Error;
         var notice = Notice;
         var problems = Problems.ToList();
+        var fields = ProblemFields.ToList();
         try
         {
             var room = await _core.GetRoomAsync(_token, Key);
@@ -321,6 +324,8 @@ public sealed class RoomEditPresenter
             Notice = notice;
             Problems.Clear();
             Problems.AddRange(problems);
+            ProblemFields.Clear();
+            ProblemFields.AddRange(fields);
             return error != null || problems.Count > 0 ? RoomEditOutcome.Problem : RoomEditOutcome.Ok;
         }
         catch (CoreUnavailableException) { return UnavailablePage(); }
@@ -352,11 +357,13 @@ public sealed class RoomEditPresenter
         Notice = null;
         NewKey = null;
         Problems.Clear();
+        ProblemFields.Clear();
     }
 
     private void ClearMessages()
     {
         Problems.Clear();
+        ProblemFields.Clear();
     }
 
     private static RoomExit ToExit(ExitInput e) => new() { Name = (e.Dir ?? string.Empty).Trim(), To = (e.To ?? string.Empty).Trim() };

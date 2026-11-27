@@ -38,8 +38,9 @@ else
         </div>
     }
     <form @onsubmit="SaveAsync" @onsubmit:preventDefault novalidate>
-        <section class="mud-section">
-            <h2>Basics</h2>
+        <details class="mud-section mud-collapse" open="@IsOpen(SecBasics)" @key="KeyOf(SecBasics)">
+            <summary><h2 id="re-basics-h">Basics</h2></summary>
+            <section class="mud-section-body" aria-labelledby="re-basics-h">
             <div class="mud-field"><label for="re-short">Short description</label>
                 <input id="re-short" value="@p.Short" @onchange="e => Edit(() => p.Short = e.Value?.ToString())" maxlength="100" required /></div>
             <div class="mud-field"><label for="re-long">Long description</label>
@@ -56,17 +57,21 @@ else
                     <input id="re-z" type="number" inputmode="numeric" value="@p.Z" @onchange="e => Edit(() => p.Z = ParseInt(e.Value))" /></div>
             </div>
             <p class="mud-hint">(leave a field blank for an unplaced room; blank is not 0)</p>
-        </section>
+            </section>
+        </details>
 
-        <section class="mud-section">
-            <h2>Exits</h2>
+        <details class="mud-section mud-collapse" open="@IsOpen(SecExits)" @key="KeyOf(SecExits)">
+            <summary><h2 id="re-exits-h">Exits</h2></summary>
+            <section class="mud-section-body" aria-labelledby="re-exits-h">
             <ExitRows Id="re-exit" Exits="p.Exits" Max="RoomEditPresenter.MaxFormExits" AllowAdd="true" AllowRemove="true"
                       ConfirmDangling="p.ConfirmDangling" ConfirmDanglingChanged="v => Edit(() => p.ConfirmDangling = v)"
                       OnAdd="p.AddExit" OnRemove="p.RemoveExit" Changed="SaveDraftAsync" />
-        </section>
+            </section>
+        </details>
 
-        <section class="mud-section">
-            <h2>Features</h2>
+        <details class="mud-section mud-collapse" open="@IsOpen(SecFeatures)" @key="KeyOf(SecFeatures)">
+            <summary><h2 id="re-features-h">Features</h2></summary>
+            <section class="mud-section-body" aria-labelledby="re-features-h">
             <fieldset class="mud-fieldset">
                 <legend>Features (things in the room that players can look at)</legend>
                 <p class="mud-hint">Handles, adjectives and plurals: separate words with commas or spaces, for example <code>fountain, basin</code>.
@@ -102,22 +107,26 @@ else
                 <p class="mud-hint">@p.Features.Count of @RoomEditPresenter.MaxFormFeatures features</p>
                 <div class="mud-actions"><button type="button" class="mud-btn" disabled="@(p.Features.Count >= RoomEditPresenter.MaxFormFeatures)" @onclick="() => Edit(p.AddFeature)">Add feature</button></div>
             </fieldset>
-        </section>
+            </section>
+        </details>
 
         <div class="mud-sticky-actions">
             <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Save room</button>
         </div>
     </form>
 
-    <section class="mud-section" aria-labelledby="re-behaviors-h">
-        <h2 id="re-behaviors-h">Behaviors</h2>
-        <RoomBehaviors Behaviors="p.Behaviors" Searches="p.Searches" />
-    </section>
+    <details class="mud-section mud-collapse" open="@IsOpen(SecBehaviors)" @key="KeyOf(SecBehaviors)">
+        <summary><h2 id="re-behaviors-h">Behaviors</h2></summary>
+        <section class="mud-section-body" aria-labelledby="re-behaviors-h">
+            <RoomBehaviors Behaviors="p.Behaviors" Searches="p.Searches" />
+        </section>
+    </details>
 
     @if (p.IsGenerated)
     {
-        <section class="mud-section">
-            <h2>Generated room</h2>
+        <details class="mud-section mud-collapse" open="@IsOpen(SecGenerated)" @key="KeyOf(SecGenerated)">
+            <summary><h2 id="re-generated-h">Generated room</h2></summary>
+            <section class="mud-section-body" aria-labelledby="re-generated-h">
             <p>Made by the map generator: map <code>@p.GenMap</code>, terrain <code>@p.GenTerrain</code>.</p>
             @if (_confirmRegen)
             {
@@ -140,11 +149,13 @@ else
                 </div>
                 <p class="mud-hint">Refreshes only features made from a library template, when the template is newer. The description and hand-added features are not touched.</p>
             }
-        </section>
+            </section>
+        </details>
     }
 
-    <section class="mud-section">
-        <h2>Move room (change its key)</h2>
+    <details class="mud-section mud-collapse" open="@IsOpen(SecMove)" @key="KeyOf(SecMove)">
+        <summary><h2 id="re-move-h">Move room (change its key)</h2></summary>
+        <section class="mud-section-body" aria-labelledby="re-move-h">
         <div class="mud-field"><label for="re-newarea">Area prefix</label>
             <input id="re-newarea" value="@p.NewArea" @onchange="e => p.NewArea = e.Value?.ToString()" maxlength="128" list="re-area-list" autocomplete="off" autocapitalize="none" required /></div>
         <datalist id="re-area-list">
@@ -154,13 +165,16 @@ else
             <input id="re-newlocal" value="@p.NewLocalKey" @onchange="e => p.NewLocalKey = e.Value?.ToString()" maxlength="64" autocomplete="off" autocapitalize="none" required /></div>
         <div class="mud-actions"><button type="button" class="mud-btn mud-save" disabled="@_busy" @onclick="MoveAsync">Move room</button></div>
         <p class="mud-hint">The new key is <code>area prefix.local key</code>. Exits that lead here, players standing here, and everything inside follow the room. The default room cannot be moved.</p>
-    </section>
+        </section>
+    </details>
 
-    <section class="mud-section mud-danger">
-        <h2>Delete</h2>
+    <details class="mud-section mud-collapse mud-danger" open="@IsOpen(SecDelete)" @key="KeyOf(SecDelete)">
+        <summary><h2 id="re-delete-h">Delete</h2></summary>
+        <section class="mud-section-body" aria-labelledby="re-delete-h">
         <div class="mud-actions"><button type="button" class="mud-btn mud-btn-danger mud-save" disabled="@_busy" @onclick="DeleteAsync">Delete this room</button></div>
         <p class="mud-hint">Everything inside is moved to a neighbouring room, or to the default room. The default room cannot be deleted.</p>
-    </section>
+        </section>
+    </details>
     <p><a class="mud-btn" href="@WebRoutes.Map">Back to the map</a></p>
 }
 
@@ -199,6 +213,8 @@ else
         // The key comes from the route only. A different route value (a moved room, another room) reloads everything.
         if (_loadedKey == Key) { return; }
         _loadedKey = Key;
+        _forcedOpen.Clear();
+        _generation.Clear();
         _confirmRegen = false;
         _draftOffer = null;
         var user = (await AuthState).User;
@@ -277,7 +293,7 @@ else
     }
 
     // Runs one write at a time (a double tap cannot send two) and applies the outcome.
-    private async Task RunAsync(Func<Task<RoomEditOutcome>> action)
+    private async Task RunAsync(Func<Task<RoomEditOutcome>> action, string origin)
     {
         if (_busy || _presenter == null) { return; }
         _busy = true;
@@ -286,6 +302,9 @@ else
             var outcome = await action();
             switch (outcome)
             {
+                case RoomEditOutcome.Problem:
+                    OpenSectionsForProblems(origin);
+                    break;
                 case RoomEditOutcome.Ok:
                     _stored = Snapshot();
                     await Drafts.RemoveAsync(_draftKey);
@@ -305,13 +324,49 @@ else
         finally { _busy = false; }
     }
 
-    private Task SaveAsync() => RunAsync(() => _presenter!.SaveAsync());
+    // Collapsible sections (native details, no script). The browser owns the open state: `open` is only ever a constant in the markup
+    // (true for Basics, false for the rest), so a re-render sends no change for it and a section the user toggled stays as they left it.
+    // When a write fails, the sections that hold the problem are re-created with `open` set (a new @key), so the message is never hidden.
+    private const string SecBasics = "basics", SecExits = "exits", SecFeatures = "features", SecBehaviors = "behaviors",
+        SecGenerated = "generated", SecMove = "move", SecDelete = "delete";
+    private readonly HashSet<string> _forcedOpen = new();
+    private readonly Dictionary<string, int> _generation = new();
 
-    private Task MoveAsync() => RunAsync(() => _presenter!.MoveAsync());
+    private bool IsOpen(string section) => section == SecBasics || _forcedOpen.Contains(section);
 
-    private Task DeleteAsync() => RunAsync(() => _presenter!.DeleteAsync());
+    private string KeyOf(string section) => section + ":" + (_generation.TryGetValue(section, out var g) ? g : 0);
 
-    private Task UpdateGeneratedAsync() => RunAsync(() => _presenter!.UpdateAsync());
+    private void ForceOpen(string section)
+    {
+        _forcedOpen.Add(section);
+        _generation[section] = (_generation.TryGetValue(section, out var g) ? g : 0) + 1;
+    }
+
+    // The section that shows a core field (Short, Exits[0].To, Features[1].Handles, NewLocalKey, ...).
+    public static string SectionOfField(string? field)
+    {
+        var f = field ?? string.Empty;
+        if (f.StartsWith("Exits", StringComparison.Ordinal) || f == "ConfirmDangling") { return SecExits; }
+        if (f.StartsWith("Features", StringComparison.Ordinal)) { return SecFeatures; }
+        if (f == "NewArea" || f == "NewLocalKey") { return SecMove; }
+        return SecBasics;
+    }
+
+    private void OpenSectionsForProblems(string origin)
+    {
+        if (_presenter == null || (_presenter.Error == null && _presenter.Problems.Count == 0)) { return; }
+        ForceOpen(SecBasics);
+        ForceOpen(origin);
+        foreach (var field in _presenter.ProblemFields) { ForceOpen(SectionOfField(field)); }
+    }
+
+    private Task SaveAsync() => RunAsync(() => _presenter!.SaveAsync(), SecBasics);
+
+    private Task MoveAsync() => RunAsync(() => _presenter!.MoveAsync(), SecMove);
+
+    private Task DeleteAsync() => RunAsync(() => _presenter!.DeleteAsync(), SecDelete);
+
+    private Task UpdateGeneratedAsync() => RunAsync(() => _presenter!.UpdateAsync(), SecGenerated);
 
     private void AskRegen() => _confirmRegen = true;
 
@@ -320,6 +375,6 @@ else
     private async Task ConfirmRegenAsync()
     {
         _confirmRegen = false;
-        await RunAsync(() => _presenter!.RegenAsync());
+        await RunAsync(() => _presenter!.RegenAsync(), SecGenerated);
     }
 }
