@@ -12,9 +12,21 @@ namespace MUD.Telnet.Host
     /// </summary>
     public static class Program
     {
-        private const string WelcomeMessage =
+        internal const string WelcomeMessage =
 @"
                           Welcome to Planar Realms 0.2
+                        _____  _                         
+                        |  __ \| |                        
+                        | |__) | | __ _ _ __   __ _ _ __  
+                        |  ___/| |/ _` | '_ \ / _` | '__| 
+                        | |    | | (_| | | | | (_| | |    
+                  />___|_|___ |_|\__,_|_|_|_|\__,_|_|__________    
+         [#########[]____________________________________________\
+                   \>   |  __ \          | |              
+                        | |__) |___  __ _| |_ __ ___  ___ 
+                        |  _  // _ \/ _` | | '_ ` _ \/ __|
+                        | | \ \  __/ (_| | | | | | | \__ \
+                        |_|  \_\___|\__,_|_|_| |_| |_|___/
 
 --------------------------------------------------------------------------------
     Use 'connect' to log in to an existing player. You will be prompted for a
