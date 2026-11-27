@@ -36,6 +36,7 @@ builder.Services.AddSingleton<IRoomCreationService, RoomCreationService>();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddFluentUIComponents();
 builder.Services.AddStaticAssetCompression();
+builder.Services.AddSingleton(sp => new AssetVersions(sp.GetRequiredService<IWebHostEnvironment>().WebRootFileProvider));
 builder.Services.AddScoped<NoticeService>();
 builder.Services.AddScoped<DraftStore>();
 builder.Services.AddScoped<RoomDirectory>();
@@ -60,7 +61,7 @@ app.UseForwardedHeaders();
 ProxyHeaders.UsePathOnlyRedirects(app);
 // Before static files so blazor.web.js and the Fluent UI css/js are compressed; see CompressionSetup for what is excluded and why.
 app.UseResponseCompression();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = AssetVersions.PrepareResponse });
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();

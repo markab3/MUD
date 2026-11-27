@@ -327,11 +327,70 @@ async function coreDownPhase(browser, vp) {
   await ctx.close();
 }
 
+// ---- map with and without mobile.css (stale stylesheet simulation) -----------------------------------------------
+async function mapCssPhase(browser, vp) {
+  const ctx = await browser.newContext({ viewport: VIEWPORTS[vp] });
+  const page = await ctx.newPage();
+  await step(vp, 'login', page, async () => {
+    await page.goto(BASE + '/login');
+    await page.fill('#login-name', USER);
+    await page.fill('#login-password', PW);
+    await Promise.all([page.waitForURL('**/character', { timeout: 15000 }), page.click('button[type=submit]')]);
+  });
+  const measure = () => page.evaluate(() => {
+    const first = document.querySelector('a.mud-room')?.getAttribute('data-room');
+    const arrows = [...document.querySelectorAll(`[data-room-of="${first}"]`)];
+    const rect = document.querySelector(`a[data-room="${first}"] rect`).getBoundingClientRect();
+    const out = arrows.map(a => {
+      const t = a.querySelector('text'), c = a.querySelector('circle');
+      const tb = t.getBoundingClientRect();
+      return { dir: a.getAttribute('data-arrow'), glyph: t.textContent, textFill: getComputedStyle(t).fill, textSize: getComputedStyle(t).fontSize,
+        hitFill: c ? getComputedStyle(c).fill : null, hitR: c ? c.getBoundingClientRect().width / 2 : null,
+        cx: Math.round(tb.x + tb.width / 2 - rect.x), cy: Math.round(tb.y + tb.height / 2 - rect.y),
+        inside: tb.x >= rect.x && tb.right <= rect.right && tb.y >= rect.y && tb.bottom <= rect.bottom };
+    });
+    return { room: first, box: [Math.round(rect.width), Math.round(rect.height)], arrows: out };
+  });
+  // 'old' = the markup of the release before the fallback attributes (what the owner's phone got with a stale stylesheet): the
+  // attributes are stripped in the page, and the stylesheet is empty.
+  for (const variant of ['styled', 'no-css', 'old-markup-no-css']) {
+    const blocked = variant !== 'styled';
+    const name = 'map-' + variant;
+    await step(vp, name, page, async () => {
+      if (blocked && variant === 'no-css' || variant === 'old-markup-no-css') await page.route('**/css/mobile.css*', r => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+      await open(page, '/creator/map?area=sample_land&z=0', 'svg a.mud-room');
+      await page.waitForTimeout(800);
+      if (variant === 'old-markup-no-css') {
+        await page.evaluate(() => {
+          document.querySelectorAll('.mud-arrow-hit').forEach(c => { c.removeAttribute('fill'); c.removeAttribute('stroke'); });
+          document.querySelectorAll('.mud-arrow text').forEach(t => { t.removeAttribute('fill'); t.removeAttribute('font-weight'); });
+          document.querySelectorAll('.mud-arrow').forEach(g => g.removeAttribute('style'));
+        });
+      }
+      // Zoom the view box onto the first room and its arrows so they are legible.
+      await page.evaluate(() => {
+        const r = document.querySelector('a.mud-room rect'); const svg = document.querySelector('.mud-map svg');
+        const x = +r.getAttribute('x'), y = +r.getAttribute('y'), w = +r.getAttribute('width'), h = +r.getAttribute('height');
+        svg.setAttribute('viewBox', `${x - 40} ${y - 40} ${w + 80} ${h + 80}`);
+      });
+      await page.waitForTimeout(300);
+      const m = await measure();
+      fs.writeFileSync(path.join(OUT, `${name}-${vp}.json`), JSON.stringify(m, null, 1));
+      await page.locator('.mud-map').screenshot({ path: path.join(OUT, `${name}-${vp}-map.png`) });
+      await page.screenshot({ path: path.join(OUT, `${name}-${vp}-page.png`) });
+      return `${m.arrows.length} arrows; hit fills ${[...new Set(m.arrows.map(a => a.hitFill))].join(' / ')}; glyph fills ${[...new Set(m.arrows.map(a => a.textFill))].join(' / ')}`;
+    });
+    if (blocked) await page.unroute('**/css/mobile.css*');
+  }
+  await ctx.close();
+}
+
 // ---- run ------------------------------------------------------------------------------------------------------------
 const browser = await chromium.launch();
 try {
   if (PHASES.includes('main')) for (const vp of Object.keys(VIEWPORTS)) await mainPhase(browser, vp);
   if (PHASES.includes('disconnect')) for (const vp of Object.keys(VIEWPORTS)) await disconnectPhase(browser, vp);
+  if (PHASES.includes('mapcss')) await mapCssPhase(browser, 'phone360');
   if (PHASES.includes('roles')) await rolesPhase(browser, 'desktop');
   if (PHASES.includes('coredown')) await coreDownPhase(browser, 'desktop');
 } finally {

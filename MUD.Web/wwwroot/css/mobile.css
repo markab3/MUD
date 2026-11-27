@@ -146,7 +146,7 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-map-sheet[hidden] { display: none; }
 /* Expansion arrows: black = an exit (or a room to wire) is there, gray = nothing. The glyph is small; the invisible circle is the hit area
    and roommap.js keeps it at 44 CSS px across at any zoom (--map-hit is its radius in SVG units). */
-.mud-arrow { cursor: pointer; outline: none; }
+.mud-arrow { cursor: pointer; outline: none; text-decoration: none; }
 .mud-arrow text { pointer-events: none; font-weight: 700; }
 .mud-arrow-hit { fill: transparent; stroke: none; r: var(--map-hit, 22px); pointer-events: all; }
 .mud-arrow-black text { fill: var(--mud-text); }

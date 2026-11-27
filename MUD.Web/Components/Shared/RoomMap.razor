@@ -2,6 +2,7 @@
 @using Microsoft.JSInterop
 @implements IAsyncDisposable
 @inject IJSRuntime Js
+@inject AssetVersions Assets
 @* The SVG from the unchanged RoomMapLayout, rendered by the server. Room squares are real links, so a tap navigates even if the script
    fails. roommap.js does pan, pinch, wheel and double-tap zoom by editing the viewBox in the browser; no event goes to the server during a gesture. *@
 <div class="mud-map" @ref="_host" id="@_id" data-center="@Center" tabindex="0" aria-label="Room map. Arrow keys pan, plus and minus zoom.">
@@ -41,7 +42,7 @@
                 <rect x="@N(g.X)" y="@N(g.Y)" width="@N(g.W)" height="@N(g.H)" fill="none" stroke-width="2" stroke-dasharray="8 6" />
                 <text x="@N(g.X + g.W / 2)" y="@N(g.Y + 52)" font-size="12" text-anchor="middle">@RoomMapLayout.GhostText</text>
                 <a href="@g.CreateHref" class="mud-ghost-link" aria-label="Create room here at @g.GridX, @g.GridY, level @g.Z">
-                    <rect x="@N(g.X + 10)" y="@N(g.Y + 66)" width="@N(g.W - 20)" height="40" rx="6" class="mud-ghost-hit" />
+                    <rect x="@N(g.X + 10)" y="@N(g.Y + 66)" width="@N(g.W - 20)" height="40" rx="6" class="mud-ghost-hit" fill="transparent" />
                     <text x="@N(g.X + g.W / 2)" y="@N(g.Y + 90)" font-size="12" text-anchor="middle">@RoomMapLayout.GhostLink</text>
                 </a>
             </g>
@@ -52,26 +53,29 @@
         }
         @foreach (var a in Map.Arrows)
         {
+            // Presentation that must survive a missing or stale stylesheet (mobile.css refines it): the hit circle is transparent and the glyph
+            // takes its colour from the group's inline colour through currentColor. Without these the circle paints SVG's default black.
+            var ink = a.Black ? ArrowBlack : ArrowGray;
             var cls = "mud-arrow " + (a.Black ? "mud-arrow-black" : "mud-arrow-gray") + (a.Kind == MapArrowKind.Level ? " mud-arrow-level" : string.Empty);
             if (a.Kind == MapArrowKind.Wire)
             {
-                <g class="@(cls + " mud-arrow-wire")" role="button" tabindex="0" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey"
+                <g class="@(cls + " mud-arrow-wire")" style="color:@ink" role="button" tabindex="0" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey"
                    @onclick="() => OnWire.InvokeAsync(a)" @onkeydown="e => WireKey(e, a)">
-                    <circle class="mud-arrow-hit" cx="@N(a.X)" cy="@N(a.Y)" r="14" /><text x="@N(a.X)" y="@N(a.Y + 5)" text-anchor="middle" font-size="16">@a.Glyph</text>
+                    <circle class="mud-arrow-hit" cx="@N(a.X)" cy="@N(a.Y)" r="14" fill="transparent" stroke="none" /><text x="@N(a.X)" y="@N(a.Y + 5)" fill="currentColor" font-weight="700" text-anchor="middle" font-size="16">@a.Glyph</text>
                     <title>@a.Label</title>
                 </g>
             }
             else if (a.Href != null)
             {
-                <a class="@cls" href="@a.Href" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey">
-                    <circle class="mud-arrow-hit" cx="@N(a.X)" cy="@N(a.Y)" r="14" /><text x="@N(a.X)" y="@N(a.Y + 5)" text-anchor="middle" font-size="@(a.Kind == MapArrowKind.Level ? 14 : 13)">@a.Glyph</text>
+                <a class="@cls" style="color:@ink" href="@a.Href" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey">
+                    <circle class="mud-arrow-hit" cx="@N(a.X)" cy="@N(a.Y)" r="14" fill="transparent" stroke="none" /><text x="@N(a.X)" y="@N(a.Y + 5)" fill="currentColor" font-weight="700" text-anchor="middle" font-size="@(a.Kind == MapArrowKind.Level ? 14 : 13)">@a.Glyph</text>
                     <title>@a.Label</title>
                 </a>
             }
             else
             {
                 @* A black arrow whose target room no longer exists: shown, not a link. *@
-                <g class="@cls" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey"><text x="@N(a.X)" y="@N(a.Y + 5)" text-anchor="middle" font-size="13">@a.Glyph</text><title>@a.Label</title></g>
+                <g class="@cls" style="color:@ink" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey"><text x="@N(a.X)" y="@N(a.Y + 5)" fill="currentColor" font-weight="700" text-anchor="middle" font-size="13">@a.Glyph</text><title>@a.Label</title></g>
             }
         }
     </svg>
@@ -95,6 +99,10 @@
     private ElementReference _host;
     private IJSObjectReference? _module;
 
+    // Same colours as --mud-text and --mud-muted in mobile.css (the stylesheet wins when it loads).
+    internal const string ArrowBlack = "#1B2B2E";
+    internal const string ArrowGray = "#7A8C90";
+
     private static string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
     private static string Pts(IReadOnlyList<(double X, double Y)> p) => string.Join(" ", p.Select(t => N(t.X) + "," + N(t.Y)));
     private static string Clip(string s, int n) => s.Length <= n ? s : s.Substring(0, n - 1) + "\u2026";
@@ -104,7 +112,7 @@
         // Gestures live in the browser. (Re)attach after every render of a new map: the module resets its view when the data size changes.
         try
         {
-            _module ??= await Js.InvokeAsync<IJSObjectReference>("import", "/js/roommap.js");
+            _module ??= await Js.InvokeAsync<IJSObjectReference>("import", Assets.RootedUrl("js/roommap.js"));
             await _module.InvokeVoidAsync("attach", _host, Center);
         }
         catch (Exception e) when (e is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException) { }

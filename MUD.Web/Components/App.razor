@@ -1,5 +1,6 @@
 @using Microsoft.AspNetCore.Antiforgery
 @inject IAntiforgery Antiforgery
+@inject AssetVersions Assets
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <base href="/" />
     <link rel="stylesheet" href="_content/Microsoft.FluentUI.AspNetCore.Components/css/reboot.css" />
-    <link rel="stylesheet" href="css/mobile.css" />
+    <link rel="stylesheet" href="@Assets.Url("css/mobile.css")" />
     <HeadOutlet @rendermode="PageMode" />
 </head>
 <body>
@@ -19,7 +20,7 @@
         <p class="mud-reconnect-rejected">@Messages.CircuitLost <button type="button" class="mud-btn" id="mud-reload">Reload</button></p>
     </div>
     <script src="_framework/blazor.web.js"></script>
-    <script src="js/app.js"></script>
+    <script src="@Assets.Url("js/app.js")"></script>
 </body>
 </html>
 

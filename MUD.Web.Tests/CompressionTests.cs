@@ -113,7 +113,7 @@ public class CompressionTests
         var src = Program();
         Assert.Contains("AddStaticAssetCompression()", src);
         var comp = src.IndexOf("app.UseResponseCompression()", StringComparison.Ordinal);
-        var files = src.IndexOf("app.UseStaticFiles()", StringComparison.Ordinal);
+        var files = src.IndexOf("app.UseStaticFiles(", StringComparison.Ordinal);
         Assert.True(comp >= 0 && files > comp);
     }
 }
