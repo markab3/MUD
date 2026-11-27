@@ -930,7 +930,7 @@ public class RoomComponentGuardTests
     {
         var src = Read("MUD.Web/Components/Pages/RoomEdit.razor");
         Assert.Contains("separate words with commas or spaces", src);
-        Assert.True(src.IndexOf("<h2>Exits</h2>", StringComparison.Ordinal) < src.IndexOf("<h2>Features</h2>", StringComparison.Ordinal));
+        Assert.True(src.IndexOf(">Exits</h2>", StringComparison.Ordinal) < src.IndexOf(">Features</h2>", StringComparison.Ordinal));
         Assert.Contains("<textarea id=\"re-f@(index)-long\"", src);
         Assert.Contains("<textarea id=\"re-f@(index)-detail\"", src);
     }

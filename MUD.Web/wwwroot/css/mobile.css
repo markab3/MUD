@@ -191,3 +191,15 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-empty { color: var(--mud-text-soft); }
 .mud-search-summary { margin: 0 0 8px; overflow-wrap: anywhere; }
 .mud-muted { color: var(--mud-text-soft); }
+
+/* Room edit sections: native details, one summary per section (the h2 inside it keeps the heading role). Palette variables only. */
+.mud-collapse { border: 1px solid var(--mud-border); border-radius: 8px; background: var(--mud-surface); min-width: 0; }
+.mud-collapse > summary { display: flex; align-items: center; gap: 8px; min-height: var(--mud-hit); box-sizing: border-box; padding: 0 12px; cursor: pointer; list-style: none; color: var(--mud-cyan-ink); }
+.mud-collapse > summary::-webkit-details-marker { display: none; }
+.mud-collapse > summary::before { content: ""; flex: 0 0 auto; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s ease; }
+.mud-collapse[open] > summary::before { transform: rotate(45deg); }
+.mud-collapse > summary:hover { background: var(--mud-hover); }
+.mud-collapse > summary h2 { margin: 0; font-size: 1.15rem; line-height: 1.25; min-width: 0; overflow-wrap: break-word; color: inherit; }
+.mud-collapse > .mud-section-body { padding: 4px 12px 12px; min-width: 0; }
+.mud-collapse.mud-danger { border-color: var(--mud-red); border-top-width: 2px; padding-top: 0; }
+.mud-collapse.mud-danger > summary { color: var(--mud-red); }

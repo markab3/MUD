@@ -91,6 +91,11 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   in the page's error summary, prefixed "Feature N:" (1-based). Behavior and component config is not in the contract: core keeps it for a
   feature whose short is unchanged (`specs/ADMIN_API.md`), so the page shows one general note that renaming or removing a feature drops it
   (it cannot mark individual rows, because `RoomFeature` does not say which have behavior).
+- Collapsible sections (card "Website: collapsible sections on the room edit page"): every section (Basics, Exits, Features, Behaviors,
+  Generated room when present, Move room, Delete) is a native `<details>` whose `<summary>` holds the section's `<h2>` (44px target, chevron,
+  focus ring, palette variables only; no script). Basics starts open, all others closed. Collapsing is display only: the fields stay in the page
+  and the whole form is still sent on Save. A save, move, delete, regen or update that fails opens the section that holds the problem (by core's
+  field name) and Basics, and the section of the action that failed.
 - Behaviors (read-only, card "Website: list a room's behaviors"): a "Behaviors" section after the form, from `RoomDetail.behaviors` and
   `searches` (`specs/ADMIN_API.md`). Each room-level behavior in stored order is a card with hook, module, type, priority and a collapsed
   "Config" block with the config as indented JSON. A "Search" subsection appears only when the
