@@ -149,9 +149,17 @@ namespace MUD.Tests
 
         private class Queries : IAdminQueries
         {
+            // Stored room documents ("_id", "search") the template reward scan reads; tests add rooms here.
+            public List<BsonDocument> Rooms = new List<BsonDocument>();
+            public bool FailRewardScan;
             public List<BsonDocument> ListPlayers(string nameFilter, bool descending, int page, int pageSize, out int total) { total = 0; return new List<BsonDocument>(); }
             public BsonDocument FindPlayer(string nameKey) { return null; }
             public int CountAdmins() { return 0; }
+            public List<BsonDocument> RoomsWithTemplateReward(string templateId)
+            {
+                if (FailRewardScan) { throw new InvalidOperationException("db down"); }
+                return MUD.Core.ItemTemplates.ItemTemplateReferences.Scan(Rooms, templateId).Select(r => r.RoomKey).Distinct().Select(k => Rooms.First(d => d["_id"].AsString == k)).ToList();
+            }
             public List<BsonDocument> ListRooms() { return new List<BsonDocument>(); }
             public List<string> RoomIdsWithExitTo(string key) { return new List<string>(); }
         }
@@ -174,12 +182,13 @@ namespace MUD.Tests
             public AdminSessions Sessions = new AdminSessions();
             public FakeAreaStore Areas = new FakeAreaStore().With("t", "Test land", "A test region.").With("u");
             public FakeItemTemplateStore Items = new FakeItemTemplateStore();
+            public Queries Queries = new Queries();
             public List<string> Log = new List<string>();
             public AdminApi Api;
 
             public Fixture(bool withStore = true, bool withAreas = true)
             {
-                Api = new AdminApi(Host, Players, Rooms, new Queries(), Audit, Sessions, new FakeClock(), Log.Add, max => 0, null, null, null, null,
+                Api = new AdminApi(Host, Players, Rooms, Queries, Audit, Sessions, new FakeClock(), Log.Add, max => 0, null, null, null, null,
                     withAreas ? Areas : null, withStore ? Items : null);
             }
 
@@ -571,6 +580,187 @@ namespace MUD.Tests
 
             var none = new Fixture(withStore: false);
             Assert.Equal(AdminResult.Refused, none.Api.DeleteItemTemplate(new ItemTemplateIdRequest { Token = none.Creator(), Id = "t.sword" }).Result);
+        }
+
+        // ---------------------------------------------------------------- references: delete protection and the stale report
+
+        private static BsonDocument RoomWithReward(string key, string entryId, string templateId, BsonValue version)
+        {
+            var reward = new BsonDocument { { "ShortDescription", "a sword" } };
+            if (templateId != null) { reward["templateId"] = templateId; }
+            if (version != null) { reward["templateVersion"] = version; }
+            return new BsonDocument { { "_id", key }, { "search", new BsonDocument("entries", new BsonArray { new BsonDocument { { "id", entryId }, { "reward", reward } } }) } };
+        }
+
+        [Fact]
+        public void Delete_IsRefusedWhileARewardCarriesTheTemplateId_NamingTheCount_AndChangesNothing()
+        {
+            var f = WithSword(out string token);
+            f.Queries.Rooms.Add(RoomWithReward("t.a", "s1", "t.sword", 1));
+            f.Queries.Rooms.Add(RoomWithReward("t.b", "s1", "t.sword", 1));
+            f.Queries.Rooms.Add(RoomWithReward("t.c", "s1", "t.other", 1));
+
+            var reply = f.Api.DeleteItemTemplate(new ItemTemplateIdRequest { Token = token, Id = "t.sword" });
+
+            Assert.Equal(AdminResult.Refused, reply.Result);
+            Assert.Equal(AdminApi.ItemTemplateReferencedMessage(2), reply.Message);
+            Assert.Contains("2 search rewards", reply.Message);
+            Assert.Single(f.Items.Items);
+            Assert.Empty(f.Audit.Rows);   // refused before anything is audited or written
+        }
+
+        [Fact]
+        public void Delete_SaysSingularForOne_AndProceedsOnceNoRewardCarriesTheId()
+        {
+            var f = WithSword(out string token);
+            f.Queries.Rooms.Add(RoomWithReward("t.a", "s1", "t.sword", 1));
+            Assert.Contains("1 search reward.", f.Api.DeleteItemTemplate(new ItemTemplateIdRequest { Token = token, Id = "t.sword" }).Message);
+
+            f.Queries.Rooms.Clear();
+            Assert.Equal(AdminResult.Ok, f.Api.DeleteItemTemplate(new ItemTemplateIdRequest { Token = token, Id = "t.sword" }).Result);
+            Assert.Empty(f.Items.Items);
+        }
+
+        [Fact]
+        public void Delete_WhenTheRoomsCannotBeRead_IsFailedAndKeepsTheTemplate()
+        {
+            var f = WithSword(out string token);
+            f.Queries.FailRewardScan = true;
+            Assert.Equal(AdminResult.Failed, f.Api.DeleteItemTemplate(new ItemTemplateIdRequest { Token = token, Id = "t.sword" }).Result);
+            Assert.Single(f.Items.Items);
+            Assert.Empty(f.Audit.Rows);
+        }
+
+        [Fact]
+        public void References_ListCopiesInRoomOrder_AndMarkTheOnesBehindTheCurrentVersionStale()
+        {
+            var f = WithSword(out string token);
+            var edit = Record(shortText: "a fine sword");
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateItemTemplate(Save(token, edit)).Result);          // version 2
+            Assert.Equal(2, f.Items.Items["t.sword"].Version);
+            f.Queries.Rooms.Add(RoomWithReward("t.b", "s2", "t.sword", 2));
+            f.Queries.Rooms.Add(RoomWithReward("t.a", "s1", "t.sword", 1));
+            f.Queries.Rooms.Add(RoomWithReward("t.c", "s1", "t.sword", null));                          // no version stored: counts as 0, stale
+            f.Queries.Rooms.Add(RoomWithReward("t.d", "s1", null, 1));                                   // a plain reward: not a copy
+            f.Queries.Rooms.Add(RoomWithReward("t.e", "s1", "t.other", 1));
+
+            var reply = f.Api.ListItemTemplateReferences(new ItemTemplateIdRequest { Token = token, Id = " t.sword " });
+
+            Assert.Equal(2, reply.CurrentVersion);
+            Assert.Equal(new[] { "t.a", "t.b", "t.c" }, reply.References.Select(r => r.RoomKey));
+            Assert.Equal(new[] { true, false, true }, reply.References.Select(r => r.Stale));
+            Assert.Equal(new[] { 1, 2, 0 }, reply.References.Select(r => r.TemplateVersion));
+            Assert.Equal(new[] { "s1", "s2", "s1" }, reply.References.Select(r => r.EntryId));
+        }
+
+        [Fact]
+        public void References_AreEmptyForAnUnknownTemplate_BlankId_OrNoStore_AndNeedACreator()
+        {
+            var f = WithSword(out string token);
+            f.Queries.Rooms.Add(RoomWithReward("t.a", "s1", "t.gone", 1));
+            Assert.Empty(f.Api.ListItemTemplateReferences(new ItemTemplateIdRequest { Token = token, Id = "t.gone" }).References);
+            Assert.Equal(0, f.Api.ListItemTemplateReferences(new ItemTemplateIdRequest { Token = token, Id = " " }).CurrentVersion);
+            var none = new Fixture(withStore: false);
+            Assert.Empty(none.Api.ListItemTemplateReferences(new ItemTemplateIdRequest { Token = none.Creator(), Id = "t.sword" }).References);
+
+            Assert.Equal(AdminFailure.Unauthenticated, Assert.Throws<AdminCallException>(() => f.Api.ListItemTemplateReferences(new ItemTemplateIdRequest { Token = "nope", Id = "t.sword" })).Failure);
+            string player = f.Login("Pete", player: true);
+            Assert.Equal(AdminFailure.Forbidden, Assert.Throws<AdminCallException>(() => f.Api.ListItemTemplateReferences(new ItemTemplateIdRequest { Token = player, Id = "t.sword" })).Failure);
+        }
+
+        [Fact]
+        public void References_WhenTheRoomsOrTheLibraryCannotBeRead_IsUnavailable()
+        {
+            var f = WithSword(out string token);
+            f.Queries.FailRewardScan = true;
+            Assert.Equal(AdminFailure.Unavailable, Assert.Throws<AdminCallException>(() => f.Api.ListItemTemplateReferences(new ItemTemplateIdRequest { Token = token, Id = "t.sword" })).Failure);
+            f.Queries.FailRewardScan = false;
+            f.Items.FailReads = true;
+            Assert.Equal(AdminFailure.Unavailable, Assert.Throws<AdminCallException>(() => f.Api.ListItemTemplateReferences(new ItemTemplateIdRequest { Token = token, Id = "t.sword" })).Failure);
+        }
+
+        [Fact]
+        public void TheScan_ToleratesMissingAndWronglyTypedFields_AndCanListEveryTemplate()
+        {
+            var rooms = new List<BsonDocument>
+            {
+                new BsonDocument("_id", "t.none"),
+                new BsonDocument { { "_id", "t.s1" }, { "search", "x" } },
+                new BsonDocument { { "_id", "t.s2" }, { "search", new BsonDocument("entries", "x") } },
+                new BsonDocument { { "_id", "t.s3" }, { "search", new BsonDocument("entries", new BsonArray { 1, new BsonDocument("id", "a"), new BsonDocument { { "id", "b" }, { "reward", "x" } }, new BsonDocument { { "id", "c" }, { "reward", new BsonDocument("templateId", 5) } } }) } },
+                RoomWithReward("t.ok", "k", "t.sword", 3),
+                RoomWithReward("t.odd", "k", "t.axe", "three"),
+            };
+            Assert.Empty(ItemTemplateReferences.Scan(null, "t.sword"));
+            var one = Assert.Single(ItemTemplateReferences.Scan(rooms, "t.sword"));
+            Assert.Equal(("t.ok", "k", 3), (one.RoomKey, one.EntryId, one.TemplateVersion));
+            var all = ItemTemplateReferences.Scan(rooms, null);
+            Assert.Equal(new[] { "t.odd", "t.ok" }, all.Select(r => r.RoomKey));
+            Assert.Equal(0, all[0].TemplateVersion);   // a non-numeric version counts as 0
+        }
+    }
+
+    // The copy of a template into an item (clone command and importer share it).
+    public class ItemTemplateCopyTests
+    {
+        [Fact]
+        public void ToItem_CopiesEveryFieldIntoANewIndependentItem()
+        {
+            var template = new ItemTemplateEntry
+            {
+                Id = "t.lamp", Area = "t", Short = "a lamp", Long = "A brass lamp.", Handles = { "lamp" }, Adjectives = { "brass" }, Plurals = { "lamps" }, Version = 3,
+                Components = new BsonDocument("desert", new BsonDocument("fuel", new BsonDocument("amount", 5))),
+                Behaviors = { new MUD.Core.Components.BehaviorRef("item.take", "desert", "Lamp", 2, new BsonDocument("k", "v")) },
+            };
+
+            var a = ItemTemplateCopy.ToItem(template);
+            var b = ItemTemplateCopy.ToItem(template);
+
+            Assert.Equal(("a lamp", "A brass lamp."), (a.ShortDescription, a.LongDescription));
+            Assert.Equal(new[] { "lamp" }, a.Handles);
+            Assert.Equal(new[] { "brass" }, a.Adjectives);
+            Assert.Equal(new[] { "lamps" }, a.Plurals);
+            Assert.Equal(5, a.Components["desert"]["fuel"]["amount"].AsInt32);
+            var behavior = Assert.Single(a.Behaviors);
+            Assert.Equal(("item.take", "desert", "Lamp", 2, "v"), (behavior.Hook, behavior.Module, behavior.Type, behavior.Priority, behavior.Config["k"].AsString));
+            Assert.NotEqual(a.Id, b.Id);
+            Assert.Null(a.TemplateId);
+
+            // Changing the copy leaves the template (and the other copy) alone.
+            a.Handles.Add("torch"); a.Components["desert"]["fuel"]["amount"] = 1; a.Behaviors[0].Config["k"] = "changed";
+            Assert.Equal(new[] { "lamp" }, template.Handles);
+            Assert.Equal(5, template.Components["desert"]["fuel"]["amount"].AsInt32);
+            Assert.Equal("v", template.Behaviors[0].Config["k"].AsString);
+            Assert.Equal(5, b.Components["desert"]["fuel"]["amount"].AsInt32);
+        }
+
+        [Fact]
+        public void ToItem_WithNoOptionalPartsGivesEmptyListsAndNoComponents()
+        {
+            var item = ItemTemplateCopy.ToItem(new ItemTemplateEntry { Id = "t.x", Short = "x", Long = "y", Handles = null, Adjectives = null, Plurals = null, Behaviors = null });
+            Assert.Empty(item.Handles); Assert.Empty(item.Adjectives); Assert.Empty(item.Plurals); Assert.Empty(item.Behaviors); Assert.Empty(item.Components);
+        }
+
+        [Fact]
+        public void Components_SkipWhatDoesNotFitTheModuleNameShape()
+        {
+            var template = new ItemTemplateEntry
+            {
+                Id = "t.x",
+                Components = new BsonDocument
+                {
+                    { "weight", 3 },                                                   // not an object
+                    { "bad.module", new BsonDocument("n", new BsonDocument("a", 1)) },  // module name with a dot
+                    { "m", new BsonDocument { { "plain", 1 }, { "bad.name", new BsonDocument("a", 1) }, { "ok", new BsonDocument("a", 2) } } },
+                    { "empty", new BsonDocument("plain", 1) },                          // nothing usable inside: no entry
+                },
+            };
+            var parts = ItemTemplateCopy.ComponentsOf(template);
+            var module = Assert.Single(parts);
+            Assert.Equal("m", module.Key);
+            Assert.Equal(new[] { "ok" }, module.Value.Keys);
+            Assert.Empty(ItemTemplateCopy.ComponentsOf(null));
+            Assert.Empty(ItemTemplateCopy.BehaviorsOf(null));
         }
     }
 }

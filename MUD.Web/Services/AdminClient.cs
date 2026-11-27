@@ -128,6 +128,10 @@ public interface IAdminClient
     Task<ItemTemplateEditReply> UpdateItemTemplateAsync(string token, ItemTemplateRecord template, CancellationToken cancellation = default);
 
     Task<ItemTemplateEditReply> DeleteItemTemplateAsync(string token, string id, CancellationToken cancellation = default);
+
+    // The stored search rewards that were copied from a template, with the version copied and whether it is behind the template's current
+    // version (read-only; creator or admin). Empty for an unknown id.
+    Task<ListItemTemplateReferencesReply> ListItemTemplateReferencesAsync(string token, string id, CancellationToken cancellation = default);
 }
 
 // Core refused the session token (SessionEnded: unknown, revoked, or its player is retired) or the caller's current role is too low.
@@ -416,6 +420,9 @@ public sealed class GrpcAdminClient : IAdminClient
 
     public Task<ItemTemplateEditReply> DeleteItemTemplateAsync(string token, string id, CancellationToken cancellation = default) =>
         Call(() => _client.DeleteItemTemplateAsync(new ItemTemplateIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<ListItemTemplateReferencesReply> ListItemTemplateReferencesAsync(string token, string id, CancellationToken cancellation = default) =>
+        Call(() => _client.ListItemTemplateReferencesAsync(new ItemTemplateIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
 
     // Unauthenticated and PermissionDenied are core's answers about the caller; any other failure means core could not answer.
     private static async Task<T> Call<T>(Func<Grpc.Core.AsyncUnaryCall<T>> call)

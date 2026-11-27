@@ -80,6 +80,7 @@ service Admin {
   rpc CreateItemTemplate(SaveItemTemplateRequest) returns (ItemTemplateEditReply);
   rpc UpdateItemTemplate(SaveItemTemplateRequest) returns (ItemTemplateEditReply);
   rpc DeleteItemTemplate(ItemTemplateIdRequest) returns (ItemTemplateEditReply);
+  rpc ListItemTemplateReferences(ItemTemplateIdRequest) returns (ListItemTemplateReferencesReply);
 
   // Regen and update of generated rooms (specs/TERRAIN_GENERATORS.md section 9). Creator or admin. A room is generated when it has
   // provenance (RoomDetail.gen). RegenerateMap and RegenerateRooms replace description, ALL features (hand-added too), properties and
@@ -581,6 +582,13 @@ message ItemTemplateEditReply {
   string message = 3;
   ItemTemplateRecord template = 4;
 }
+
+// One stored search reward that was copied from an item template at import time. template_version is the version that was copied;
+// stale = it is lower than the template's current version. Read-only: nothing here refreshes a copy.
+message ItemTemplateReferenceRecord { string room_key = 1; string entry_id = 2; int32 template_version = 3; bool stale = 4; }
+
+// Empty references and current_version 0 when the template does not exist or the library is not available. Ordered by room key, then entry id.
+message ListItemTemplateReferencesReply { int32 current_version = 1; repeated ItemTemplateReferenceRecord references = 2; }
 
 // ---- Regen and update of generated rooms (specs/TERRAIN_GENERATORS.md sections 9 and 10) ----
 

@@ -140,6 +140,7 @@ namespace MUD.Tests
             public int CountAdmins() { return 0; }
             public List<MongoDB.Bson.BsonDocument> ListRooms() { return new List<MongoDB.Bson.BsonDocument>(); }
             public List<string> RoomIdsWithExitTo(string key) { return new List<string>(); }
+            public List<MongoDB.Bson.BsonDocument> RoomsWithTemplateReward(string templateId) { return new List<MongoDB.Bson.BsonDocument>(); }
         }
 
         private class NoAudit : IAuditStore

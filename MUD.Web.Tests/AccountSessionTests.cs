@@ -495,6 +495,18 @@ public class FakeAdminClient : IAdminClient
         return Task.FromResult(reply);
     }
 
+    // Item template references: tests set what the reply holds.
+    public ListItemTemplateReferencesReply ItemTemplateReferences { get; set; } = new();
+    // Only the references call fails (any exception), so a page can be shown with the rest of its data.
+    public bool CrashOnReferences { get; set; }
+
+    public Task<ListItemTemplateReferencesReply> ListItemTemplateReferencesAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckItemTemplateCall(token, "ListItemTemplateReferences:" + id);
+        if (CrashOnReferences) { throw new InvalidOperationException("boom"); }
+        return Task.FromResult(ItemTemplateReferences);
+    }
+
     // Terrain library. Tests set LibraryResult (what the create/update/delete calls answer) and seed the stores; every call records its token.
     public AdminResult LibraryResult { get; set; } = AdminResult.Ok;
     public string LibraryMessage { get; set; } = string.Empty;

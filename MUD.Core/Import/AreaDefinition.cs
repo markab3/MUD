@@ -131,5 +131,20 @@ namespace MUD.Core.Import
         public List<string> Adjectives { get; set; } = new List<string>();
 
         public List<string> Plurals { get; set; } = new List<string>();
+
+        // 'template: <area>.<local>' in a search reward (specs/ROOM_FILES.md): the id to resolve at import time. Null for an inline reward.
+        // While it is set, Short and Long are the file's overrides (null = take the template's).
+        public string TemplateRef { get; set; }
+
+        // Provenance recorded on the stored reward: set by the importer when it resolves TemplateRef, and read from 'x-gen' in an
+        // exported file. Null when none.
+        public string TemplateId { get; set; }
+
+        public int? TemplateVersion { get; set; }
+
+        // Copied from the template by the importer; empty for an inline reward.
+        public Dictionary<string, Dictionary<string, MongoDB.Bson.BsonDocument>> Components { get; set; }
+
+        public List<MUD.Core.Components.BehaviorRef> Behaviors { get; set; } = new List<MUD.Core.Components.BehaviorRef>();
     }
 }

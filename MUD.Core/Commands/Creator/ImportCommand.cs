@@ -18,7 +18,7 @@ namespace MUD.Core.Commands
 
         public ImportCommand(IRoomRepository roomRepository, WorldSettings settings, MongoDB.Driver.IMongoDatabase database)
         {
-            _service = new AreaFileService(new AreaImporter(new RoomRepositoryImportStore(roomRepository), new MUD.Core.Areas.MongoAreaStore(database)), settings.ContentDirectory);
+            _service = new AreaFileService(new AreaImporter(new RoomRepositoryImportStore(roomRepository), new MUD.Core.Areas.MongoAreaStore(database), new MUD.Core.ItemTemplates.MongoItemTemplateStore(database)), settings.ContentDirectory);
         }
 
         public object[] ParseCommand(Living commandIssuer, string input)

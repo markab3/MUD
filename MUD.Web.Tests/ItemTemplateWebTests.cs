@@ -287,6 +287,77 @@ public class ItemTemplateListPresenterTests
     }
 }
 
+public class ItemTemplateReferencesPresenterTests
+{
+    private static ItemTemplateReferenceRecord Ref(string room, int version, bool stale) => new() { RoomKey = room, EntryId = "s", TemplateVersion = version, Stale = stale };
+
+    [Fact]
+    public async Task Load_ReadsTheReferences_SplitsTheStaleOnes_AndSummarises()
+    {
+        var core = new FakeAdminClient().AddItemTemplate("a.x");
+        core.ItemTemplateReferences.References.Add(Ref("a.one", 2, false));
+        var p = new ItemTemplateEditPresenter(core, "tok", "a.x");
+        Assert.Equal(ItemTemplateEditOutcome.Ok, await p.LoadAsync());
+        Assert.Single(p.References);
+        Assert.Empty(p.StaleReferences);
+        Assert.Equal("1 search reward uses this template; all hold the current version.", p.ReferencesSummary);
+
+        core.ItemTemplateReferences.References.Add(Ref("a.two", 1, true));
+        await p.LoadAsync();
+        Assert.Equal(new[] { "a.two" }, p.StaleReferences.Select(r => r.RoomKey));
+        Assert.Equal("2 search rewards use this template; 1 hold an older version.", p.ReferencesSummary);
+        Assert.Contains("ListItemTemplateReferences:a.x", core.ItemTemplateCalls);
+        Assert.All(core.ItemTemplateTokens, t => Assert.Equal("tok", t));
+    }
+
+    [Fact]
+    public async Task Load_WithNoCopies_SaysNoneUseIt()
+    {
+        var p = new ItemTemplateEditPresenter(new FakeAdminClient().AddItemTemplate("a.x"), "tok", "a.x");
+        await p.LoadAsync();
+        Assert.Empty(p.References);
+        Assert.Null(p.ReferencesError);
+        Assert.Equal("No search reward uses this template yet.", p.ReferencesSummary);
+    }
+
+    [Fact]
+    public async Task Load_ANewTemplateAsksForNoReferences()
+    {
+        var core = new FakeAdminClient();
+        await new ItemTemplateEditPresenter(core, "tok", null).LoadAsync();
+        Assert.DoesNotContain(core.ItemTemplateCalls, c => c.StartsWith("ListItemTemplateReferences"));
+    }
+
+    [Fact]
+    public async Task Load_WhenOnlyTheReferencesFail_TheTemplateStillLoads_AndAnErrorIsKept_ThenClearedByAGoodReload()
+    {
+        var core = new FakeAdminClient().AddItemTemplate("a.x");
+        core.CrashOnReferences = true;
+        var p = new ItemTemplateEditPresenter(core, "tok", "a.x");
+        Assert.Equal(ItemTemplateEditOutcome.Ok, await p.LoadAsync());
+        Assert.Equal(ItemTemplateEditPresenter.ReferencesUnavailableText, p.ReferencesError);
+        Assert.Empty(p.References);
+        Assert.False(p.IsMissing);
+
+        core.CrashOnReferences = false;
+        await p.LoadAsync();
+        Assert.Null(p.ReferencesError);
+    }
+
+    [Fact]
+    public async Task Save_ThenReload_RefreshesTheStaleReport_AgainstTheNewVersion()
+    {
+        var core = new FakeAdminClient().AddItemTemplate("a.x");
+        var p = new ItemTemplateEditPresenter(core, "tok", "a.x");
+        await p.LoadAsync();
+        core.ItemTemplateReferences.References.Add(Ref("a.one", 1, true));
+        p.Short = "changed";
+        Assert.Equal(ItemTemplateEditOutcome.Ok, await p.SaveAsync());
+        await p.LoadAsync();
+        Assert.Single(p.StaleReferences);
+    }
+}
+
 public class ItemTemplateEditPresenterTests
 {
     private const string Token = "token-1";
@@ -801,6 +872,67 @@ public class ItemTemplatePageRenderTests
         Assert.Contains("<strong id=\"it-preview-short\">a rusty sword</strong>", html);
         Assert.Contains("Long a.sword", html);
         Assert.Contains("A player can type: &quot;blade&quot;", html);
+    }
+
+    private static ItemTemplateReferenceRecord Ref(string room, string entry, int version, bool stale) =>
+        new() { RoomKey = room, EntryId = entry, TemplateVersion = version, Stale = stale };
+
+    [Fact]
+    public async Task EditPage_Existing_ListsWhereTheTemplateIsUsed_MarksStaleCopies_AndSaysRefreshIsNotAvailable()
+    {
+        var core = Seeded();
+        core.ItemTemplateReferences = new ListItemTemplateReferencesReply { CurrentVersion = 3 };
+        core.ItemTemplateReferences.References.Add(Ref("a.hall", "s1", 3, false));
+        core.ItemTemplateReferences.References.Add(Ref("a.vault", "s2", 1, true));
+        await using var page = await Page<ItemTemplateEdit>.OpenAsync(core, Query("a.sword"));
+        var html = await page.Html();
+        Assert.Contains("id=\"it-refs\"", html);
+        Assert.Contains("2 search rewards use this template; 1 hold an older version.", html);
+        Assert.Contains("<a href=\"/creator/rooms/a.vault\">a.vault</a> (search s2): version 1 - older than the template&#x27;s version 3", html.Replace("&#39;", "&#x27;"));
+        Assert.Contains("(search s1): version 3</li>", html);
+        Assert.Contains("refreshing them is not available yet", html);
+        Assert.Contains("ListItemTemplateReferences:a.sword", core.ItemTemplateCalls);
+        // Read-only: no control in the section writes anything.
+        var section = html.Substring(html.IndexOf("id=\"it-refs\"", StringComparison.Ordinal), html.IndexOf("id=\"it-preview\"", StringComparison.Ordinal) - html.IndexOf("id=\"it-refs\"", StringComparison.Ordinal));
+        Assert.DoesNotContain("<button", section);
+        Assert.DoesNotContain("<input", section);
+    }
+
+    [Fact]
+    public async Task EditPage_Existing_WithNoCopies_SaysSo_AndTheNewFormHasNoUsedBySection()
+    {
+        await using (var page = await Page<ItemTemplateEdit>.OpenAsync(Seeded(), Query("a.sword")))
+        {
+            var html = await page.Html();
+            Assert.Contains("No search reward uses this template yet.", html);
+            Assert.DoesNotContain("class=\"mud-refs\"", html);
+        }
+        await using var fresh = await Page<ItemTemplateEdit>.OpenAsync(Seeded(), Query());
+        Assert.DoesNotContain("id=\"it-refs\"", await fresh.Html());
+    }
+
+    [Fact]
+    public async Task EditPage_Existing_WhenTheReferencesCannotBeRead_StillShowsTheTemplate_WithANote()
+    {
+        var core = Seeded();
+        core.CrashOnReferences = true;
+        await using var page = await Page<ItemTemplateEdit>.OpenAsync(core, Query("a.sword"));
+        var html = await page.Html();
+        Assert.Contains("id=\"it-id\" value=\"a.sword\"", html);
+        Assert.Contains("id=\"it-refs-error\"", html);
+        Assert.Contains(ItemTemplateEditPresenter.ReferencesUnavailableText, html);
+        Assert.DoesNotContain("id=\"it-refs-summary\"", html);
+    }
+
+    [Fact]
+    public async Task TheUsedByCss_UsesPaletteVariablesOnly_AndAFullSizeTouchTarget()
+    {
+        var css = await File.ReadAllTextAsync(FindFile("MUD.Web/wwwroot/css/mobile.css"));
+        var block = string.Join("\n", css.Split('\n').Where(l => l.TrimStart().StartsWith(".mud-refs")));
+        Assert.Contains("min-height: var(--mud-hit)", block);
+        Assert.Contains("overflow-wrap: anywhere", block);
+        Assert.DoesNotMatch("#[0-9a-fA-F]{3,8}\\b", block);
+        Assert.DoesNotMatch(@"rgb|hsl", block);
     }
 
     [Fact]

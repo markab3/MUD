@@ -125,11 +125,36 @@ public sealed class ItemTemplateEditPresenter
             var item = await _core.GetItemTemplateAsync(_token, OriginalId!, cancellation);
             if (item == null) { return Gone(ItemTemplateMissing.NotFound, GoneText); }
             Fill(item);
+            await LoadReferencesAsync(cancellation);
             return ItemTemplateEditOutcome.Ok;
         }
         catch (CoreUnavailableException) { return Gone(ItemTemplateMissing.Unavailable, ItemTemplateListPresenter.UnavailableError); }
         catch (CoreRefusedException) { return Gone(ItemTemplateMissing.Forbidden, ItemTemplateListPresenter.ForbiddenError); }
         catch (Exception) { return Gone(ItemTemplateMissing.Unavailable, ItemTemplateListPresenter.FailedError); }
+    }
+
+    // ---- referenced by (read-only; nothing here refreshes a copy)
+
+    public const string ReferencesUnavailableText = "The places that use this template could not be read.";
+
+    // Every stored search reward copied from this template, ordered by room then entry (core's order).
+    public IReadOnlyList<ItemTemplateReferenceRecord> References { get; private set; } = Array.Empty<ItemTemplateReferenceRecord>();
+    // The rewards whose copied version is lower than the template's current one.
+    public IReadOnlyList<ItemTemplateReferenceRecord> StaleReferences => References.Where(r => r.Stale).ToList();
+    public string? ReferencesError { get; private set; }
+
+    public string ReferencesSummary => References.Count == 0
+        ? "No search reward uses this template yet."
+        : References.Count + (References.Count == 1 ? " search reward uses" : " search rewards use") + " this template; "
+            + (StaleReferences.Count == 0 ? "all hold the current version." : StaleReferences.Count + " hold an older version.");
+
+    // A failure here does not hide the template: the page shows a note instead of the list.
+    private async Task LoadReferencesAsync(CancellationToken cancellation)
+    {
+        References = Array.Empty<ItemTemplateReferenceRecord>();
+        ReferencesError = null;
+        try { References = (await _core.ListItemTemplateReferencesAsync(_token, OriginalId!, cancellation)).References.ToList(); }
+        catch (Exception) { ReferencesError = ReferencesUnavailableText; }
     }
 
     private void Fill(ItemTemplateRecord item)

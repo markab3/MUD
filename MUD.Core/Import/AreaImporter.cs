@@ -109,11 +109,16 @@ namespace MUD.Core.Import
 
         // areas: when given, importing a file creates the area record if it is missing (name and description from the file) and never
         // touches a record that exists (specs/ROOM_FILES.md section 4). Without it the importer writes rooms only.
-        public AreaImporter(IRoomImportStore store, MUD.Core.Areas.IAreaStore areas = null)
+        // templates: when given, a search reward 'template: <area>.<local>' is resolved against it at import time (specs/ROOM_FILES.md). Without
+        // it such a reward is a validation error, never silently dropped.
+        public AreaImporter(IRoomImportStore store, MUD.Core.Areas.IAreaStore areas = null, MUD.Core.ItemTemplates.IItemTemplateStore templates = null)
         {
             _store = store;
             _areas = areas;
+            _templates = templates;
         }
+
+        private readonly MUD.Core.ItemTemplates.IItemTemplateStore _templates;
 
         // replaceBehaviors: by default a behavior entry in the file whose (hook, module, type) already exists on the
         // stored room is reported and skipped, and stored entries absent from the file are kept (the database is the
@@ -275,6 +280,8 @@ namespace MUD.Core.Import
                 }
             }
 
+            ResolveRewardTemplates(area, errors);
+
             // Expand 'reverse' exits (in memory, before the dangling check).
             foreach (var room in area.Rooms)
             {
@@ -318,6 +325,38 @@ namespace MUD.Core.Import
                     {
                         errors.Add(string.Format("Room '{0}' already exists and belongs to area '{1}'.", room.FullKey, storedArea.AsString));
                     }
+                }
+            }
+        }
+
+        // Resolves every 'template:' reward by COPYING the template's current fields into the definition (the file's short and long, when
+        // given, override), and records the template id and version. Unknown template, or no library to look in, is a validation error naming
+        // the id. After this the reward is an ordinary definition: nothing reads the library again at play time.
+        private void ResolveRewardTemplates(AreaDefinition area, List<string> errors)
+        {
+            foreach (var room in area.Rooms)
+            {
+                foreach (var prop in room.Properties)
+                {
+                    var reward = prop.Reward;
+                    if (reward == null || reward.TemplateRef == null) { continue; }
+                    var where = string.Format("Room '{0}', search '{1}'", room.FullKey, prop.Id);
+                    MUD.Core.ItemTemplates.ItemTemplateEntry template = null;
+                    if (_templates == null) { errors.Add(string.Format("{0}: reward template '{1}' cannot be checked because the item template library is not available.", where, reward.TemplateRef)); continue; }
+                    try { template = _templates.Get(reward.TemplateRef); }
+                    catch (Exception ex) when (!(ex is OutOfMemoryException)) { errors.Add(string.Format("{0}: reward template '{1}' could not be read ({2}).", where, reward.TemplateRef, ex.GetType().Name)); continue; }
+                    if (template == null) { errors.Add(string.Format("{0}: reward template '{1}' does not exist.", where, reward.TemplateRef)); continue; }
+
+                    reward.Short = reward.Short ?? template.Short;
+                    reward.Long = reward.Long ?? template.Long;
+                    reward.Handles = new List<string>(template.Handles ?? new List<string>());
+                    reward.Adjectives = new List<string>(template.Adjectives ?? new List<string>());
+                    reward.Plurals = new List<string>(template.Plurals ?? new List<string>());
+                    reward.Components = MUD.Core.ItemTemplates.ItemTemplateCopy.ComponentsOf(template);
+                    reward.Behaviors = MUD.Core.ItemTemplates.ItemTemplateCopy.BehaviorsOf(template);
+                    reward.TemplateId = template.Id;
+                    reward.TemplateVersion = template.Version;
+                    reward.TemplateRef = null;
                 }
             }
         }
@@ -487,7 +526,11 @@ namespace MUD.Core.Import
                     LongDescription = def.Reward.Long,
                     Handles = new List<string>(def.Reward.Handles),
                     Adjectives = new List<string>(def.Reward.Adjectives),
-                    Plurals = new List<string>(def.Reward.Plurals)
+                    Plurals = new List<string>(def.Reward.Plurals),
+                    Components = def.Reward.Components ?? new Dictionary<string, Dictionary<string, BsonDocument>>(),
+                    Behaviors = new List<MUD.Core.Components.BehaviorRef>(def.Reward.Behaviors ?? new List<MUD.Core.Components.BehaviorRef>()),
+                    TemplateId = def.Reward.TemplateId,
+                    TemplateVersion = def.Reward.TemplateVersion
                 },
                 Discovery = def.Discovery == null ? null : new MUD.Core.Components.SearchDiscovery { FlagId = def.Discovery.Id, Found = def.Discovery.Found, Again = def.Discovery.Again }
             };

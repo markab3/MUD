@@ -288,6 +288,32 @@ For `search` the params correspond to `BasicSearchProperty`:
 `id` is new: it is what makes field-level upsert of a list element possible
 (see 6.2). It is stored with the property.
 
+**Reward from an item template.** Instead of an inline definition, a reward may point at an item template of the library
+(specs/ITEM_TEMPLATES.md) by id:
+
+```
+      reward:
+        template: lib.steel_sword   # <area>.<local key>, the template's id
+        short: "a cursed sword"     # optional override
+        long: "It hums softly."     # optional override
+```
+
+- `template` takes the place of the inline fields. `short` and `long` may accompany it as overrides; `handles`, `adjectives` and `plurals`
+  may not (a validation error), and an inline reward still needs `short` and `long`. `template` must look like a template id
+  (area prefix grammar, a dot, a local key `^[a-z0-9_]+$`).
+- The importer **copies**: at import time it reads the template and writes the template's current short, long, handles, adjectives, plurals,
+  components and behaviors into the stored reward (the file's `short` / `long` win), and records `templateId` and `templateVersion` on the
+  reward (the same idea as a generated feature's `x-gen`, TERRAIN_GENERATORS.md 5.2). The stored reward is an ordinary item definition: play
+  never looks the library up, so deleting or editing a template cannot break a room. A later import takes the template as it is then
+  (a re-import is the only refresh; there is no `update` for rewards).
+- An unknown template id is a validation error naming the id, found in phase 1 with every other error, so nothing is written
+  ("validate everything, then write" holds). The same error appears when the importer has no library to look in (for example the importer used
+  by `regen` / `update` / the export check, which only see generator output or already stored files).
+- `export` writes a copied reward inline, plus `x-gen: {templateId, templateVersion}` on it, so the export of an imported room imports back
+  (checked without a library) and keeps its provenance. Components and behaviors of a reward are not part of the file form: an exported
+  and re-imported reward loses them. Re-import the original file (with `template:`) to get them.
+- Deleting a template that rewards still point at is refused (specs/ADMIN_API.md "Item templates"); the template's edit page lists them.
+
 An entry may instead (or also) grant a **discovery**, a named per-player flag:
 
 ```
@@ -680,9 +706,10 @@ write path:
 5. Are items (InventoryItem templates) going to get their own keyed files? The
    `reward` is currently an inline template; a keyed item catalog would let
    rewards reference by key. Partly answered: item templates now exist as Mongo
-   documents keyed `<area>.<local>` (specs/ITEM_TEMPLATES.md), not as files.
-   Whether they also get a file form, and whether `reward` and features can
-   reference them, are still open.
+   documents keyed `<area>.<local>` (specs/ITEM_TEMPLATES.md), not as files,
+   and a search `reward` can reference one with `template:` (section 4.5).
+   Whether they also get a file form, and whether features (or room items)
+   can reference them, are still open.
 6. Relationship of this format to the existing Creator `ExportCommand`.
 7. Do creator edits that arrive via a future `local_modified` flag apply to
    feature/property elements as well as room-level fields? (Spec says
