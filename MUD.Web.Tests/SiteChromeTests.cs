@@ -119,7 +119,9 @@ public class SiteChromeMarkupTests
     public void TheTitle_IsALogoImageLinkingHome_WithAltTextAndSize_InBothBars()
     {
         var nav = Nav();
-        Assert.Equal(2, Regex.Matches(nav, @"<a class=""mud-title"" href=""/""><img src=""img/planar-realms-logo.png"" width=""116"" height=""40"" alt=""Planar Realms"" /></a>").Count);
+        // The source is checked, so the src is the versioned-URL expression (AssetVersions), not a bare path.
+        var logo = "<img src=\"@Assets.Url(\"img/planar-realms-logo.png\")\" width=\"116\" height=\"40\" alt=\"Planar Realms\" />";
+        Assert.Equal(2, Regex.Matches(nav, Regex.Escape("<a class=\"mud-title\" href=\"/\">" + logo + "</a>")).Count);
         Assert.DoesNotContain("<span class=\"mud-title\"", nav);
         var png = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "MUD.Web", "wwwroot", "img", "planar-realms-logo.png");
         Assert.True(new FileInfo(png).Length < 60 * 1024);

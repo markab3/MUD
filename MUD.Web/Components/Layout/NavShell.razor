@@ -1,6 +1,7 @@
 @using Microsoft.JSInterop
 @implements IDisposable
 @inject IAuthorizationService Authz
+@inject AssetVersions Assets
 @* The one site chrome at every width (WEB_BLAZOR.md 5.2): a top bar (menu button, title, user name) and a pull-out menu from the left.
    Anonymous visitors get the bar with the title only. The menu is a modal dialog around a nav; focus and the Tab trap are in wwwroot/js/app.js. *@
 <header class="mud-topbar">
@@ -10,11 +11,11 @@
                     aria-expanded="@(_menu.IsOpen ? "true" : "false")" aria-controls="mud-menu" @onclick="Toggle">
                 <span class="mud-burger" aria-hidden="true"></span>
             </button>
-            <a class="mud-title" href="/"><img src="img/planar-realms-logo.png" width="116" height="40" alt="Planar Realms" /></a>
+            <a class="mud-title" href="/"><img src="@Assets.Url("img/planar-realms-logo.png")" width="116" height="40" alt="Planar Realms" /></a>
             <a class="mud-username" href="@WebRoutes.Character">@context.User.FindFirstValue(ClaimTypes.Name)</a>
         </Authorized>
         <NotAuthorized>
-            <a class="mud-title" href="/"><img src="img/planar-realms-logo.png" width="116" height="40" alt="Planar Realms" /></a>
+            <a class="mud-title" href="/"><img src="@Assets.Url("img/planar-realms-logo.png")" width="116" height="40" alt="Planar Realms" /></a>
         </NotAuthorized>
     </AuthorizeView>
 </header>
