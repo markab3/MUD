@@ -1336,6 +1336,59 @@ namespace MUD.Tests
             Assert.Equal(AdminFailure.Forbidden, Refused(() => f.Api.ListRooms(new TokenRequest { Token = token })).Failure);
         }
 
+        private static void AddDiscoverySearches(Fixture f)
+        {
+            Room hall = f.Rooms.Cache["t.hall"];
+            hall.Search.Entries.Add(new MUD.Core.Components.SearchEntry { EntryId = "floor", Target = "floor", RefreshMilliseconds = 600000, Discovery = new MUD.Core.Components.SearchDiscovery { FlagId = "hidden_button", Found = "You press a button.", Again = "Nothing new." } });
+            hall.Search.Entries.Add(new MUD.Core.Components.SearchEntry { EntryId = "chest", Target = "chest", RefreshMilliseconds = 1000, Reward = new InventoryItem { ShortDescription = "a key" }, Discovery = new MUD.Core.Components.SearchDiscovery { FlagId = "chest_seen" } });
+            f.Rooms.Stored["t.hall"] = hall.ToBsonDocument();
+        }
+
+        private static void AssertDiscoverySearches(RoomDetail room)
+        {
+            Assert.Equal(2, room.Searches.Count);
+            RoomSearchEntry floor = room.Searches[0];
+            Assert.Equal(("floor", "floor", 600000, ""), (floor.Id, floor.Target, floor.RefreshMs, floor.RewardShort));
+            Assert.Equal(("hidden_button", "You press a button.", "Nothing new."), (floor.Discovery.Id, floor.Discovery.Found, floor.Discovery.Again));
+            RoomSearchEntry chest = room.Searches[1];
+            Assert.Equal("a key", chest.RewardShort);
+            Assert.Equal(("chest_seen", "", ""), (chest.Discovery.Id, chest.Discovery.Found, chest.Discovery.Again));
+        }
+
+        [Fact]
+        public void SearchEntriesCarryTheirDiscoveryFromALiveRoomAndAStoredDocument()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            AddDiscoverySearches(f);
+            string token = f.Login("cris");
+            AssertDiscoverySearches(f.Api.GetRoom(new GetRoomRequest { Token = token, Key = "t.hall" }).Room);
+            AssertDiscoverySearches(f.Api.ListRooms(new TokenRequest { Token = token }).Rooms.Single(r => r.Key == "t.hall"));
+        }
+
+        [Fact]
+        public void EntriesWithoutADiscoveryLeaveItUnset()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            AddBehaviorsAndSearch(f);
+            RoomDetail room = f.Api.GetRoom(new GetRoomRequest { Token = f.Login("cris"), Key = "t.hall" }).Room;
+            Assert.All(room.Searches, s => Assert.Null(s.Discovery));
+        }
+
+        [Fact]
+        public void UpdateRoomKeepsDiscoverySearchEntries()
+        {
+            var f = new Fixture();
+            f.AddPlayer("Cris", creator: true);
+            AddDiscoverySearches(f);
+            Room hall = f.Rooms.Cache["t.hall"];
+            string token = f.Login("cris");
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateRoom(Fixture.Edit(token, "t.hall", "edited short", hall.LongDescription, "t", hall.Exits[0].Name, "t.start")).Result);
+            AssertDiscoverySearches(f.Api.GetRoom(new GetRoomRequest { Token = token, Key = "t.hall" }).Room);
+            Assert.Equal("hidden_button", f.Rooms.Stored["t.hall"]["search"]["entries"][0]["discovery"]["id"].AsString);
+        }
+
         [Fact]
         public void UpdateRoomIgnoresSentBehaviorsAndSearchesAndKeepsTheStoredOnes()
         {

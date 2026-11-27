@@ -138,6 +138,75 @@ public class RoomBehaviorsPageTests
         Assert.Contains("a coin", section);
     }
 
+    private static async Task<string> SearchSection(params RoomSearchEntry[] entries)
+    {
+        var core = new FakeAdminClient().AddRoom("t.hall", "t", 1, 1, 0);
+        core.Rooms["t.hall"].Searches.AddRange(entries);
+        return Section(await RenderAsync(core, "t.hall"));
+    }
+
+    [Fact]
+    public async Task Page_RendersAnItemRewardEntry_WithSummaryAndReadableCooldown()
+    {
+        var section = await SearchSection(new RoomSearchEntry { Id = "table", Target = "oak table", RefreshMs = 600000, RewardShort = "a coin" });
+        Assert.Contains("Typing `search oak table` finds a coin (again after 10 minutes).", section);
+        Assert.Contains("<dd title=\"600000 ms\">10 minutes <span class=\"mud-muted\">(600000 ms)</span></dd>", section);
+        Assert.Contains("<dt>Reward</dt><dd>a coin</dd>", section);
+        Assert.DoesNotContain("Discovery", section);
+    }
+
+    [Fact]
+    public async Task Page_RendersADiscoveryOnlyEntry_WithNoRewardRow()
+    {
+        var section = await SearchSection(new RoomSearchEntry { Id = "floor", Target = "floor", RefreshMs = 600000, Discovery = new RoomSearchDiscovery { Id = "hidden_button", Found = "You press <i>it</i>.", Again = "Nothing new." } });
+        Assert.Contains("Typing `search floor` records the discovery &#x27;hidden_button&#x27; for the player (once per player).", section);
+        Assert.DoesNotContain("Reward", section);
+        Assert.Contains("<dt>Discovery</dt><dd>hidden_button</dd>", section);
+        Assert.Contains("You press &lt;i&gt;it&lt;/i&gt;.", section);
+        Assert.Contains("<dt>Already found</dt><dd>Nothing new.</dd>", section);
+    }
+
+    [Fact]
+    public async Task Page_RendersAnEntryWithBothRewardAndDiscovery_AndDefaultTextForEmptyMessages()
+    {
+        var section = await SearchSection(new RoomSearchEntry { Id = "chest", Target = "chest", RefreshMs = 90000, RewardShort = "a key", Discovery = new RoomSearchDiscovery { Id = "chest_seen" } });
+        Assert.Contains("finds a key (again after 1 minute 30 seconds) and records the discovery", section);
+        Assert.Contains("<dt>Reward</dt><dd>a key</dd>", section);
+        Assert.Contains("<dt>Discovery</dt><dd>chest_seen</dd>", section);
+        Assert.Contains("<dt>Found message</dt><dd>(default text)</dd>", section);
+    }
+
+    [Fact]
+    public async Task Page_WithNoSearchEntries_ShowsNoSearchSubsection()
+    {
+        Assert.DoesNotContain("<h3>Search</h3>", await SearchSection());
+    }
+
+    [Theory]
+    [InlineData(0, "0 ms")]
+    [InlineData(5, "5 ms")]
+    [InlineData(1000, "1 second")]
+    [InlineData(600000, "10 minutes")]
+    [InlineData(3600000, "1 hour")]
+    [InlineData(5400000, "1 hour 30 minutes")]
+    [InlineData(90061001, "1 day 1 hour 1 minute 1 second 1 ms")]
+    public void Duration_IsReadable(int ms, string expected) => Assert.Equal(expected, SearchRow.Duration(ms));
+
+    [Fact]
+    public async Task Save_KeepsDiscoveryEntries_AndSendsNothingAboutThem()
+    {
+        var core = Core();
+        core.Rooms["t.hall"].Searches.Add(new RoomSearchEntry { Id = "floor", Target = "floor", RefreshMs = 600000, Discovery = new RoomSearchDiscovery { Id = "hidden_button", Found = "f", Again = "a" } });
+        var before = core.Rooms["t.hall"].Clone();
+        var p = new RoomEditPresenter(core, Token, "t.hall");
+        await p.LoadAsync();
+        p.Short = "edited";
+        Assert.Equal(RoomEditOutcome.Ok, await p.SaveAsync());
+        Assert.Equal(before.Searches, core.Rooms["t.hall"].Searches);
+        Assert.Equal("hidden_button", p.Searches.Single().Discovery!.Id);
+        Assert.Contains("hidden_button", Section(await RenderAsync(core, "t.hall")));
+    }
+
     [Fact]
     public async Task Page_StillRenders_WhenCoreSendsNoBehaviorsOrSearches_AsAnOlderCoreDoes()
     {

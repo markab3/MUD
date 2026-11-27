@@ -420,7 +420,7 @@ public sealed class RoomEditPresenter
     private void Load(RoomDetail room)
     {
         Behaviors = room.Behaviors.Select(b => new BehaviorRow(b.Hook, b.Module, b.Type, b.Priority, PrettyJson(b.ConfigJson))).ToList();
-        Searches = room.Searches.Select(x => new SearchRow(x.Id, x.Target, x.RefreshMs, x.RewardShort)).ToList();
+        Searches = room.Searches.Select(x => new SearchRow(x.Id, x.Target, x.RefreshMs, x.RewardShort, x.Discovery == null ? null : new SearchDiscoveryRow(x.Discovery.Id, x.Discovery.Found, x.Discovery.Again))).ToList();
         var dot = room.Key.IndexOf('.');
         NewArea ??= dot > 0 ? room.Key.Substring(0, dot) : room.Area;
         NewLocalKey ??= dot > 0 ? room.Key.Substring(dot + 1) : room.Key;
@@ -447,7 +447,41 @@ public sealed class RoomEditPresenter
 public sealed record BehaviorRow(string Hook, string Module, string Type, int Priority, string Config);
 
 /// <summary>One entry of the room's search component as shown read-only on the edit page.</summary>
-public sealed record SearchRow(string Id, string Target, int RefreshMs, string RewardShort);
+public sealed record SearchRow(string Id, string Target, int RefreshMs, string RewardShort, SearchDiscoveryRow? Discovery = null)
+{
+    /// <summary>The refresh time in readable units (10 minutes, 1 hour 30 minutes, 500 ms).</summary>
+    public string Cooldown => Duration(RefreshMs);
+
+    /// <summary>One line saying what typing the search does: the reward and/or the discovery.</summary>
+    public string Summary
+    {
+        get
+        {
+            var what = new List<string>();
+            if (!string.IsNullOrEmpty(RewardShort)) { what.Add($"finds {RewardShort} (again after {Cooldown})"); }
+            if (Discovery != null) { what.Add($"records the discovery '{Discovery.Id}' for the player (once per player)"); }
+            return $"Typing `search {Target}` " + (what.Count == 0 ? "finds nothing." : string.Join(" and ", what) + ".");
+        }
+    }
+
+    public static string Duration(int ms)
+    {
+        if (ms < 1000) { return ms + " ms"; }
+        var parts = new List<string>();
+        var rest = (long)ms;
+        foreach (var (unit, size) in new[] { ("day", 86400000L), ("hour", 3600000L), ("minute", 60000L), ("second", 1000L) })
+        {
+            var n = rest / size;
+            rest %= size;
+            if (n > 0) { parts.Add(n + " " + unit + (n == 1 ? "" : "s")); }
+        }
+        if (rest > 0) { parts.Add(rest + " ms"); }
+        return string.Join(" ", parts);
+    }
+}
+
+/// <summary>The discovery of a search entry (per-player flag id and its two messages). Messages may be empty: core then uses a default text.</summary>
+public sealed record SearchDiscoveryRow(string Id, string Found, string Again);
 
 /// <summary>One feature row of the room edit form. Each word list is one text field: words separated by commas or spaces.</summary>
 public class FeatureInput

@@ -93,8 +93,8 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   (it cannot mark individual rows, because `RoomFeature` does not say which have behavior).
 - Behaviors (read-only, card "Website: list a room's behaviors"): a "Behaviors" section after the form, from `RoomDetail.behaviors` and
   `searches` (`specs/ADMIN_API.md`). Each room-level behavior in stored order is a card with hook, module, type, priority and a collapsed
-  "Config" block with the config as indented JSON. A "Search" subsection (id, target, refresh in ms, reward short) appears only when the
-  room has search entries. Empty: "No behaviors attached." A core that sends neither (older) gives the empty state and the page works as
+  "Config" block with the config as indented JSON. A "Search" subsection appears only when the
+  room has search entries. Each entry shows a one-line summary first (e.g. "Typing `search floor` records the discovery 'hidden_button' for the player (once per player)."), then id, target, refresh in readable units (10 minutes; the raw ms in the title attribute and a muted note), the Reward row only when there is an item reward (short description), and, when the entry has a discovery, its id, found message and already-found message ("(default text)" when empty). Read-only; search entries are not listed elsewhere (the room list has no natural place for them). Empty: "No behaviors attached." A core that sends neither (older) gives the empty state and the page works as
   before. A help line says behaviors are managed with the in-game `behavior` creator command (`behavior here list|add|remove`, see
   `BehaviorCommand`) or the `behaviors:` list of the area file. No controls: Save, Regen, Update, Move and Delete never send them
   (`RoomEditRequest` has no such field; core ignores them on update).

@@ -189,3 +189,5 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-config summary { display: flex; align-items: center; min-height: var(--mud-hit); min-width: var(--mud-hit); box-sizing: border-box; cursor: pointer; font-weight: 600; color: var(--mud-cyan-ink); }
 .mud-config pre { margin: 4px 0 0; padding: 8px; max-width: 100%; max-height: 40vh; overflow: auto; box-sizing: border-box; background: var(--mud-page); border: 1px solid var(--mud-border-soft); border-radius: 6px; white-space: pre; font-size: 0.875rem; }
 .mud-empty { color: var(--mud-text-soft); }
+.mud-search-summary { margin: 0 0 8px; overflow-wrap: anywhere; }
+.mud-muted { color: var(--mud-text-soft); }
