@@ -13,6 +13,7 @@
   --mud-surface: #FFFFFF;
   --mud-text: #1B2B2E;          /* body text (teal-dark shade) */
   --mud-text-soft: #4A5A5E;     /* hints */
+  --mud-muted: #7A8C90;         /* map arrows with no link: gray, 3.5:1 on white (UI components need 3:1) */
   --mud-border: #6F878C;        /* controls and cards: 3.5:1 on the page, 3.8:1 on white (UI components need 3:1) */
   --mud-border-soft: #C9D6D9;   /* decoration only */
   --mud-on-dark: #FFFFFF;
@@ -143,6 +144,25 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-map-tools { position: absolute; top: 8px; right: 8px; z-index: 5; display: flex; flex-direction: column; gap: 8px; }
 .mud-map-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--mud-surface); border-top: 1px solid var(--mud-border); padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mud-map-sheet[hidden] { display: none; }
+/* Expansion arrows: black = an exit (or a room to wire) is there, gray = nothing. The glyph is small; the invisible circle is the hit area
+   and roommap.js keeps it at 44 CSS px across at any zoom (--map-hit is its radius in SVG units). */
+.mud-arrow { cursor: pointer; outline: none; }
+.mud-arrow text { pointer-events: none; font-weight: 700; }
+.mud-arrow-hit { fill: transparent; stroke: none; r: var(--map-hit, 22px); pointer-events: all; }
+.mud-arrow-black text { fill: var(--mud-text); }
+.mud-arrow-gray text { fill: var(--mud-muted); }
+.mud-arrow:hover text { fill: var(--mud-cyan-ink); }
+.mud-arrow:focus-visible .mud-arrow-hit { stroke: var(--mud-teal-dark); stroke-width: 2px; fill: var(--mud-turquoise); fill-opacity: 0.35; }
+.mud-arrow-wire text { font-size: 20px; }
+.mud-ghost rect:first-child { stroke: var(--mud-muted); }
+.mud-ghost text { fill: var(--mud-text-soft); }
+.mud-ghost-link text { fill: var(--mud-cyan-ink); text-decoration: underline; }
+.mud-ghost-hit { fill: transparent; }
+.mud-ghost-link:focus-visible .mud-ghost-hit { stroke: var(--mud-teal-dark); stroke-width: 2px; }
+/* A just-created room: outlined until the next touch (roommap.js removes the class). */
+.mud-room-new rect { stroke: var(--mud-cyan-ink); stroke-width: 5; }
+@media (prefers-reduced-motion: no-preference) { .mud-room-new rect { animation: mud-room-pulse 1.2s ease-in-out 3; } }
+@keyframes mud-room-pulse { 50% { stroke: var(--mud-turquoise); } }
 
 /* Player list and modules: a table from 600px, stacked cards below (both rendered; CSS shows one, so no round trip). */
 .mud-table-wrap { display: none; overflow-wrap: anywhere; }

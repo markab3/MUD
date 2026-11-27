@@ -37,6 +37,10 @@ public static class Messages
     public const string RoomSaved = "Saved. The running game has the change now.";
     public const string RoomNoChange = "Nothing was changed.";
     public const string RoomMoved = "Room moved.";
+    // Map: clicking a black x adds one exit.
+    public const string MapWired = "Exit added.";
+    public const string MapWireChanged = "The room changed in the meantime, or that direction is no longer free. Nothing was changed; the map was reloaded.";
+    public const string MapWireInvalid = "Core did not accept that exit (the target room key was rejected). Nothing was changed.";
     public const string RoomDeleted = "Room deleted. Anything that was inside has been moved.";
     public const string RegenWarning = "Regen replaces the description of this room, ALL features (including ones you added by hand) and properties with new generator output. Your hand edits to them are lost. Exits and occupants stay. Continue?";
     public const string RoomNotGenerated = "This room was not made by a generator, so it cannot be regenerated or updated.";
