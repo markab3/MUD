@@ -38,7 +38,7 @@ Messages are fixed sentences. No token, password or stored value is put in a sta
 |---|---|
 | `WebAuthenticate`, `Logout` | none |
 | `GetSession`, `GetOwnPlayer`, `ChangePassword` | any signed-in player |
-| `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListModules` | creator or admin |
+| `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListModules`, `ListAreas`, `GetArea`, `CreateArea`, `UpdateArea`, `DeleteArea` | creator or admin |
 | `ListPlayers`, `GetPlayer`, `UpdatePlayer`, `ListAudit`, `StartModule`, `StopModule`, `RestartModule` | admin only |
 
 Not in this card: `GetRoomMap` (the map is laid out by the web from `ListRooms`, as `RoomMapLayout` does today), `GetStats` and `Flush` (sketched in
@@ -172,7 +172,58 @@ rpcs `List<X>s`, `Get<X>`, `Create<X>`, `Update<X>`, `Delete<X>` (15 rpcs). `Res
 - **Seeding.** On core start, if `terrain_meta` has no `library` document, the embedded `terrain-library.yaml` (source: `MUD.Core/Generation/Library/terrain-library.yaml`) is validated and loaded; the meta document is written last. If the meta document exists the file is not read again, so admin edits survive restarts. A file that fails validation seeds nothing and is logged; the Admin service still starts (library calls then see an empty library). An unreachable database at start leaves the service without a library (calls answer `REFUSED`).
 - **Web.** `IAdminClient` has the same fifteen calls (`ListFragmentsAsync`, `GetFragmentAsync`, `CreateFragmentAsync`, ...); `Get*` returns null for an unknown id; the reply result carries every branch above; exceptions as for rooms (`CoreRefusedException`, `CoreUnavailableException`). `FakeAdminClient` (MUD.Web.Tests) implements them with in-memory dictionaries and the same version rule.
 
+## Areas (`ListAreas`, `GetArea`, `CreateArea`, `UpdateArea`, `DeleteArea`)
+
+Backend of the website Areas page and of every area dropdown. Logic: `MUD.Core/Administration/AdminApi.Areas.cs`; storage seam `IAreaStore`
+(`MongoAreaStore` in production, an in-memory fake in tests) in `MUD.Core/Areas/AreaStore.cs`; field rules `MUD.Data/AreaRules.cs`.
+
+- **Entity.** Mongo collection `area`: `_id` = the area prefix (a `RoomRules.CheckAreaPrefix` prefix, immutable), `name` (required, one line,
+  at most 100 characters, no control characters), `description` (optional, one line, at most 200, no control characters), plus `updatedAt`
+  and `updatedBy`. Text is normalised like room text (trailing whitespace trimmed). Areas are organisational for the back end and usually
+  line up with regions of the game; `Room.Area` stays a string equal to the key prefix.
+- **Roles.** All five calls: creator or admin (token checked per call, role re-read; status codes as in the table above). Writes run on the
+  game thread with the token check, via `Mutate`.
+- **Contract.** `AreaRecord { id, name, description, room_count }`; `room_count` is filled by core on every read and reply and ignored on
+  input. `ListAreas(TokenRequest) -> ListAreasReply` (ordered by id), `GetArea(AreaIdRequest) -> GetAreaReply { found, area }`,
+  `CreateArea` / `UpdateArea(SaveAreaRequest) -> AreaEditReply`, `DeleteArea(AreaIdRequest) -> AreaEditReply`.
+- **Reads** answer from the stored records; `room_count` counts the rooms whose `Area` equals the id (the live room wins over a stored copy that
+  is still queued for the database, as in `ListRooms`). With no area store the list is empty and `GetArea` says not found; if the database
+  throws, the call answers gRPC `Unavailable` (not an empty list).
+- **Results** (`AreaEditReply.result`; nothing is audited for a refusal or a no-change; messages are fixed sentences, no input echoed):
+
+  | result | when |
+  |---|---|
+  | `OK` | written; `area` is the record as stored |
+  | `NO_CHANGE` | update where name and description equal the stored ones |
+  | `INVALID` | field rules broken; `errors` lists `Id`, `Name`, `Description` with fixed sentences (nothing echoed) |
+  | `NOT_FOUND` | update or delete of an unknown id (also when the record vanished between the check and the write) |
+  | `ALREADY_EXISTS` | create with a taken id (also when another writer created it between the check and the write) |
+  | `REFUSED` | delete while rooms still use the area (the message names the count: "3 rooms still use this area. ..."); or no area store is available |
+  | `AUDIT_FAILED` | the audit rows could not be written; nothing was changed |
+  | `FAILED` | the database read or write failed (the audit rows are marked rejected for a failed write) |
+
+- **Update changes name and description only.** The id is the key: an update of an id that has no record is `NOT_FOUND`, never a rename. Renaming
+  an area means moving its rooms (`MoveRoom`), which is out of scope here and said so on the page.
+- **Delete is refused while any room uses the area.** The count is the number of rooms with `Area` equal to the id. Item templates will be
+  counted too once they exist and carry an area (a one-line addition to `RemoveArea`; not built, there is no item template entity yet).
+- **Audit first**, entity `area`, `entity_id` = the prefix. Update: one row per changed field (`name`, `description`, old and new text). Create:
+  one `*create*` row, new = the whole document. Delete: one `*delete*` row, old = the whole document. Rows are inserted before the write and
+  marked applied or rejected after; no row, no write.
+- **Rooms need a record.** `CreateRoom` and `MoveRoom` answer `INVALID` (field `Area` / `NewArea`, "There is no area with that prefix. Create the
+  area first.") when the area has no record. The website uses dropdowns, so this is a backstop. It is checked only after the prefix itself is
+  valid, and not at all when core runs without an area store. `UpdateRoom` does not change a room's area, so it is not checked.
+- **Backfill on start.** `World.CreateAdminApi` runs `AreaBackfill.Run` after the startup import: every distinct `Room.Area` without a record
+  gets one (`name` = a readable form of the prefix, `sample_area` -> `Sample area`; empty description). `IAreaStore.Insert` refuses an id that
+  exists, so it is idempotent and never overwrites. A room area that is not a valid prefix (legacy data) gets no record and is counted in
+  the log line. The importer creates the record for a file's area on its own, using the file's name and description (specs/ROOM_FILES.md 4.1);
+  it never overwrites one either.
+- **Web.** `IAdminClient` has `ListAreasAsync`, `GetAreaAsync` (null for an unknown id), `CreateAreaAsync`, `UpdateAreaAsync`, `DeleteAreaAsync`; the reply
+  result carries every branch above; exceptions as for rooms. `FakeAdminClient` (MUD.Web.Tests) implements them with an in-memory dictionary.
+
 ## Not verified here
+
+Areas: `MongoAreaStore` (the collection, duplicate-key handling on insert) and the real backfill on start in `World.CreateAdminApi` were not run
+against a database; the tests use an in-memory `IAreaStore`.
 
 Terrain library: `MongoLibraryStore` (collections, the multikey indexes, `$inc` of the version, duplicate-key handling) and the real seed-on-start path in `World.CreateAdminApi` were not run against a database; the library tests use an in-memory `ILibraryStore`.
 

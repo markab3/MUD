@@ -86,6 +86,16 @@ namespace MUD.Core.Administration
 
         public override Task<LibraryEditReply> DeleteNeighborPhrase(LibraryIdRequest request, ServerCallContext context) { return Run(() => _api.DeleteNeighborPhrase(request)); }
 
+        public override Task<ListAreasReply> ListAreas(TokenRequest request, ServerCallContext context) { return Run(() => _api.ListAreas(request)); }
+
+        public override Task<GetAreaReply> GetArea(AreaIdRequest request, ServerCallContext context) { return Run(() => _api.GetArea(request)); }
+
+        public override Task<AreaEditReply> CreateArea(SaveAreaRequest request, ServerCallContext context) { return Run(() => _api.CreateArea(request)); }
+
+        public override Task<AreaEditReply> UpdateArea(SaveAreaRequest request, ServerCallContext context) { return Run(() => _api.UpdateArea(request)); }
+
+        public override Task<AreaEditReply> DeleteArea(AreaIdRequest request, ServerCallContext context) { return Run(() => _api.DeleteArea(request)); }
+
         public override Task<GenerationReply> RegenerateMap(RegenerateMapRequest request, ServerCallContext context) { return Run(() => _api.RegenerateMap(request)); }
 
         public override Task<GenerationReply> RegenerateRooms(RegenerateRoomsRequest request, ServerCallContext context) { return Run(() => _api.RegenerateRooms(request)); }

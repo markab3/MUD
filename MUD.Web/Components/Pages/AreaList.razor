@@ -1,0 +1,172 @@
+@page "/creator/areas"
+@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@inject IAdminClient Core
+@inject NoticeService Notices
+<PageTitle>Areas - Planar Realms</PageTitle>
+<h1>Areas</h1>
+@if (_presenter == null)
+{
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else
+{
+    var p = _presenter;
+    <p class="mud-hint">@AreaListPresenter.Help</p>
+    @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
+    @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
+    @if (!p.FormOpen)
+    {
+        <div class="mud-actions">
+            <button type="button" class="mud-btn mud-btn-primary" id="ar-new" disabled="@_busy" @onclick="p.BeginNew">New area</button>
+        </div>
+    }
+    else
+    {
+        <section class="mud-section" aria-labelledby="ar-form-h">
+            <h2 id="ar-form-h">@(p.IsNew ? "New area" : "Edit area")</h2>
+            @if (p.Problems.Count > 0)
+            {
+                <ul role="alert" class="mud-error">
+                    @foreach (var m in p.Problems) { <li>@m</li> }
+                </ul>
+            }
+            <form @onsubmit="SaveAsync" @onsubmit:preventDefault novalidate>
+                <div class="mud-field"><label for="ar-id">Prefix</label>
+                    @if (p.IsNew)
+                    {
+                        <input id="ar-id" value="@p.FormId" @onchange="e => p.FormId = e.Value?.ToString()" maxlength="128" required autocomplete="off" autocapitalize="none" />
+                        <span class="mud-hint">(lowercase letters, digits and '_'; fixed once created)</span>
+                    }
+                    else
+                    {
+                        <input id="ar-id" value="@p.EditingId" readonly="readonly" maxlength="128" />
+                        <span class="mud-hint">(fixed: renaming an area means moving its rooms)</span>
+                    }</div>
+                <div class="mud-field"><label for="ar-name">Name</label>
+                    <input id="ar-name" value="@p.FormName" @onchange="e => p.FormName = e.Value?.ToString()" maxlength="@MUD.Data.AreaRules.MaxName" required autocomplete="off" /></div>
+                <div class="mud-field"><label for="ar-desc">Short description</label>
+                    <input id="ar-desc" value="@p.FormDescription" @onchange="e => p.FormDescription = e.Value?.ToString()" maxlength="@MUD.Data.AreaRules.MaxDescription" autocomplete="off" />
+                    <span class="mud-hint">(optional, at most @MUD.Data.AreaRules.MaxDescription characters)</span></div>
+                <div class="mud-actions">
+                    <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Save</button>
+                    <button type="button" class="mud-btn" @onclick="p.CancelForm">Cancel</button>
+                </div>
+            </form>
+        </section>
+    }
+    @if (_confirm != null)
+    {
+        <ConfirmDialog Label="Confirm delete" Text="@(AreaListPresenter.DeleteConfirm + " (" + _confirm.Id + ")")" ConfirmText="Delete"
+                       Busy="_busy" OnConfirm="ConfirmDeleteAsync" OnCancel="CancelDelete" />
+    }
+
+    @* Wide screens: a table. Under 600px: the same rows as stacked cards (mobile.css switches them; no round trip). *@
+    <div class="mud-table-wrap">
+        <table class="mud-table">
+            <thead><tr><th>Prefix</th><th>Name</th><th>Description</th><th>Rooms</th><th>Actions</th></tr></thead>
+            <tbody>
+            @foreach (var a in p.Areas)
+            {
+                <tr>
+                    <td>@a.Id</td>
+                    <td>@a.Name</td>
+                    <td>@a.Description</td>
+                    <td>@a.RoomCount</td>
+                    <td>
+                        <div class="mud-actions">
+                            <button type="button" class="mud-btn" data-mutating disabled="@_busy" @onclick="() => Edit(a.Id)">Edit</button>
+                            <button type="button" class="mud-btn mud-btn-danger" data-mutating disabled="@_busy" @onclick="() => Ask(a)">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+            @if (p.Areas.Count == 0)
+            {
+                <tr><td colspan="5">There are no areas.</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+    <ul class="mud-cardlist mud-cards">
+        @foreach (var a in p.Areas)
+        {
+            <li>
+                <strong class="mud-card-title">@a.Name</strong>
+                <dl class="mud-facts">
+                    <dt>Prefix</dt><dd>@a.Id</dd>
+                    <dt>Description</dt><dd>@a.Description</dd>
+                    <dt>Rooms</dt><dd>@a.RoomCount</dd>
+                </dl>
+                <div class="mud-actions">
+                    <button type="button" class="mud-btn" data-mutating disabled="@_busy" @onclick="() => Edit(a.Id)">Edit</button>
+                    <button type="button" class="mud-btn mud-btn-danger" data-mutating disabled="@_busy" @onclick="() => Ask(a)">Delete</button>
+                </div>
+            </li>
+        }
+        @if (p.Areas.Count == 0)
+        {
+            <li>There are no areas.</li>
+        }
+    </ul>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private AreaListPresenter? _presenter;
+    private Contracts.AreaRecord? _confirm;
+    private string _token = string.Empty;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _token = (await AuthState).User.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
+        var presenter = new AreaListPresenter(Core, _token);
+        await presenter.LoadAsync();
+        presenter.Notice = Notices.Take();
+        _presenter = presenter;
+    }
+
+    private void Edit(string id) => _presenter?.BeginEdit(id);
+
+    private void Ask(Contracts.AreaRecord area) => _confirm = area;
+
+    private void CancelDelete() => _confirm = null;
+
+    // One write at a time: a double tap cannot send two requests.
+    private async Task SaveAsync()
+    {
+        if (_busy || _presenter == null) { return; }
+        _busy = true;
+        try
+        {
+            var p = _presenter;
+            if (await p.SaveAsync() == AreaOutcome.Ok)
+            {
+                var notice = p.Notice;
+                await p.LoadAsync();
+                p.Notice = notice;
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ConfirmDeleteAsync()
+    {
+        var area = _confirm;
+        if (_busy || area == null || _presenter == null) { return; }
+        _busy = true;
+        _confirm = null;
+        try
+        {
+            var p = _presenter;
+            if (await p.DeleteAsync(area.Id) == AreaOutcome.Ok)
+            {
+                var notice = p.Notice;
+                await p.LoadAsync();
+                p.Notice = notice;
+            }
+        }
+        finally { _busy = false; }
+    }
+}

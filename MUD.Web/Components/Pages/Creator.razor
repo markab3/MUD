@@ -6,7 +6,7 @@
 @inject DraftStore Drafts
 <PageTitle>Create room - Planar Realms</PageTitle>
 <h1>Create room</h1>
-<p>Create a room. The stored key is the area prefix, a dot, then the room key. More exits can be added on the room's edit page afterwards.</p>
+<p>Create a room. Choose its area first: the stored key is the area prefix, a dot, then the room key you type. More exits can be added on the room's edit page afterwards. Areas are managed on the <a class="mud-link" href="@WebRoutes.Areas">Areas page</a>.</p>
 @if (_presenter == null)
 {
     <p class="mud-loading" aria-busy="true">Loading...</p>
@@ -35,8 +35,17 @@ else
     }
     <form @onsubmit="SubmitAsync" @onsubmit:preventDefault novalidate>
         @{ var f = _presenter.Form; }
+        <div class="mud-field"><label for="cr-area">Area</label>
+            <select id="cr-area" @onchange="e => Edit(() => f.Area = e.Value?.ToString())" required>
+                @if (!_presenter.AreaChosen) { <option value="" selected="selected">(choose an area)</option> }
+                @foreach (var a in _presenter.Areas) { <option value="@a.Id" selected="@(a.Id == f.Area)">@AreaLabel(a)</option> }
+            </select>
+            @foreach (var m in _presenter.ErrorsFor("Area")) { <span class="mud-error">@m</span> }</div>
         <div class="mud-field"><label for="cr-key">Room key</label>
-            <input id="cr-key" value="@f.Key" @onchange="e => Edit(() => f.Key = e.Value?.ToString())" maxlength="64" required autocomplete="off" autocapitalize="none" />
+            <span class="mud-keyrow">
+                <span class="mud-keyprefix" id="cr-prefix" aria-hidden="true">@_presenter.KeyPrefix</span>
+                <input id="cr-key" value="@f.Key" @onchange="e => Edit(() => f.Key = e.Value?.ToString())" maxlength="64" required autocomplete="off" autocapitalize="none" aria-describedby="cr-prefix" />
+            </span>
             @foreach (var m in _presenter.ErrorsFor("Key")) { <span class="mud-error">@m</span> }</div>
         <div class="mud-field"><label for="cr-short">Short description</label>
             <input id="cr-short" value="@f.Short" @onchange="e => Edit(() => f.Short = e.Value?.ToString())" maxlength="100" required />
@@ -44,12 +53,6 @@ else
         <div class="mud-field"><label for="cr-long">Long description</label>
             <textarea id="cr-long" value="@f.Long" @onchange="e => Edit(() => f.Long = e.Value?.ToString())" maxlength="4000" rows="6" required></textarea>
             @foreach (var m in _presenter.ErrorsFor("Long")) { <span class="mud-error">@m</span> }</div>
-        <div class="mud-field"><label for="cr-area">Area prefix</label>
-            <input id="cr-area" value="@f.Area" @onchange="e => Edit(() => f.Area = e.Value?.ToString())" maxlength="128" required list="cr-area-list" autocomplete="off" autocapitalize="none" />
-            @foreach (var m in _presenter.ErrorsFor("Area")) { <span class="mud-error">@m</span> }</div>
-        <datalist id="cr-area-list">
-            @foreach (var a in _presenter.Areas) { <option value="@a"></option> }
-        </datalist>
         <div class="mud-coords">
             <div class="mud-field"><label for="cr-x">X</label>
                 <input id="cr-x" type="number" inputmode="numeric" value="@f.X" @onchange="e => Edit(() => f.X = ParseInt(e.Value))" /></div>
@@ -100,6 +103,9 @@ else
 
     private IEnumerable<string> ExitErrors(int i) =>
         _presenter!.ErrorsFor("Exits[" + i + "].Dir").Concat(_presenter.ErrorsFor("Exits[" + i + "].To"));
+
+    // "prefix - Name": the prefix is what the key starts with, the name says which region it is.
+    private static string AreaLabel(Contracts.AreaRecord a) => string.IsNullOrWhiteSpace(a.Name) ? a.Id : a.Id + " - " + a.Name;
 
     private static bool IsBlank(RoomForm f) =>
         string.IsNullOrEmpty(f.Key) && string.IsNullOrEmpty(f.Short) && string.IsNullOrEmpty(f.Long) && string.IsNullOrEmpty(f.Area)

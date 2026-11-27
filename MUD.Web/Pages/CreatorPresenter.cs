@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using MUD.Contracts;
 using MUD.Web.Services;
 
 namespace MUD.Web.Pages;
@@ -22,7 +23,14 @@ public sealed class CreatorPresenter
     public RoomForm Form { get; set; }
     public string? Error { get; private set; }
     public string? CreatedKey { get; private set; }
-    public IReadOnlyList<string> Areas { get; private set; } = Array.Empty<string>();
+    // The area records the dropdown offers (prefix + name), sorted by prefix.
+    public IReadOnlyList<AreaRecord> Areas { get; private set; } = Array.Empty<AreaRecord>();
+
+    // True when the chosen area is one of the offered areas; the key prefix shown before the local key is only meaningful then.
+    public bool AreaChosen => !string.IsNullOrEmpty(Form.Area) && Areas.Any(a => a.Id == Form.Area);
+
+    // The fixed text shown before the local key (e.g. "sample_area."), empty until an area is chosen.
+    public string KeyPrefix => AreaChosen ? Form.Area + "." : string.Empty;
 
     // Field-level problems, as (form property path, message); an empty path is a summary-only message.
     public List<RoomFieldError> Errors { get; } = new();

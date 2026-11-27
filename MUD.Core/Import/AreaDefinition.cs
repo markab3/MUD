@@ -9,6 +9,9 @@ namespace MUD.Core.Import
 
         public string Name { get; set; }
 
+        // Optional one-line description from the area header; stored on the area record when the importer creates it (never overwrites).
+        public string Description { get; set; }
+
         public List<RoomDefinition> Rooms { get; set; } = new List<RoomDefinition>();
     }
 

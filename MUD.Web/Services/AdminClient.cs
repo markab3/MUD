@@ -102,6 +102,19 @@ public interface IAdminClient
     Task<LibraryEditReply> UpdateNeighborPhraseAsync(string token, NeighborPhraseRecord phrase, CancellationToken cancellation = default);
 
     Task<LibraryEditReply> DeleteNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default);
+
+    // Areas (creator or admin; specs/ADMIN_API.md "Areas"). Same exceptions as the room calls. Get returns null for an unknown id. Create,
+    // update and delete answer in the reply's result (Ok, NoChange, Invalid, NotFound, AlreadyExists, Refused, AuditFailed, Failed). Delete is
+    // Refused while rooms still use the area (the message names the count). The id (prefix) never changes; update changes name and description only.
+    Task<IReadOnlyList<AreaRecord>> ListAreasAsync(string token, CancellationToken cancellation = default);
+
+    Task<AreaRecord?> GetAreaAsync(string token, string id, CancellationToken cancellation = default);
+
+    Task<AreaEditReply> CreateAreaAsync(string token, AreaRecord area, CancellationToken cancellation = default);
+
+    Task<AreaEditReply> UpdateAreaAsync(string token, AreaRecord area, CancellationToken cancellation = default);
+
+    Task<AreaEditReply> DeleteAreaAsync(string token, string id, CancellationToken cancellation = default);
 }
 
 // Core refused the session token (SessionEnded: unknown, revoked, or its player is retired) or the caller's current role is too low.
@@ -354,6 +367,24 @@ public sealed class GrpcAdminClient : IAdminClient
 
     public Task<LibraryEditReply> DeleteNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default) =>
         Call(() => _client.DeleteNeighborPhraseAsync(new LibraryIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public async Task<IReadOnlyList<AreaRecord>> ListAreasAsync(string token, CancellationToken cancellation = default) =>
+        (await Call(() => _client.ListAreasAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Areas.ToList();
+
+    public async Task<AreaRecord?> GetAreaAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        var reply = await Call(() => _client.GetAreaAsync(new AreaIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+        return reply.Found ? reply.Area : null;
+    }
+
+    public Task<AreaEditReply> CreateAreaAsync(string token, AreaRecord area, CancellationToken cancellation = default) =>
+        Call(() => _client.CreateAreaAsync(new SaveAreaRequest { Token = token ?? string.Empty, Area = area }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<AreaEditReply> UpdateAreaAsync(string token, AreaRecord area, CancellationToken cancellation = default) =>
+        Call(() => _client.UpdateAreaAsync(new SaveAreaRequest { Token = token ?? string.Empty, Area = area }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<AreaEditReply> DeleteAreaAsync(string token, string id, CancellationToken cancellation = default) =>
+        Call(() => _client.DeleteAreaAsync(new AreaIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
 
     // Unauthenticated and PermissionDenied are core's answers about the caller; any other failure means core could not answer.
     private static async Task<T> Call<T>(Func<Grpc.Core.AsyncUnaryCall<T>> call)

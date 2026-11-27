@@ -204,3 +204,9 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-collapse > .mud-section-body { padding: 4px 12px 12px; min-width: 0; }
 .mud-collapse.mud-danger { border-color: var(--mud-red); border-top-width: 2px; padding-top: 0; }
 .mud-collapse.mud-danger > summary { color: var(--mud-red); }
+
+/* Area dropdowns: the fixed key prefix sits before the local key input (palette variables only; the input keeps its 44px height). */
+.mud-keyrow { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.mud-keyprefix { flex: 0 1 auto; min-height: var(--mud-hit); display: inline-flex; align-items: center; padding: 0 8px; box-sizing: border-box; overflow-wrap: anywhere; background: var(--mud-page); border: 1px solid var(--mud-border-soft); border-radius: 6px; color: var(--mud-text-soft); font-family: monospace; }
+.mud-keyprefix:empty { display: none; }
+.mud-keyrow input { flex: 1 1 8rem; min-width: 0; }

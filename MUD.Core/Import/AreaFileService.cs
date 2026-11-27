@@ -60,6 +60,8 @@ namespace MUD.Core.Import
         {
             lines.Add(area + ": " + result.Summary());
             foreach (var error in result.Errors) { lines.Add("  error: " + error); }
+            if (result.AreaRecord == "created") { lines.Add("  created the area record for '" + area + "'."); }
+            if (result.AreaRecordNote != null) { lines.Add("  note: " + result.AreaRecordNote); }
             if (result.Success)
             {
                 foreach (var plan in result.Plan.Where(p => p.Action != ImportAction.Unchanged))

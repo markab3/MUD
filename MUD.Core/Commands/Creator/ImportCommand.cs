@@ -16,9 +16,9 @@ namespace MUD.Core.Commands
 
         public string HelpText { get => "Import an area file from the content directory. Only authored definition fields are overwritten; items and other runtime state are kept. A behavior entry in the file whose hook, module and type already exist on the stored room is reported and skipped; add 'replace' to replace it. Rooms of a generated map (see 'genmap') are regenerated: their description, features, properties and behaviors are replaced by the file's, hand edits included; exits are kept in step with the map and items and occupants are kept.\r\n\r\nSyntax: import <area> [dry] [replace]"; }
 
-        public ImportCommand(IRoomRepository roomRepository, WorldSettings settings)
+        public ImportCommand(IRoomRepository roomRepository, WorldSettings settings, MongoDB.Driver.IMongoDatabase database)
         {
-            _service = new AreaFileService(new AreaImporter(new RoomRepositoryImportStore(roomRepository)), settings.ContentDirectory);
+            _service = new AreaFileService(new AreaImporter(new RoomRepositoryImportStore(roomRepository), new MUD.Core.Areas.MongoAreaStore(database)), settings.ContentDirectory);
         }
 
         public object[] ParseCommand(Living commandIssuer, string input)

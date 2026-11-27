@@ -122,12 +122,33 @@ area:
   schema_version: 1          # required, integer
   prefix: tower_of_aellioc   # required, key prefix (section 3)
   name: "Tower of Aellioc"   # required, display name
-  description: "..."         # optional, free text for builders
+  description: "..."         # optional, one line, at most 200 characters; stored on the area record (see below)
   defaults:                  # optional, shared defaults applied to each room
     coords:
       z: 0                   # default z (see section 10)
     properties: []           # property configs added to EVERY room (rare)
 ```
+
+**The area record (collection `area`).** An area is also a stored entity: `_id` is the prefix, plus `name` and `description`
+(specs/ADMIN_API.md "Areas"). The website lists and edits these records and offers them in every area dropdown. The importer treats the
+header like this:
+
+- `AreaDefinition` carries `Prefix`, `Name` and `Description` (the parser now keeps `description`; it used to be read and dropped).
+- When a file is imported for real (not a dry run) and no record with that prefix exists, the importer **creates** it from the file's `name`
+  and `description`. A name or description that the record rules refuse (name over 100 characters, description over 200, control
+  characters) does not fail the import: the record gets a readable name made from the prefix (`sample_area` -> `Sample area`) and/or an empty
+  description, and the import report says so.
+- When a record already exists the importer **never overwrites it**: web edits win over the file, on every import, whatever the file says.
+  The report line for the area shows no change. To change a stored name or description, use the Areas page.
+- A dry run, and an import that fails validation, write no record. The record is written just before the rooms; if it cannot be
+  written the rooms are still imported and the report carries a note (re-run the import to create it).
+- The same rule holds for the generators and `regen`: they never touch the record.
+- Core also makes sure every distinct `Room.Area` has a record on start (after the startup import, so the file's own name and description
+  win over the readable-name fallback); see specs/ADMIN_API.md "Areas".
+- Renaming an area's prefix is not an operation: it means moving the rooms (`MoveRoom`), and the old record is then deleted by hand once
+  it has no rooms.
+- The exporter still writes the header from the rooms alone: `name` is the prefix as a placeholder (set it by hand). It does not read
+  the area record (not changed in this card).
 
 `defaults` rules:
 - Only the listed sub-keys are allowed. A default applies to a room only when

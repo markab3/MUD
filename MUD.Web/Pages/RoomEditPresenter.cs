@@ -178,16 +178,15 @@ public sealed class RoomEditPresenter
         }
     }
 
-    // Existing area prefixes for the move form's suggestions; none when core cannot answer.
-    public async Task<IReadOnlyList<string>> GetAreasAsync(CancellationToken cancellation = default)
+    // The area records for the move form's dropdown; none when core cannot answer.
+    public async Task<IReadOnlyList<AreaRecord>> GetAreasAsync(CancellationToken cancellation = default)
     {
         try
         {
-            var rooms = await _core.ListRoomsAsync(_token, cancellation);
-            return rooms.Select(r => r.Area).Where(a => !string.IsNullOrWhiteSpace(a)).Distinct(StringComparer.Ordinal).OrderBy(a => a, StringComparer.Ordinal).ToList();
+            return (await _core.ListAreasAsync(_token, cancellation)).OrderBy(a => a.Id, StringComparer.Ordinal).ToList();
         }
-        catch (CoreUnavailableException) { return Array.Empty<string>(); }
-        catch (CoreRefusedException) { return Array.Empty<string>(); }
+        catch (CoreUnavailableException) { return Array.Empty<AreaRecord>(); }
+        catch (CoreRefusedException) { return Array.Empty<AreaRecord>(); }
     }
 
     // Gives the room a new key (area prefix and/or local key). Players inside, contents and exits that led here follow it.

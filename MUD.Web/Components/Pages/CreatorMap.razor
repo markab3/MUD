@@ -27,7 +27,7 @@ else
             <select id="map-area" value="@_presenter.Area" @onchange="OnAreaChanged">
                 @foreach (var a in _presenter.Areas)
                 {
-                    <option value="@a" selected="@(a == _presenter.Area)">@(a.Length == 0 ? "(no area)" : a)</option>
+                    <option value="@a" selected="@(a == _presenter.Area)">@_presenter.LabelFor(a)</option>
                 }
             </select></div>
         <div class="mud-field"><label for="map-z">Level (Z)</label>

@@ -89,6 +89,7 @@ namespace MUD.Core.Import
                 _errors.Add(string.Format("area.prefix '{0}' is not a valid key prefix (lowercase letters, digits, '_', segments joined by '.').", area.Prefix));
             }
             area.Name = Scalar(node, "name", "area", true);
+            area.Description = Scalar(node, "description", "area", false);
 
             var defaults = Get(node, "defaults");
             if (defaults != null)
