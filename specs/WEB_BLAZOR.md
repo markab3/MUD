@@ -46,6 +46,8 @@ From the repo at `d5ed91a` (`hermes`).
 | `/creator/terrain` | `TerrainList` (145) | CreatorOrAdmin | tabs + filters over fragments / features / phrases; Delete per row |
 | `/creator/terrain/edit?kind=&id=` | `TerrainEdit` (194) + `TerrainLibrary.cs` (56) | CreatorOrAdmin | Get / Create / Update one library entity; `TempData["Notice"]` |
 | `/creator/areas` | `AreaList` (new, no Razor original) | CreatorOrAdmin | `ListAreas`, `CreateArea`, `UpdateArea`, `DeleteArea`; inline form, `ConfirmDialog` on delete |
+| `/creator/items` | `ItemTemplateList` (new) | CreatorOrAdmin | `ListAreas`, `ListItemTemplates`, `DeleteItemTemplate`; one `<details>` per area, text filter, `ConfirmDialog` on delete |
+| `/creator/items/edit` | `ItemTemplateEdit` (new) | CreatorOrAdmin | `ListAreas`, `GetItemTemplate`, `CreateItemTemplate`, `UpdateItemTemplate`; query `id` (edit) or `area` (new, preselects the dropdown) |
 
 Plus `Pages/Shared/_Layout.cshtml`: a bare `<nav>`; **no CSS, no stylesheet, no responsive layout exists today.** 14 pages.
 
@@ -221,7 +223,7 @@ reads `matchMedia` once through JS interop and subscribes to changes. Alternativ
 
 ### 5.2 Navigation
 
-Three labelled sections, in this order; a section with no visible items is not rendered (no empty headings): **Player** (signed in): Character, Change password; **Creator** (CreatorOrAdmin): Map, Modules, Terrain, Areas, Create room (the page at `/creator`, renamed from "Creator"; URL unchanged); **Admin** (admins only): Players. Log out (a POST form, never a link) follows the sections, outside them. The sections are `NavMenu.SectionsFor(creatorOrAdmin, admin)` in `MUD.Web/Pages/NavMenu.cs`; `NavShell.razor` renders each as an `<h2 id="mud-nav-<id>">` heading followed by a `<ul aria-labelledby="mud-nav-<id>">`, all inside the one `<nav aria-label="Main">`, so the dialog focus trap (which looks at all links and buttons in `#mud-menu`) and the 44px targets apply unchanged. The drawer has `overflow-y:auto` and full height, so a list taller than the viewport (360x640) scrolls inside the drawer. Players is admin only on the menu, the pages (`AdminOnly`) and the API.
+Three labelled sections, in this order; a section with no visible items is not rendered (no empty headings): **Player** (signed in): Character, Change password; **Creator** (CreatorOrAdmin): Map, Modules, Terrain, Areas, Items, Create room (the page at `/creator`, renamed from "Creator"; URL unchanged); **Admin** (admins only): Players. Log out (a POST form, never a link) follows the sections, outside them. The sections are `NavMenu.SectionsFor(creatorOrAdmin, admin)` in `MUD.Web/Pages/NavMenu.cs`; `NavShell.razor` renders each as an `<h2 id="mud-nav-<id>">` heading followed by a `<ul aria-labelledby="mud-nav-<id>">`, all inside the one `<nav aria-label="Main">`, so the dialog focus trap (which looks at all links and buttons in `#mud-menu`) and the 44px targets apply unchanged. The drawer has `overflow-y:auto` and full height, so a list taller than the viewport (360x640) scrolls inside the drawer. Players is admin only on the menu, the pages (`AdminOnly`) and the API.
 
 - **Top bar** (`<header class="mud-topbar">`, sticky, at every width), left to right: a three-line menu button (44x44, `aria-label="Menu"`, `aria-haspopup="dialog"`, `aria-expanded`, `aria-controls="mud-menu"`), the site logo (`img/planar-realms-logo.png`, a luminance-keyed transparent PNG shown at 116x40 with `alt="Planar Realms"`, inside a link to `/` with a 44px minimum hit area; the `<title>` and `<PageTitle>` stay as words), and on the far right the signed-in user's name as a link to `/character`. The name is one line and truncates with an ellipsis (`min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap`), so there is no horizontal scroll at 360px however long the name. **Anonymous visitors** (login page, access denied before sign-in) get the bar with the logo only: no button, no name, no menu.
 - **Pull-out menu**: `#mud-menu`, `role="dialog" aria-modal="true"` around a `<nav aria-label="Main">`, slides in from the left (`transform` transition, 0.25s; no animation under `prefers-reduced-motion`) over a dimmed backdrop. Closed, it is `visibility:hidden` so it is neither focusable nor read. Width `min(280px, 85vw)`.
@@ -532,3 +534,19 @@ The list renders a table and a card list from the same rows (CSS, 600px, as the 
 Every area text box is now a real `<select>` fed by `ListAreas`: Create room `#cr-area` (placed before the local key `#cr-key`), Move room `#re-newarea` (preselected to the room's current area), and the map's `#map-area` (area records plus any room area without a record, so empty areas appear). Option text is "prefix - Name". Choosing an area shows its prefix as fixed text before the local key input (`#cr-prefix`, `#re-newprefix`; `aria-hidden` on the text, the input points at it with `aria-describedby`), so "key prefix = area" holds by construction; it is empty until an area is chosen or when the room's own area has no record (placeholder option "(choose an area)"). `#re-area` stays read-only text. `.mud-keyrow` / `.mud-keyprefix` in `mobile.css` lay the prefix and input out in one row (palette variables only; the prefix wraps rather than scrolling at 360px).
 `IRoomCreationService.ListAreasAsync` and `RoomEditPresenter.GetAreasAsync` now return `AreaRecord`s (they returned prefixes derived from `ListRooms`); they answer empty when core cannot, so the dropdown is then just the placeholder.
 Not verified here: layout at 360px and touch targets in a real browser, and the screen-reader reading order of the prefix and input (no browser in the run); the rendered HTML is asserted in `AreaWebTests`.
+
+## Appendix G. Item template pages as built (card t_ae0cd319)
+
+Components: `/creator/items` (`ItemTemplateList.razor`, `ItemTemplateListPresenter`) and `/creator/items/edit` (`ItemTemplateEdit.razor`,
+`ItemTemplateEditPresenter`), new pages with no Razor Pages original. Policy `CreatorOrAdmin`; the shell's Creator section gets an Items link after Areas
+(`WebRoutes.ItemTemplates`, `ItemTemplateEdit(id, area)`). Backend: `specs/ADMIN_API.md` "Item templates"; page behaviour: `specs/WEB.md` "Item templates
+pages"; the entity: `specs/ITEM_TEMPLATES.md`.
+
+The list groups the templates by area in native `<details>` elements (no script; the `.mud-collapse` 44px summary holds the area name, prefix and a
+count). The filter is a form submit that sets `ItemTemplateListPresenter.Filter`; there is no round trip to core for it. The edit page's id and area
+come from the query string only; a new template composes its id from the `#it-area` dropdown and the local key (`.mud-keyrow`, as Create room does), an
+existing one writes its original id and area (neither has a setter the form can reach). The presenter checks only that JSON text parses as an object
+(`ItemTemplateWords.CheckJsonObject`); core validates everything else. Component data and behavior configs are shown indented and sent as typed (core
+re-serialises them compactly). No draft storage (the terrain editor's `DraftStore`) is used here.
+
+Not verified here: layout at 360px and touch targets in a real browser (none in the run); the rendered HTML is asserted in `ItemTemplateWebTests`.

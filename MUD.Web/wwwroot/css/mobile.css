@@ -210,3 +210,12 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-keyprefix { flex: 0 1 auto; min-height: var(--mud-hit); display: inline-flex; align-items: center; padding: 0 8px; box-sizing: border-box; overflow-wrap: anywhere; background: var(--mud-page); border: 1px solid var(--mud-border-soft); border-radius: 6px; color: var(--mud-text-soft); font-family: monospace; }
 .mud-keyprefix:empty { display: none; }
 .mud-keyrow input { flex: 1 1 8rem; min-width: 0; }
+
+/* Item templates: one collapsible group per area; the count sits at the end of the summary row. */
+.mud-itemgroup { margin-bottom: 8px; }
+.mud-itemgroup > summary { justify-content: space-between; }
+.mud-itemgroup-title { min-width: 0; overflow-wrap: anywhere; }
+.mud-itemgroup-count { flex: 0 0 auto; min-width: 2ch; text-align: right; color: var(--mud-text-soft); }
+.mud-code { font-family: monospace; }
+.mud-preview-long { white-space: pre-wrap; overflow-wrap: anywhere; }
+fieldset.mud-behavior { min-width: 0; margin: 0 0 12px; }

@@ -1,0 +1,177 @@
+@page "/creator/items/edit"
+@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@inject IAdminClient Core
+@inject NavigationManager Navigation
+@inject NoticeService Notices
+<PageTitle>Item template - Planar Realms</PageTitle>
+@if (_presenter == null)
+{
+    <h1>Item template</h1>
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else if (_presenter.IsMissing)
+{
+    <h1>Item template</h1>
+    <p role="alert" class="mud-error">@_presenter.Error</p>
+    <p><a class="mud-btn" href="@WebRoutes.ItemTemplates">Back to the item templates</a></p>
+}
+else
+{
+    var p = _presenter;
+    <h1>@(p.IsNew ? "New item template" : "Edit item template")</h1>
+    <p><a class="mud-btn" href="@WebRoutes.ItemTemplates">Back to the item templates</a></p>
+    @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
+    @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
+    @if (p.Problems.Count > 0)
+    {
+        <ul role="alert" class="mud-error">
+            @foreach (var m in p.Problems) { <li>@m</li> }
+        </ul>
+    }
+    <form @onsubmit="SaveAsync" @onsubmit:preventDefault novalidate>
+        @if (p.IsNew)
+        {
+            <div class="mud-field"><label for="it-area">Area</label>
+                <select id="it-area" @onchange="e => p.NewArea = e.Value?.ToString()" required>
+                    <option value="" selected="@string.IsNullOrEmpty(p.NewArea)">Choose an area...</option>
+                    @foreach (var a in p.Areas) { <option value="@a.Id" selected="@(a.Id == p.NewArea)">@AreaLabel(a)</option> }
+                </select></div>
+            <div class="mud-field"><label for="it-local">Template key</label>
+                <span class="mud-keyrow">
+                    <span class="mud-keyprefix" id="it-prefix" aria-hidden="true">@p.KeyPrefix</span>
+                    <input id="it-local" value="@p.NewLocal" @onchange="e => p.NewLocal = e.Value?.ToString()" maxlength="64" required autocomplete="off" autocapitalize="none" aria-describedby="it-prefix" />
+                </span>
+                <span class="mud-hint">(lowercase letters, digits and '_'; fixed once created)</span></div>
+        }
+        else
+        {
+            <div class="mud-field"><label for="it-id">Id</label>
+                <input id="it-id" value="@p.OriginalId" readonly="readonly" />
+                <span class="mud-hint">(fixed: the id is the area prefix and the key)</span></div>
+            <p>Area: <strong>@p.StoredArea</strong>. Version: @p.Version. @p.VersionHint</p>
+        }
+        @if (p.IsNew) { <p>@p.VersionHint</p> }
+        <div class="mud-field"><label for="it-short">Short description</label>
+            <input id="it-short" value="@p.Short" @oninput="e => p.Short = e.Value?.ToString()" maxlength="100" required />
+            <span class="mud-hint">(one line, like "a rusty sword")</span></div>
+        <div class="mud-field"><label for="it-long">Long description</label>
+            <textarea id="it-long" value="@p.Long" @oninput="e => p.Long = e.Value?.ToString()" maxlength="4000" rows="4" required></textarea></div>
+        <div class="mud-field"><label for="it-handles">Handles</label>
+            <input id="it-handles" value="@p.Handles" @oninput="e => p.Handles = e.Value?.ToString()" autocomplete="off" autocapitalize="none" />
+            <span class="mud-hint">(the words a player types to name it; comma or space separated)</span></div>
+        <div class="mud-field"><label for="it-adjectives">Adjectives</label>
+            <input id="it-adjectives" value="@p.Adjectives" @oninput="e => p.Adjectives = e.Value?.ToString()" autocomplete="off" autocapitalize="none" />
+            <span class="mud-hint">(comma or space separated)</span></div>
+        <div class="mud-field"><label for="it-plurals">Plurals</label>
+            <input id="it-plurals" value="@p.Plurals" @oninput="e => p.Plurals = e.Value?.ToString()" autocomplete="off" autocapitalize="none" />
+            <span class="mud-hint">(plural forms of the handles; comma or space separated)</span></div>
+        <div class="mud-field"><label for="it-components">Component data</label>
+            <textarea id="it-components" class="mud-code" value="@p.Components" @oninput="e => p.Components = e.Value?.ToString()" rows="5" spellcheck="false" autocapitalize="none"></textarea>
+            <span class="mud-hint">(optional JSON object, at most @ItemTemplateEditPresenter.MaxComponentBytes bytes)</span></div>
+
+        <details class="mud-section mud-collapse" open="@(p.Behaviors.Count > 0)">
+            <summary><h2>Behaviors (@p.Behaviors.Count)</h2></summary>
+            <div class="mud-section-body">
+                <p class="mud-hint">A behavior entry binds a hook to code in a module. Only the entry is stored here; it is not checked against the modules that are running.</p>
+                @for (var n = 0; n < p.Behaviors.Count; n++)
+                {
+                    var index = n;
+                    var row = p.Behaviors[index];
+                    <fieldset class="mud-behavior" data-row="@index">
+                        <legend>Behavior @(index + 1)</legend>
+                        <div class="mud-field"><label for="@("it-b-hook-" + index)">Hook</label>
+                            <input id="@("it-b-hook-" + index)" value="@row.Hook" @oninput="e => row.Hook = e.Value?.ToString() ?? string.Empty" list="it-hooks" autocomplete="off" autocapitalize="none" /></div>
+                        <div class="mud-field"><label for="@("it-b-module-" + index)">Module</label>
+                            <input id="@("it-b-module-" + index)" value="@row.Module" @oninput="e => row.Module = e.Value?.ToString() ?? string.Empty" autocomplete="off" autocapitalize="none" /></div>
+                        <div class="mud-field"><label for="@("it-b-type-" + index)">Type</label>
+                            <input id="@("it-b-type-" + index)" value="@row.Type" @oninput="e => row.Type = e.Value?.ToString() ?? string.Empty" autocomplete="off" autocapitalize="none" /></div>
+                        <div class="mud-field"><label for="@("it-b-priority-" + index)">Priority</label>
+                            <input id="@("it-b-priority-" + index)" type="number" inputmode="numeric" value="@row.Priority" @onchange="e => row.Priority = ParseInt(e.Value, row.Priority)" /></div>
+                        <div class="mud-field"><label for="@("it-b-config-" + index)">Config</label>
+                            <textarea id="@("it-b-config-" + index)" class="mud-code" value="@row.Config" @oninput="e => row.Config = e.Value?.ToString() ?? string.Empty" rows="4" spellcheck="false" autocapitalize="none"></textarea>
+                            <span class="mud-hint">(JSON object; empty means {})</span></div>
+                        <div class="mud-actions"><button type="button" class="mud-btn mud-btn-danger" @onclick="() => p.RemoveBehavior(index)">Remove behavior @(index + 1)</button></div>
+                    </fieldset>
+                }
+                <datalist id="it-hooks">
+                    @foreach (var hook in ItemTemplateEditPresenter.KnownHooks) { <option value="@hook"></option> }
+                </datalist>
+                <div class="mud-actions"><button type="button" class="mud-btn" id="it-add-behavior" @onclick="p.AddBehavior">Add behavior</button></div>
+            </div>
+        </details>
+
+        <div class="mud-sticky-actions">
+            <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Save</button>
+        </div>
+    </form>
+
+    <section class="mud-section" aria-labelledby="it-preview-h" id="it-preview">
+        <h2 id="it-preview-h">Preview</h2>
+        <p class="mud-hint">How the item reads in a room or an inventory, and what a player can type to name it. Updates as you type.</p>
+        <p><strong id="it-preview-short">@(string.IsNullOrEmpty(p.PreviewShort) ? "(no short description yet)" : p.PreviewShort)</strong></p>
+        <p id="it-preview-long" class="mud-preview-long">@(string.IsNullOrEmpty(p.PreviewLong) ? "(no long description yet)" : p.PreviewLong)</p>
+        @if (p.MatchPhrases.Count == 0)
+        {
+            <p id="it-preview-match" class="mud-empty">With no handles a player cannot name this item.</p>
+        }
+        else
+        {
+            <p id="it-preview-match">A player can type: @string.Join(", ", p.MatchPhrases.Select(m => "\"" + m + "\""))@(p.MatchPhrasesTruncated ? ", ..." : string.Empty)</p>
+        }
+    </section>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "id")] public string? Id { get; set; }
+    // A new template opened from an area group starts with that area chosen.
+    [SupplyParameterFromQuery(Name = "area")] public string? AreaQuery { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private ItemTemplateEditPresenter? _presenter;
+    private string? _loadedFor;
+    private string _token = string.Empty;
+    private bool _busy;
+
+    private static string AreaLabel(Contracts.AreaRecord a) => string.IsNullOrWhiteSpace(a.Name) ? a.Id : a.Id + " - " + a.Name;
+
+    private static int ParseInt(object? value, int fallback) => int.TryParse(value?.ToString(), out var n) ? n : fallback;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var signature = Id + "|" + AreaQuery;
+        if (_loadedFor == signature) { return; }
+        _loadedFor = signature;
+        _token = (await AuthState).User.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
+        await LoadAsync(Notices.Take());
+    }
+
+    private async Task LoadAsync(string? notice)
+    {
+        var presenter = new ItemTemplateEditPresenter(Core, _token, Id);
+        await presenter.LoadAsync();
+        if (presenter.IsNew && presenter.Areas.Any(a => a.Id == AreaQuery)) { presenter.NewArea = AreaQuery; }
+        presenter.Notice = notice;
+        _presenter = presenter;
+    }
+
+    // One write at a time: a double tap cannot send two.
+    private async Task SaveAsync()
+    {
+        var p = _presenter;
+        if (_busy || p == null) { return; }
+        _busy = true;
+        try
+        {
+            var wasNew = p.IsNew;
+            var fullId = p.FullId;
+            var outcome = await p.SaveAsync();
+            if (outcome == ItemTemplateEditOutcome.Ok)
+            {
+                Notices.Set(p.Notice ?? "Saved.");
+                if (wasNew) { Navigation.NavigateTo(WebRoutes.ItemTemplateEdit(fullId)); }
+                else { await LoadAsync(Notices.Take()); }
+            }
+        }
+        finally { _busy = false; }
+    }
+}

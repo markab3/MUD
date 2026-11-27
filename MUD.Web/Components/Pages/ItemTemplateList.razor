@@ -1,0 +1,122 @@
+@page "/creator/items"
+@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@inject IAdminClient Core
+@inject NoticeService Notices
+<PageTitle>Item templates - Planar Realms</PageTitle>
+<h1>Item templates</h1>
+@if (_presenter == null)
+{
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else
+{
+    var p = _presenter;
+    <p class="mud-hint">@ItemTemplateListPresenter.Help</p>
+    @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
+    @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
+    <div class="mud-actions">
+        <a class="mud-btn mud-btn-primary" id="it-new" href="@WebRoutes.ItemTemplateEdit()">New item template</a>
+    </div>
+    <form class="mud-filter" @onsubmit="ApplyFilter" @onsubmit:preventDefault>
+        <div class="mud-field"><label for="it-filter">Filter</label>
+            <input id="it-filter" type="search" value="@_filterText" @oninput="e => _filterText = e.Value?.ToString()" maxlength="100" autocomplete="off" />
+            <span class="mud-hint">(matches the id, short description, handles and adjectives)</span></div>
+        <div class="mud-actions"><button type="submit" class="mud-btn mud-btn-primary">Filter</button></div>
+    </form>
+    @if (_confirm != null)
+    {
+        <ConfirmDialog Label="Confirm delete" Text="@(ItemTemplateListPresenter.DeleteConfirm + " (" + _confirm.Id + ")")" ConfirmText="Delete"
+                       Busy="_busy" OnConfirm="ConfirmDeleteAsync" OnCancel="CancelDelete" />
+    }
+
+    var groups = p.Groups;
+    @if (groups.Count == 0)
+    {
+        <p class="mud-empty">@(p.Filtering ? "No item template matches the filter." : "There are no areas yet. Create an area first, then add item templates to it.")</p>
+    }
+    @* One native details element per area: no script, a 44px summary. Groups are open while a filter is applied. *@
+    @foreach (var g in groups)
+    {
+        <details class="mud-section mud-collapse mud-itemgroup" open="@(p.Filtering)" @key="g.AreaId" data-area="@g.AreaId">
+            <summary>
+                <span class="mud-itemgroup-title"><strong>@g.Name</strong> <span class="mud-muted">(@g.AreaId)</span></span>
+                <span class="mud-itemgroup-count">@g.Items.Count</span>
+            </summary>
+            <div class="mud-section-body">
+                @if (!string.IsNullOrWhiteSpace(g.Description)) { <p class="mud-hint">@g.Description</p> }
+                @if (g.Items.Count == 0)
+                {
+                    <p class="mud-empty">No item templates in this area.</p>
+                }
+                <ul class="mud-cardlist">
+                    @foreach (var i in g.Items)
+                    {
+                        <li>
+                            <strong class="mud-card-title">@i.Short</strong>
+                            <dl class="mud-facts">
+                                <dt>Id</dt><dd>@i.Id</dd>
+                                <dt>Handles</dt><dd>@(i.Handles.Count == 0 ? "-" : string.Join(", ", i.Handles))</dd>
+                                <dt>Version</dt><dd>@i.Version</dd>
+                            </dl>
+                            <div class="mud-actions">
+                                <a class="mud-btn" href="@WebRoutes.ItemTemplateEdit(i.Id)">Edit</a>
+                                <button type="button" class="mud-btn mud-btn-danger" data-mutating disabled="@_busy" @onclick="() => Ask(i)">Delete</button>
+                            </div>
+                        </li>
+                    }
+                </ul>
+                <div class="mud-actions">
+                    <a class="mud-btn" href="@WebRoutes.ItemTemplateEdit(null, g.AreaId)">New item in @g.AreaId</a>
+                </div>
+            </div>
+        </details>
+    }
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private ItemTemplateListPresenter? _presenter;
+    private Contracts.ItemTemplateRecord? _confirm;
+    private string _token = string.Empty;
+    private string? _filterText;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _token = (await AuthState).User.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
+        var presenter = new ItemTemplateListPresenter(Core, _token);
+        await presenter.LoadAsync();
+        presenter.Notice = Notices.Take();
+        _presenter = presenter;
+    }
+
+    private void ApplyFilter()
+    {
+        if (_presenter != null) { _presenter.Filter = _filterText ?? string.Empty; }
+    }
+
+    private void Ask(Contracts.ItemTemplateRecord item) => _confirm = item;
+
+    private void CancelDelete() => _confirm = null;
+
+    // One write at a time: a double tap cannot send two requests.
+    private async Task ConfirmDeleteAsync()
+    {
+        var item = _confirm;
+        if (_busy || item == null || _presenter == null) { return; }
+        _busy = true;
+        _confirm = null;
+        try
+        {
+            var p = _presenter;
+            if (await p.DeleteAsync(item.Id) == ItemTemplateOutcome.Ok)
+            {
+                var notice = p.Notice;
+                await p.LoadAsync();
+                p.Notice = notice;
+            }
+        }
+        finally { _busy = false; }
+    }
+}

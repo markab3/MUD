@@ -32,6 +32,7 @@ public sealed class NavMenu
                 new NavItem("Modules", WebRoutes.Modules),
                 new NavItem("Terrain", WebRoutes.Terrain),
                 new NavItem("Areas", WebRoutes.Areas),
+                new NavItem("Items", WebRoutes.ItemTemplates),
                 new NavItem("Create room", WebRoutes.Creator, ExactMatch: true),
             }));
         }

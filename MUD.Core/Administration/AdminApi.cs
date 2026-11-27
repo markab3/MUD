@@ -91,9 +91,10 @@ namespace MUD.Core.Administration
 
         public AdminApi(IAdminHost host, IPlayerRepository players, IRoomRepository rooms, IAdminQueries queries, IAuditStore audit,
             AdminSessions sessions, IClock clock, Action<string> log, Func<int, int> random = null, IModuleControl modules = null,
-            ILibraryStore library = null, StoreLibrary libraryCache = null, string contentDirectory = null, MUD.Core.Areas.IAreaStore areas = null)
+            ILibraryStore library = null, StoreLibrary libraryCache = null, string contentDirectory = null, MUD.Core.Areas.IAreaStore areas = null, MUD.Core.ItemTemplates.IItemTemplateStore itemTemplates = null)
         {
             _areas = areas;
+            _itemTemplates = itemTemplates;
             _contentDirectory = contentDirectory;
             _host = host ?? throw new ArgumentNullException(nameof(host));
             _players = players ?? throw new ArgumentNullException(nameof(players));

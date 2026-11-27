@@ -96,6 +96,16 @@ namespace MUD.Core.Administration
 
         public override Task<AreaEditReply> DeleteArea(AreaIdRequest request, ServerCallContext context) { return Run(() => _api.DeleteArea(request)); }
 
+        public override Task<ListItemTemplatesReply> ListItemTemplates(ListItemTemplatesRequest request, ServerCallContext context) { return Run(() => _api.ListItemTemplates(request)); }
+
+        public override Task<GetItemTemplateReply> GetItemTemplate(ItemTemplateIdRequest request, ServerCallContext context) { return Run(() => _api.GetItemTemplate(request)); }
+
+        public override Task<ItemTemplateEditReply> CreateItemTemplate(SaveItemTemplateRequest request, ServerCallContext context) { return Run(() => _api.CreateItemTemplate(request)); }
+
+        public override Task<ItemTemplateEditReply> UpdateItemTemplate(SaveItemTemplateRequest request, ServerCallContext context) { return Run(() => _api.UpdateItemTemplate(request)); }
+
+        public override Task<ItemTemplateEditReply> DeleteItemTemplate(ItemTemplateIdRequest request, ServerCallContext context) { return Run(() => _api.DeleteItemTemplate(request)); }
+
         public override Task<GenerationReply> RegenerateMap(RegenerateMapRequest request, ServerCallContext context) { return Run(() => _api.RegenerateMap(request)); }
 
         public override Task<GenerationReply> RegenerateRooms(RegenerateRoomsRequest request, ServerCallContext context) { return Run(() => _api.RegenerateRooms(request)); }
