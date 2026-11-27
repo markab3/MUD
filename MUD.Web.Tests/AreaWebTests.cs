@@ -527,6 +527,7 @@ public class AreaPageRenderTests
             services.AddSingleton<NoticeService>();
             services.AddSingleton<IJSRuntime>(new NoJs());
             services.AddSingleton<DraftStore>();
+            services.AddScoped<RoomDirectory>();
             services.AddLogging();
             var provider = services.BuildServiceProvider();
             var renderer = new HtmlRenderer(provider, NullLoggerFactory.Instance);

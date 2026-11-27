@@ -4,6 +4,7 @@
 @inject NavigationManager Navigation
 @inject NoticeService Notices
 @inject DraftStore Drafts
+@inject RoomDirectory RoomsDirectory
 <PageTitle>Edit room - Planar Realms</PageTitle>
 <h1>Edit room</h1>
 @if (_presenter == null)
@@ -227,6 +228,7 @@ else
         _token = user.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
         _user = user.FindFirstValue(ClaimTypes.Name) ?? string.Empty;
         _draftKey = DraftStore.KeyFor(_user, WebRoutes.RoomEdit(Key));
+        RoomsDirectory.Invalidate();
         var presenter = new RoomEditPresenter(Core, _token, Key);
         if (await presenter.LoadAsync() == RoomEditOutcome.Ok)
         {

@@ -69,6 +69,11 @@ redirected to `/login`; signed-in players get a 403 page at `/access-denied` (no
   `/creator/rooms/{key}`. Failures show fixed messages only; no submitted value or exception text is echoed. When core
   cannot be reached the page says so.
 
+## Room key autocomplete (card t_6241b5a2)
+
+Every FULL room key input on the website (the exit target on Create room and Room edit, and the new room's key on Create room) is the shared `RoomKeyInput`:
+type one character and a list of at most 8 matching rooms appears (match on any part of the key or on the short description, key-prefix matches first; each row shows key, short description and area). Arrow keys, Enter, Escape and a tap select; a typed full key plus Enter works without choosing. Exit targets must be existing rooms: "No room has this key." shows on leaving the field or pressing Enter (core still validates on save; the "Save exits to rooms that do not exist" checkbox is the explicit override). The Create key is a new key: matching rooms in the chosen area are only a warning, "A room with this key already exists." shows for a taken key, and nothing is forced. The Move room local key stays a plain input with the area prefix beside it. The list comes from `ListRooms`, loaded once per circuit and again when the page loads (no rpc per keystroke). Design and numbers: `specs/WEB_BLAZOR.md` Appendix H.
+
 ## Room edit page (`/creator/rooms/{key}`)
 
 Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by clicking a room on the map.
