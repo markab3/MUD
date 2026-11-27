@@ -44,9 +44,9 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/creator/terrain` | `CreatorOrAdmin` | terrain library list with tabs and Delete (see "Terrain library pages") |
 | `/creator/terrain/edit?kind=&id=` | `CreatorOrAdmin` | create or edit one library entity (see "Terrain library pages") |
 
-The nav shows `/creator`, `/creator/map`, `/creator/players`, `/creator/modules` and `/creator/terrain` links only when the `CreatorOrAdmin` policy passes.
+The pull-out menu has three labelled sections, in this order, and a section with no visible links is not rendered: **Player** (every signed-in user): Character, Change password; **Creator** (the `CreatorOrAdmin` policy): Map, Modules, Terrain, Create room (`/creator`); **Admin** (admins only): Players. Log out is a POST form after the sections. Note: the Players link is shown to admins only, but `/creator/players` and the player edit page are still authorised for `CreatorOrAdmin` (unchanged), so a creator can open them by URL; tightening that is a separate decision for the owner.
 
-## Creator page (room creation)
+## Create room page (`/creator`, room creation)
 
 `/creator` is protected by the `CreatorOrAdmin` policy (admin implies creator). Anonymous users are
 redirected to `/login`; signed-in players get a 403 page at `/access-denied` (no redirect loop).

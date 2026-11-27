@@ -891,6 +891,16 @@ public class RoomComponentGuardTests
     }
 
     [Fact]
+    public void TheCreatorPage_IsNamedCreateRoom_AndKeepsItsUrl()
+    {
+        var src = Read("MUD.Web/Components/Pages/Creator.razor");
+        Assert.Contains("<PageTitle>Create room - Planar Realms</PageTitle>", src);
+        Assert.Contains("<h1>Create room</h1>", src);
+        Assert.DoesNotContain("<h1>Creator</h1>", src);
+        Assert.Equal("/creator", WebRoutes.Creator);
+    }
+
+    [Fact]
     public void RouteConstants_MatchThePageRoutes()
     {
         Assert.Equal(WebRoutes.Creator, Component("Creator").GetCustomAttribute<RouteAttribute>()!.Template);

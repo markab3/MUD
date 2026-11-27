@@ -4,25 +4,41 @@ namespace MUD.Web.Pages;
 
 public sealed record NavItem(string Label, string Href, bool ExactMatch = false);
 
+// Id names the heading element (mud-nav-<Id>) that the section's list is labelled by.
+public sealed record NavSection(string Id, string Heading, IReadOnlyList<NavItem> Items);
+
 // The pull-out menu: which links it holds and whether it is open (WEB_BLAZOR.md 5.2). Free of the renderer so the rules are testable.
 // Log out is not an item: it is a POST form with an antiforgery token, rendered by the shell after the links.
 public sealed class NavMenu
 {
-    // Creators and admins: the editing links first, then what every signed-in player has. Same items and visibility as before the top bar.
-    public static IReadOnlyList<NavItem> ItemsFor(bool creatorOrAdmin)
+    // Three sections in this order: Player (every signed-in user), Creator (CreatorOrAdmin), Admin (admins only).
+    // A section with no visible items is left out, so the menu never shows an empty heading.
+    // The Players link is under Admin only; the page itself is still authorised for CreatorOrAdmin (not changed here).
+    public static IReadOnlyList<NavSection> SectionsFor(bool creatorOrAdmin, bool admin)
     {
-        var items = new List<NavItem>();
+        var sections = new List<NavSection>
+        {
+            new("player", "Player", new[]
+            {
+                new NavItem("Character", WebRoutes.Character),
+                new NavItem("Change password", WebRoutes.Password),
+            }),
+        };
         if (creatorOrAdmin)
         {
-            items.Add(new NavItem("Map", WebRoutes.Map));
-            items.Add(new NavItem("Creator", WebRoutes.Creator, ExactMatch: true));
-            items.Add(new NavItem("Players", WebRoutes.Players));
-            items.Add(new NavItem("Modules", WebRoutes.Modules));
-            items.Add(new NavItem("Terrain", WebRoutes.Terrain));
+            sections.Add(new("creator", "Creator", new[]
+            {
+                new NavItem("Map", WebRoutes.Map),
+                new NavItem("Modules", WebRoutes.Modules),
+                new NavItem("Terrain", WebRoutes.Terrain),
+                new NavItem("Create room", WebRoutes.Creator, ExactMatch: true),
+            }));
         }
-        items.Add(new NavItem("Character", WebRoutes.Character));
-        items.Add(new NavItem("Change password", WebRoutes.Password));
-        return items;
+        if (admin)
+        {
+            sections.Add(new("admin", "Admin", new[] { new NavItem("Players", WebRoutes.Players) }));
+        }
+        return sections.Where(s => s.Items.Count > 0).ToList();
     }
 
     public bool IsOpen { get; private set; }
