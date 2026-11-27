@@ -71,9 +71,15 @@ return 0;
 public static class WebPolicies
 {
     public const string CreatorOrAdmin = "CreatorOrAdmin";
+    public const string AdminOnly = "AdminOnly";
 
-    public static void Configure(Microsoft.AspNetCore.Authorization.AuthorizationOptions o) =>
+    public static void Configure(Microsoft.AspNetCore.Authorization.AuthorizationOptions o)
+    {
         o.AddPolicy(CreatorOrAdmin, p => p
             .RequireAuthenticatedUser()
             .RequireClaim(ClaimTypes.Role, nameof(AccountRole.Creator), nameof(AccountRole.Admin)));
+        o.AddPolicy(AdminOnly, p => p
+            .RequireAuthenticatedUser()
+            .RequireClaim(ClaimTypes.Role, nameof(AccountRole.Admin)));
+    }
 }

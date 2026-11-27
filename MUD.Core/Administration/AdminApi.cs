@@ -654,7 +654,7 @@ namespace MUD.Core.Administration
 
         public ListPlayersReply ListPlayers(ListPlayersRequest request)
         {
-            Authorize(request.Token, AdminRole.Creator);
+            Authorize(request.Token, AdminRole.Admin);
             int pageSize = request.PageSize <= 0 ? DefaultPageSize : Math.Min(request.PageSize, MaxPageSize);
             int page = Math.Max(1, request.Page);
             int total;
@@ -666,14 +666,14 @@ namespace MUD.Core.Administration
 
         public GetPlayerReply GetPlayer(GetPlayerRequest request)
         {
-            Authorize(request.Token, AdminRole.Creator);
+            Authorize(request.Token, AdminRole.Admin);
             Player player = FindByNameKey(Normalize(request.NameKey));
             return player == null ? new GetPlayerReply { Found = false } : new GetPlayerReply { Found = true, Player = DetailFrom(player) };
         }
 
         public UpdatePlayerReply UpdatePlayer(UpdatePlayerRequest request)
         {
-            return Mutate(request.Token, AdminRole.Creator, actor =>
+            return Mutate(request.Token, AdminRole.Admin, actor =>
             {
                 try { return SavePlayer(actor, request); }
                 catch (Exception ex) when (ex is not OutOfMemoryException)

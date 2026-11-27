@@ -464,6 +464,7 @@ Players
 - Retirement: a retired player cannot log in (telnet and web) and sees "This character has been retired and can no longer be played." An Admin can retire any player of lower role; a player can retire themselves; only an Admin can reverse a retirement. An Admin cannot retire another Admin. An online player who is retired is told and disconnected through the normal quit/save path.
 
 Roles and authority (supersedes section 5)
+- Later owner decision: the player pages and player rpcs are admin only; creators no longer edit players (see WEB.md, ADMIN_API.md). The rules below still describe `AdminPlayerRules`, which now only ever sees an Admin as editor.
 - Roles are inclusive: Admin includes Creator. You cannot grant a role above your own. You may edit only players of strictly lower role (Creator edits Players; Admin edits Creators and Players; nobody edits an Admin through the web). Keep a defensive last-Admin check.
 
 Audit

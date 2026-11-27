@@ -40,8 +40,8 @@ From the repo at `d5ed91a` (`hermes`).
 | `/creator` | `Creator` (98) | CreatorOrAdmin | create-room form (Key, Short, Long, Area, X/Y/Z, 4 exits, dangling checkbox); `ListRooms` for area suggestions; `CreateRoom` via `RoomCreationService` |
 | `/creator/map` | `CreatorMap` (79) | CreatorOrAdmin | `ListRooms` (+ `ListTerrainColors` when a generated room is on the level); `RoomMapLayout` SVG; `?area=&z=` |
 | `/creator/rooms/{key}` | `RoomEdit` (463) | CreatorOrAdmin | `GetRoom`; Save `UpdateRoom`, Move `MoveRoom`, Delete `DeleteRoom`, Regen `RegenerateRooms`, Update `UpdateRooms`; Add/Remove exit, Add/Remove/MoveUp/MoveDown feature are no-write round trips |
-| `/creator/players` | `PlayerList` (71) | CreatorOrAdmin | `ListPlayers` (`q`, `sort`, `page`, 50 per page) |
-| `/creator/players/{nameKey}` | `PlayerEdit` (184) | CreatorOrAdmin | `GetPlayer`, `UpdatePlayer`; `PlayerRules` hides controls |
+| `/creator/players` | `PlayerList` (71) | AdminOnly | `ListPlayers` (`q`, `sort`, `page`, 50 per page) |
+| `/creator/players/{nameKey}` | `PlayerEdit` (184) | AdminOnly | `GetPlayer`, `UpdatePlayer`; `PlayerRules` hides controls |
 | `/creator/modules` | `Modules` (108) | CreatorOrAdmin (buttons admin only) | `ListModules`; `Start/Stop/RestartModule`; `TempData["Notice"]` |
 | `/creator/terrain` | `TerrainList` (145) | CreatorOrAdmin | tabs + filters over fragments / features / phrases; Delete per row |
 | `/creator/terrain/edit?kind=&id=` | `TerrainEdit` (194) + `TerrainLibrary.cs` (56) | CreatorOrAdmin | Get / Create / Update one library entity; `TempData["Notice"]` |
@@ -146,7 +146,8 @@ A circuit lives longer than a request and has no `HttpContext` after start, so:
 | Component | Attribute |
 |---|---|
 | Character, Password | `[Authorize]` |
-| Creator, CreatorMap, RoomEdit, PlayerList, PlayerEdit, Modules, TerrainList, TerrainEdit | `[Authorize(Policy = WebPolicies.CreatorOrAdmin)]` |
+| Creator, CreatorMap, RoomEdit, Modules, TerrainList, TerrainEdit | `[Authorize(Policy = WebPolicies.CreatorOrAdmin)]` |
+| PlayerList, PlayerEdit | `[Authorize(Policy = WebPolicies.AdminOnly)]` |
 | Module Start/Stop/Restart buttons | rendered in `<AuthorizeView Roles="Admin">`, and the handler re-checks the role (defence in depth; core is authoritative) |
 | Login, access-denied | anonymous |
 
@@ -219,7 +220,7 @@ reads `matchMedia` once through JS interop and subscribes to changes. Alternativ
 
 ### 5.2 Navigation
 
-Three labelled sections, in this order; a section with no visible items is not rendered (no empty headings): **Player** (signed in): Character, Change password; **Creator** (CreatorOrAdmin): Map, Modules, Terrain, Create room (the page at `/creator`, renamed from "Creator"; URL unchanged); **Admin** (admins only): Players. Log out (a POST form, never a link) follows the sections, outside them. The sections are `NavMenu.SectionsFor(creatorOrAdmin, admin)` in `MUD.Web/Pages/NavMenu.cs`; `NavShell.razor` renders each as an `<h2 id="mud-nav-<id>">` heading followed by a `<ul aria-labelledby="mud-nav-<id>">`, all inside the one `<nav aria-label="Main">`, so the dialog focus trap (which looks at all links and buttons in `#mud-menu`) and the 44px targets apply unchanged. The drawer has `overflow-y:auto` and full height, so a list taller than the viewport (360x640) scrolls inside the drawer. Players is authorised for CreatorOrAdmin on the page and API (unchanged); only its menu link is admin-only.
+Three labelled sections, in this order; a section with no visible items is not rendered (no empty headings): **Player** (signed in): Character, Change password; **Creator** (CreatorOrAdmin): Map, Modules, Terrain, Create room (the page at `/creator`, renamed from "Creator"; URL unchanged); **Admin** (admins only): Players. Log out (a POST form, never a link) follows the sections, outside them. The sections are `NavMenu.SectionsFor(creatorOrAdmin, admin)` in `MUD.Web/Pages/NavMenu.cs`; `NavShell.razor` renders each as an `<h2 id="mud-nav-<id>">` heading followed by a `<ul aria-labelledby="mud-nav-<id>">`, all inside the one `<nav aria-label="Main">`, so the dialog focus trap (which looks at all links and buttons in `#mud-menu`) and the 44px targets apply unchanged. The drawer has `overflow-y:auto` and full height, so a list taller than the viewport (360x640) scrolls inside the drawer. Players is admin only on the menu, the pages (`AdminOnly`) and the API.
 
 - **Top bar** (`<header class="mud-topbar">`, sticky, at every width), left to right: a three-line menu button (44x44, `aria-label="Menu"`, `aria-haspopup="dialog"`, `aria-expanded`, `aria-controls="mud-menu"`), the site logo (`img/planar-realms-logo.png`, a luminance-keyed transparent PNG shown at 116x40 with `alt="Planar Realms"`, inside a link to `/` with a 44px minimum hit area; the `<title>` and `<PageTitle>` stay as words), and on the far right the signed-in user's name as a link to `/character`. The name is one line and truncates with an ellipsis (`min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap`), so there is no horizontal scroll at 360px however long the name. **Anonymous visitors** (login page, access denied before sign-in) get the bar with the logo only: no button, no name, no menu.
 - **Pull-out menu**: `#mud-menu`, `role="dialog" aria-modal="true"` around a `<nav aria-label="Main">`, slides in from the left (`transform` transition, 0.25s; no animation under `prefers-reduced-motion`) over a dimmed backdrop. Closed, it is `visibility:hidden` so it is neither focusable nor read. Width `min(280px, 85vw)`.
@@ -428,7 +429,7 @@ scrolls inside its own box (`max-height: 40vh`), long type names wrap. CSS in `m
 
 ## Appendix C. Player and module pages as built (card t_459edd31)
 
-Components: `/creator/players` (`PlayerList.razor`, `?q=&sort=&page=`), `/creator/players/{NameKey}` (`PlayerEdit.razor`), `/creator/modules` (`Modules.razor`). All use `CreatorOrAdmin`; the shell nav now links to them.
+Components: `/creator/players` (`PlayerList.razor`, `?q=&sort=&page=`), `/creator/players/{NameKey}` (`PlayerEdit.razor`), `/creator/modules` (`Modules.razor`). Modules uses `CreatorOrAdmin`; the two player pages use `AdminOnly`; the shell nav now links to them.
 Logic is in `PlayerListPresenter`, `PlayerEditPresenter` (editor role passed in; `PlayerRules` unchanged) and `ModulesPresenter`. Sentences are in `Messages.cs`.
 Lists render a table and a stacked-card list from the same rows; CSS shows the table from 600px and the cards below (no round trip, Open question 12 option "render both, hide one").
 Decisions: the module notice stays beside the refreshed list (no `NoticeService` hop, there is no navigation); Start goes straight through, Stop and Restart ask first in `ConfirmDialog`; newly retiring a character asks first (new, `Messages.RetirePlayerConfirm`); player edit keeps a local draft like the room editor (restore never takes a role or retired value the editor may not set); HTTP 403/404/503 become in-page views (7.3).

@@ -10,7 +10,8 @@ namespace MUD.Core.Administration
     /// What an editor may do to a target (owner decisions in specs/WEB_EDITING.md section 15): an editor may edit only players of strictly
     /// LOWER role than their own (a creator edits players; an admin edits creators and players; nobody edits an admin), may not grant a role
     /// above their own, and retiring or un-retiring another player is an admin power. Pure functions; the same rules the website applied
-    /// before core took over the edits.
+    /// before core took over the edits. The player rpcs are now admin only (the rpc entry points check that), so the editor passed in here is
+    /// always an Admin; the functions are kept unchanged.
     /// </summary>
     public static class AdminPlayerRules
     {

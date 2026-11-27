@@ -1,5 +1,5 @@
 @page "/creator/players/{NameKey}"
-@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@attribute [Authorize(Policy = WebPolicies.AdminOnly)]
 @inject IAdminClient Core
 @inject DraftStore Drafts
 <PageTitle>Edit player - Planar Realms</PageTitle>

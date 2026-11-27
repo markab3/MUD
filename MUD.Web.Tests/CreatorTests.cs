@@ -13,13 +13,15 @@ namespace MUD.Web.Tests;
 
 public class CreatorPolicyTests
 {
-    private static async Task<PolicyAuthorizationResult> Evaluate(ClaimsPrincipal? user)
+    private static Task<PolicyAuthorizationResult> Evaluate(ClaimsPrincipal? user) => Evaluate(user, WebPolicies.CreatorOrAdmin);
+
+    private static async Task<PolicyAuthorizationResult> Evaluate(ClaimsPrincipal? user, string policyName)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAuthorization(WebPolicies.Configure);
         var sp = services.BuildServiceProvider();
-        var policy = await sp.GetRequiredService<IAuthorizationPolicyProvider>().GetPolicyAsync(WebPolicies.CreatorOrAdmin);
+        var policy = await sp.GetRequiredService<IAuthorizationPolicyProvider>().GetPolicyAsync(policyName);
         var evaluator = new PolicyEvaluator(sp.GetRequiredService<IAuthorizationService>());
         var ctx = new DefaultHttpContext();
         if (user != null) { ctx.User = user; }
@@ -56,6 +58,39 @@ public class CreatorPolicyTests
         var r = await Evaluate(null);
         Assert.True(r.Challenged);
         Assert.False(r.Succeeded);
+    }
+
+    // AdminOnly (the player pages): a creator is Forbidden (-> the access-denied page, not a login redirect), an anonymous user is Challenged (-> login).
+    [Theory]
+    [InlineData(AccountRole.Player)]
+    [InlineData(AccountRole.Creator)]
+    public async Task AdminOnly_ForbidsPlayerAndCreator_WithoutChallenging(AccountRole role)
+    {
+        var r = await Evaluate(User(role), WebPolicies.AdminOnly);
+        Assert.True(r.Forbidden);
+        Assert.False(r.Challenged);
+        Assert.False(r.Succeeded);
+    }
+
+    [Fact]
+    public async Task AdminOnly_AllowsAnAdmin() => Assert.True((await Evaluate(User(AccountRole.Admin), WebPolicies.AdminOnly)).Succeeded);
+
+    [Fact]
+    public async Task AdminOnly_ChallengesAnAnonymousUser()
+    {
+        var r = await Evaluate(null, WebPolicies.AdminOnly);
+        Assert.True(r.Challenged);
+        Assert.False(r.Succeeded);
+    }
+
+    [Theory]
+    [InlineData(typeof(MUD.Web.Components.Pages.PlayerList))]
+    [InlineData(typeof(MUD.Web.Components.Pages.PlayerEdit))]
+    public void PlayerPages_RequireAdminOnly(Type page)
+    {
+        var attr = (AuthorizeAttribute?)Attribute.GetCustomAttribute(page, typeof(AuthorizeAttribute));
+        Assert.NotNull(attr);
+        Assert.Equal(WebPolicies.AdminOnly, attr!.Policy);
     }
 
     [Fact]

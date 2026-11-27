@@ -610,13 +610,21 @@ public class PlayerModuleComponentTests
         typeof(IAdminClient).Assembly.GetTypes().Single(t => t.FullName == "MUD.Web.Components.Pages." + name);
 
     [Theory]
-    [InlineData("PlayerList", "/creator/players")]
-    [InlineData("PlayerEdit", "/creator/players/{NameKey}")]
     [InlineData("Modules", "/creator/modules")]
     public void ThePages_RequireTheCreatorOrAdminPolicy_OnTheirRoutes(string name, string route)
     {
         var type = Component(name);
         Assert.Equal(WebPolicies.CreatorOrAdmin, type.GetCustomAttribute<AuthorizeAttribute>()!.Policy);
+        Assert.Equal(route, type.GetCustomAttribute<RouteAttribute>()!.Template);
+    }
+
+    [Theory]
+    [InlineData("PlayerList", "/creator/players")]
+    [InlineData("PlayerEdit", "/creator/players/{NameKey}")]
+    public void ThePlayerPages_RequireTheAdminOnlyPolicy_OnTheirRoutes(string name, string route)
+    {
+        var type = Component(name);
+        Assert.Equal(WebPolicies.AdminOnly, type.GetCustomAttribute<AuthorizeAttribute>()!.Policy);
         Assert.Equal(route, type.GetCustomAttribute<RouteAttribute>()!.Template);
     }
 
