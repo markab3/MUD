@@ -215,8 +215,11 @@ message RoomDetail {
 // One behavior entry of a room (BehaviorRef). config_json is the entry's config as compact JSON text; "{}" when there is none, never empty.
 message RoomBehavior { string hook = 1; string module = 2; string type = 3; int32 priority = 4; string config_json = 5; }
 
-// One entry of a room's core search component. The reward is exposed only as its short description (empty when there is no reward).
-message RoomSearchEntry { string id = 1; string target = 2; int32 refresh_ms = 3; string reward_short = 4; }
+// One entry of a room's core search component. The reward is exposed only as its short description (empty when there is no reward). discovery is unset when the entry has none.
+message RoomSearchEntry { string id = 1; string target = 2; int32 refresh_ms = 3; string reward_short = 4; RoomSearchDiscovery discovery = 5; }
+
+// The discovery of a search entry: a per-player flag id and the two messages (empty when not authored; core then uses a default text).
+message RoomSearchDiscovery { string id = 1; string found = 2; string again = 3; }
 
 message ListRoomsReply { repeated RoomDetail rooms = 1; }
 

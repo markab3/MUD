@@ -32,11 +32,18 @@ else
         @foreach (var s in Searches)
         {
             <li class="mud-behavior">
+                <p class="mud-search-summary">@s.Summary</p>
                 <dl class="mud-facts">
                     <dt>Id</dt><dd>@s.Id</dd>
                     <dt>Target</dt><dd>@s.Target</dd>
-                    <dt>Refresh</dt><dd>@s.RefreshMs ms</dd>
+                    <dt>Refresh</dt><dd title="@(s.RefreshMs) ms">@s.Cooldown <span class="mud-muted">(@s.RefreshMs ms)</span></dd>
                     @if (!string.IsNullOrEmpty(s.RewardShort)) { <dt>Reward</dt><dd>@s.RewardShort</dd> }
+                    @if (s.Discovery != null)
+                    {
+                        <dt>Discovery</dt><dd>@s.Discovery.Id</dd>
+                        <dt>Found message</dt><dd>@(string.IsNullOrEmpty(s.Discovery.Found) ? "(default text)" : s.Discovery.Found)</dd>
+                        <dt>Already found</dt><dd>@(string.IsNullOrEmpty(s.Discovery.Again) ? "(default text)" : s.Discovery.Again)</dd>
+                    }
                 </dl>
             </li>
         }

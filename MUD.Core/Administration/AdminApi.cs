@@ -1247,9 +1247,11 @@ namespace MUD.Core.Administration
             return new RoomBehavior { Hook = hook ?? string.Empty, Module = module ?? string.Empty, Type = type ?? string.Empty, Priority = priority, ConfigJson = CompactJson(config) };
         }
 
-        private static RoomSearchEntry SearchToDetail(string id, string target, int refreshMilliseconds, string rewardShort)
+        private static RoomSearchEntry SearchToDetail(string id, string target, int refreshMilliseconds, string rewardShort, RoomSearchDiscovery discovery)
         {
-            return new RoomSearchEntry { Id = id ?? string.Empty, Target = target ?? string.Empty, RefreshMs = refreshMilliseconds, RewardShort = rewardShort ?? string.Empty };
+            var detail = new RoomSearchEntry { Id = id ?? string.Empty, Target = target ?? string.Empty, RefreshMs = refreshMilliseconds, RewardShort = rewardShort ?? string.Empty };
+            if (discovery != null) { detail.Discovery = discovery; }
+            return detail;
         }
 
         // Compact JSON text of a behavior config; "{}" for null or empty. Never throws.
@@ -1327,7 +1329,7 @@ namespace MUD.Core.Administration
             }
             foreach (MUD.Core.Components.SearchEntry entry in room.Search.Entries)
             {
-                if (entry != null) { detail.Searches.Add(SearchToDetail(entry.EntryId, entry.Target, entry.RefreshMilliseconds, entry.Reward == null ? null : entry.Reward.ShortDescription)); }
+                if (entry != null) { detail.Searches.Add(SearchToDetail(entry.EntryId, entry.Target, entry.RefreshMilliseconds, entry.Reward == null ? null : entry.Reward.ShortDescription, entry.Discovery == null ? null : new RoomSearchDiscovery { Id = entry.Discovery.FlagId ?? string.Empty, Found = entry.Discovery.Found ?? string.Empty, Again = entry.Discovery.Again ?? string.Empty })); }
             }
             if (room.Gen != null)
             {
@@ -1404,7 +1406,13 @@ namespace MUD.Core.Administration
                     BsonDocument e = element.AsBsonDocument;
                     BsonValue reward;
                     string rewardShort = e.TryGetValue("reward", out reward) && reward.IsBsonDocument ? Text(reward.AsBsonDocument, "ShortDescription") : null;
-                    detail.Searches.Add(SearchToDetail(Text(e, "id"), Text(e, "target"), Number(e, "refreshMilliseconds") ?? 0, rewardShort));
+                    BsonValue discovery;
+                    RoomSearchDiscovery found = null;
+                    if (e.TryGetValue("discovery", out discovery) && discovery.IsBsonDocument)
+                    {
+                        found = new RoomSearchDiscovery { Id = Text(discovery.AsBsonDocument, "id") ?? string.Empty, Found = Text(discovery.AsBsonDocument, "found") ?? string.Empty, Again = Text(discovery.AsBsonDocument, "again") ?? string.Empty };
+                    }
+                    detail.Searches.Add(SearchToDetail(Text(e, "id"), Text(e, "target"), Number(e, "refreshMilliseconds") ?? 0, rewardShort, found));
                 }
             }
             BsonValue gen;
