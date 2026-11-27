@@ -27,6 +27,9 @@ namespace MUD.Core.Administration
 
         /// <summary>Ids of the rooms that have an exit leading to the given room key.</summary>
         List<string> RoomIdsWithExitTo(string key);
+
+        /// <summary>The rooms (only "_id" and "search") that have a search reward copied from the item template with this id (specs/ITEM_TEMPLATES.md "Referenced by").</summary>
+        List<BsonDocument> RoomsWithTemplateReward(string templateId);
     }
 
     /// <summary>Reads the "player" and "room" collections directly. This is core code: core is the only process that talks to the database.</summary>
@@ -89,6 +92,12 @@ namespace MUD.Core.Administration
                 ids.Add(document["_id"].ToString());
             }
             return ids;
+        }
+
+        public List<BsonDocument> RoomsWithTemplateReward(string templateId)
+        {
+            var filter = new BsonDocument("search.entries", new BsonDocument("$elemMatch", new BsonDocument("reward.templateId", templateId)));
+            return _rooms.Find(filter).Project(new BsonDocument { { "_id", 1 }, { "search", 1 } }).ToList();
         }
     }
 }

@@ -252,6 +252,21 @@ namespace MUD.Core.Import
             if (feature.TemplateVersion == null && Get(genMap, "templateVersion") == null) { _errors.Add(gctx + ": templateVersion is required."); }
         }
 
+        // Reward 'x-gen' (provenance of a reward the importer copied from an item template, written by the exporter): templateId and
+        // templateVersion, both required when the key is present. A hand-written inline reward has none.
+        private void ParseRewardGen(YamlMappingNode rewardMap, ItemDefinition reward, string rctx)
+        {
+            var genNode = Get(rewardMap, "x-gen");
+            if (genNode == null) { return; }
+            var genMap = genNode as YamlMappingNode;
+            if (genMap == null) { _errors.Add(rctx + ": x-gen must be a mapping."); return; }
+            var gctx = rctx + ".x-gen";
+            CheckKeys(genMap, new[] { "templateId", "templateVersion" }, gctx);
+            reward.TemplateId = Scalar(genMap, "templateId", gctx, true);
+            reward.TemplateVersion = Int(genMap, "templateVersion", gctx);
+            if (reward.TemplateVersion == null && Get(genMap, "templateVersion") == null) { _errors.Add(gctx + ": templateVersion is required."); }
+        }
+
         // The 'behaviors:' list of a room: hook, module, type, and optional priority, config (a mapping) and
         // schema_version. Every problem is collected; a duplicate (hook, module, type) in one list is an error.
         private List<MUD.Core.Components.BehaviorRef> ParseBehaviors(YamlMappingNode owner, string ctx)
@@ -375,15 +390,42 @@ namespace MUD.Core.Import
                 }
                 if (rewardMap != null)
                 {
-                    CheckKeys(rewardMap, new[] { "short", "long", "handles", "adjectives", "plurals" }, sctx + ".reward");
-                    prop.Reward = new ItemDefinition
+                    var rctx = sctx + ".reward";
+                    CheckKeys(rewardMap, new[] { "short", "long", "handles", "adjectives", "plurals", "template" }, rctx);
+                    if (Get(rewardMap, "template") != null)
                     {
-                        Short = Text(rewardMap, "short", sctx + ".reward", true),
-                        Long = Text(rewardMap, "long", sctx + ".reward", true),
-                        Handles = StringList(rewardMap, "handles", sctx + ".reward"),
-                        Adjectives = StringList(rewardMap, "adjectives", sctx + ".reward"),
-                        Plurals = StringList(rewardMap, "plurals", sctx + ".reward")
-                    };
+                        // A reference to an item template (specs/ROOM_FILES.md): the importer copies the template's fields. Only short and
+                        // long may accompany it, as overrides.
+                        foreach (var inline in new[] { "handles", "adjectives", "plurals" })
+                        {
+                            if (Get(rewardMap, inline) != null) { _errors.Add(rctx + ": '" + inline + "' cannot be given with 'template' (only 'short' and 'long' override the template)."); }
+                        }
+                        var templateId = Scalar(rewardMap, "template", rctx, true);
+                        if (templateId != null)
+                        {
+                            var dot = templateId.LastIndexOf('.');
+                            var problem = dot <= 0 ? "id must be '<area>.<local key>'." : MUD.Core.ItemTemplates.ItemTemplateRules.CheckId(templateId, templateId.Substring(0, dot));
+                            if (problem != null) { _errors.Add(rctx + ": 'template' is not a template id (" + problem + ")"); templateId = null; }
+                        }
+                        prop.Reward = new ItemDefinition
+                        {
+                            TemplateRef = templateId,
+                            Short = Text(rewardMap, "short", rctx, false),
+                            Long = Text(rewardMap, "long", rctx, false),
+                        };
+                    }
+                    else
+                    {
+                        prop.Reward = new ItemDefinition
+                        {
+                            Short = Text(rewardMap, "short", rctx, true),
+                            Long = Text(rewardMap, "long", rctx, true),
+                            Handles = StringList(rewardMap, "handles", rctx),
+                            Adjectives = StringList(rewardMap, "adjectives", rctx),
+                            Plurals = StringList(rewardMap, "plurals", rctx)
+                        };
+                        ParseRewardGen(rewardMap, prop.Reward, rctx);
+                    }
                 }
                 result.Add(prop);
             }

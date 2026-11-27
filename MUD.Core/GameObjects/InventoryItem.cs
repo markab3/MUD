@@ -20,5 +20,16 @@ namespace MUD.Core.GameObjects
 
         private List<BehaviorRef> _behaviors;
 
+        // The item template this item was copied from at import time (specs/ITEM_TEMPLATES.md "References"). Null when not copied from
+        // a template. Gameplay never reads these; they let a creator see which copies are stale.
+        [BsonElement("templateId")]
+        [BsonIgnoreIfNull]
+        public string TemplateId { get; set; }
+
+        // The version of that template when it was copied.
+        [BsonElement("templateVersion")]
+        [BsonIgnoreIfNull]
+        public int? TemplateVersion { get; set; }
+
     }
 }

@@ -106,6 +106,8 @@ namespace MUD.Core.Administration
 
         public override Task<ItemTemplateEditReply> DeleteItemTemplate(ItemTemplateIdRequest request, ServerCallContext context) { return Run(() => _api.DeleteItemTemplate(request)); }
 
+        public override Task<ListItemTemplateReferencesReply> ListItemTemplateReferences(ItemTemplateIdRequest request, ServerCallContext context) { return Run(() => _api.ListItemTemplateReferences(request)); }
+
         public override Task<GenerationReply> RegenerateMap(RegenerateMapRequest request, ServerCallContext context) { return Run(() => _api.RegenerateMap(request)); }
 
         public override Task<GenerationReply> RegenerateRooms(RegenerateRoomsRequest request, ServerCallContext context) { return Run(() => _api.RegenerateRooms(request)); }

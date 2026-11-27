@@ -98,6 +98,8 @@ namespace MUD.Tests
 
             public List<BsonDocument> ListRooms() { return Rooms.Stored.Select(p => { var d = p.Value.DeepClone().AsBsonDocument; d["_id"] = p.Key; return d; }).ToList(); }
 
+            public List<BsonDocument> RoomsWithTemplateReward(string templateId) { return new List<BsonDocument>(); }
+
             public List<string> RoomIdsWithExitTo(string key)
             {
                 return Rooms.Stored.Where(p => p.Value.Contains("Exits") && p.Value["Exits"].AsBsonArray.Any(e => e["DestinationId"].AsString == key)).Select(p => p.Key).ToList();

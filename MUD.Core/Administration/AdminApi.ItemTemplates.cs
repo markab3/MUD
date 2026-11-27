@@ -40,6 +40,39 @@ namespace MUD.Core.Administration
             return found == null ? new GetItemTemplateReply { Found = false } : new GetItemTemplateReply { Found = true, Template = ToRecord(found) };
         }
 
+        // Where copies of a template are stored (specs/ITEM_TEMPLATES.md "Referenced by"): the search rewards the importer filled from it.
+        // Read-only; each reference says which version was copied and whether the template has moved on since.
+        public ListItemTemplateReferencesReply ListItemTemplateReferences(ItemTemplateIdRequest request)
+        {
+            Authorize(request.Token, AdminRole.Creator);
+            var reply = new ListItemTemplateReferencesReply();
+            string id = (request.Id ?? string.Empty).Trim();
+            ItemTemplateEntry template = _itemTemplates == null || id.Length == 0 ? null : ReadItemTemplates(() => _itemTemplates.Get(id));
+            if (template == null) { return reply; }
+            reply.CurrentVersion = template.Version;
+            foreach (ItemTemplateReference r in ScanItemTemplateReferences(id))
+            {
+                reply.References.Add(new ItemTemplateReferenceRecord { RoomKey = r.RoomKey, EntryId = r.EntryId, TemplateVersion = r.TemplateVersion, Stale = r.TemplateVersion < template.Version });
+            }
+            return reply;
+        }
+
+        public static string ItemTemplateReferencedMessage(int count)
+        {
+            return "This item template is still used by " + count + (count == 1 ? " search reward" : " search rewards") + ". Nothing was changed.";
+        }
+
+        // With no queries source nothing can be counted. A failing scan stops the delete: an unknown count is not "none".
+        private List<ItemTemplateReference> ScanItemTemplateReferences(string id)
+        {
+            try { return ItemTemplateReferences.Scan(_queries.RoomsWithTemplateReward(id), id); }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                _log("Item template reference scan failed (" + ex.GetType().Name + ").");
+                throw new AdminCallException(AdminFailure.Unavailable, "The rooms could not be read.");
+            }
+        }
+
         // The store throws when the database cannot be reached; the caller sees "core could not answer" (gRPC Unavailable), not a result code.
         private T ReadItemTemplates<T>(Func<T> read)
         {
@@ -184,8 +217,11 @@ namespace MUD.Core.Administration
             try { stored = id.Length == 0 ? null : _itemTemplates.Get(id); }
             catch (Exception ex) when (ex is not OutOfMemoryException) { return ItemTemplateFailed("read", ex); }
             if (stored == null) { return ItemTemplateReply(AdminResult.NotFound, ItemTemplateNotFoundMessage); }
-            // Nothing references an item template yet. When the reference card lands, a referenced template is refused here (Refused,
-            // message naming the count), as DeleteArea does for rooms.
+            // A template that a stored search reward was copied from is kept: Refused, naming the count (as DeleteArea does for rooms).
+            List<ItemTemplateReference> references;
+            try { references = ScanItemTemplateReferences(id); }
+            catch (AdminCallException) { return ItemTemplateReply(AdminResult.Failed, ItemTemplateWriteFailedMessage); }
+            if (references.Count > 0) { return ItemTemplateReply(AdminResult.Refused, ItemTemplateReferencedMessage(references.Count)); }
 
             List<AuditRecord> entries = BuildEntries(actor, ItemTemplateEntity, id, id, new List<AuditChange> { new AuditChange("*delete*", ItemTemplateDocuments.ToDocument(stored), BsonNull.Value) });
             if (!TryAudit(entries)) { return ItemTemplateReply(AdminResult.AuditFailed, null); }

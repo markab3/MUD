@@ -105,6 +105,31 @@ else
         </div>
     </form>
 
+    @if (!p.IsNew)
+    {
+        <section class="mud-section" aria-labelledby="it-refs-h" id="it-refs">
+            <h2 id="it-refs-h">Used by</h2>
+            @if (p.ReferencesError != null)
+            {
+                <p role="alert" class="mud-error" id="it-refs-error">@p.ReferencesError</p>
+            }
+            else
+            {
+                <p id="it-refs-summary">@p.ReferencesSummary</p>
+                @if (p.References.Count > 0)
+                {
+                    <ul class="mud-refs">
+                        @foreach (var r in p.References)
+                        {
+                            <li><a href="@WebRoutes.RoomEdit(r.RoomKey)">@r.RoomKey</a> (search @r.EntryId): version @r.TemplateVersion@(r.Stale ? " - older than the template's version " + p.Version : string.Empty)</li>
+                        }
+                    </ul>
+                    <p class="mud-hint">A copy is made when an area file is imported. Editing a template does not change copies that already exist; refreshing them is not available yet.</p>
+                }
+            }
+        </section>
+    }
+
     <section class="mud-section" aria-labelledby="it-preview-h" id="it-preview">
         <h2 id="it-preview-h">Preview</h2>
         <p class="mud-hint">How the item reads in a room or an inventory, and what a player can type to name it. Updates as you type.</p>

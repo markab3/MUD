@@ -1,6 +1,6 @@
 # Item templates
 
-Card t_ae0cd319. Status: built (library, admin rpcs, website pages). Nothing references a template yet.
+Cards t_ae0cd319 (library, admin rpcs, website pages) and t_0c2a2723 (references: search rewards, `clone`, delete protection, stale report). Status: built.
 
 Owner request: "Maintain a library of item templates that I can reference. These should be organised by area." The decisions below were made by the
 concierge, not the owner; the owner can change any of them.
@@ -33,15 +33,41 @@ new template picks its area from the area dropdown (`ListAreas`) and types only 
 - Admin rpcs (`ListItemTemplates` with an optional area filter, `Get`, `Create`, `Update`, `Delete`) for a creator or admin, audited first; see
   specs/ADMIN_API.md "Item templates". The website is `/creator/items` and `/creator/items/edit`; see specs/WEB.md "Item templates pages".
 - Nothing is seeded automatically.
-- No new commands (`proto` and `clone` remain empty stubs) and no new behaviors.
-- Delete is NOT yet refused for a referenced template: nothing can reference one yet. The reference card must add that check (and a count in
-  `DeleteArea`).
+- No new behaviors, and no new command classes: `clone` (below) is the existing stub; `proto` is still an empty stub.
+
+## References (card t_0c2a2723)
+
+"Reference" means content and creators point at a template by id instead of repeating the item definition. The decision (the concierge's, the
+owner can change it) is **copy, not live link**: whatever refers to a template gets a copy of its fields, so gameplay never depends on a lookup.
+
+- **Search rewards in area files.** `reward: {template: <area>.<local>, short?, long?}`. The importer copies the template's current fields,
+  components and behaviors into the stored reward and records `templateId` and `templateVersion` on it. Unknown template = a phase 1 validation
+  error naming the id. Full rules: specs/ROOM_FILES.md section 4.5 "Reward from an item template". Stored on `search.entries[].reward` as
+  `templateId` / `templateVersion` (the `InventoryItem` fields of the same names; absent for an inline reward).
+- **`clone <area>.<local>`** (creator command, the existing `CloneCommand`): puts a new item copied from the template into the creator's
+  inventory (short, long, handles, adjectives, plurals, components and behaviors) and saves the player. An unknown id answers `No such item
+  template.`; a non-creator is refused as before; no id gives the syntax line. The clone records no `templateId`: it is a loose item, not a
+  tracked reference. The command reads the library through a lookup function (`Func<string, ItemTemplateEntry>`): the public constructor
+  builds it from `IMongoDatabase` (World's DI scan supplies the database, as for `import`), an `internal` constructor takes the function
+  directly (the seam of `regen` / `update`), so tests need no Mongo. Core could read the Mongo library from a command cleanly this way; no
+  other seam was needed.
+- **Referenced by.** The references are the stored search rewards that carry the template's id. `DeleteItemTemplate` is refused (`REFUSED`,
+  "This item template is still used by N search rewards. Nothing was changed.") while any exists; the count comes from a scan of the rooms'
+  `search.entries[].reward.templateId` (`IAdminQueries.RoomsWithTemplateReward`, read by `ItemTemplateReferences.Scan`). If the rooms cannot be
+  read the delete answers `FAILED` (an unknown count is not "none"). The only reference kind that exists is the search reward; "other stored
+  references" do not exist yet, and a new kind must be added to the scan.
+- **Stale report.** `UpdateItemTemplate` bumps the version as before. `ListItemTemplateReferences` returns each copy with the version it holds
+  and `stale` (its version is lower than the template's current one; a reward with no version counts as 0). The template edit page shows it
+  read-only in a "Used by" section (rooms linked to their edit page).
+- **Out of scope: refreshing.** Nothing re-copies a template into existing rewards. The only way today is to re-import the area file (which
+  takes the template as it is). An `update`-style refresh of stale copies (like `update` for generated features) is a separate card
+  (filed as a backlog card, see the card's report).
 
 ## Open questions
 
-1. **References.** How do rooms, area-file features and search rewards point at a template (a `template:` key beside the inline definition, copy at
-   import time, or live reference)? Until this exists, templates are only a catalog. The version field is there to support "this copy is stale".
-2. **`proto` / `clone`.** Should these creator commands create an item from a template (or save one)? Left as stubs.
+1. **Other references.** Features of area files, room items and shop stock still embed full definitions; only the search reward can point at a
+   template. A feature `template:` would need a shape decision (features are not items).
+2. **`proto`.** Should it save an item as a template? Left as a stub.
 3. **Deleting an area with templates.** `DeleteArea` counts only rooms, so an area can be deleted while it still has templates, leaving them in a
    group without an area record (the list still shows them, named by prefix). Should delete be refused like it is for rooms?
    `IItemTemplateStore.CountInArea` exists for this.

@@ -247,6 +247,11 @@ namespace MUD.Core.Import
                 Adjectives = StrList(doc, "Adjectives", ctx, errors),
                 Plurals = StrList(doc, "Plurals", ctx, errors)
             };
+            // Provenance of a reward copied from an item template; the copy itself is exported inline (components and behaviors of a
+            // reward are not part of the file form).
+            var templateId = doc.GetValue("templateId", BsonNull.Value);
+            var templateVersion = doc.GetValue("templateVersion", BsonNull.Value);
+            if (templateId.IsString && templateVersion.IsNumeric) { item.TemplateId = templateId.AsString; item.TemplateVersion = templateVersion.ToInt32(); }
             if (item.Short == null) { errors.Add(ctx + ": ShortDescription is required."); }
             if (item.Long == null) { errors.Add(ctx + ": LongDescription is required."); }
             return item;
@@ -458,6 +463,12 @@ namespace MUD.Core.Import
             WriteList(sb, indent, "handles", item.Handles);
             WriteList(sb, indent, "adjectives", item.Adjectives);
             WriteList(sb, indent, "plurals", item.Plurals);
+            if (item.TemplateId != null && item.TemplateVersion.HasValue)
+            {
+                sb.Append(indent).Append("x-gen:\n");
+                sb.Append(indent).Append("  templateId: ").Append(Scalar(item.TemplateId)).Append('\n');
+                sb.Append(indent).Append("  templateVersion: ").Append(Num(item.TemplateVersion.Value)).Append('\n');
+            }
         }
 
         // Multi-line text uses a literal block when that is exact; otherwise a quoted string. Both load to the same value.

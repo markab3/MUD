@@ -38,7 +38,7 @@ Messages are fixed sentences. No token, password or stored value is put in a sta
 |---|---|
 | `WebAuthenticate`, `Logout` | none |
 | `GetSession`, `GetOwnPlayer`, `ChangePassword` | any signed-in player |
-| `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListModules`, `ListAreas`, `GetArea`, `CreateArea`, `UpdateArea`, `DeleteArea`, `ListItemTemplates`, `GetItemTemplate`, `CreateItemTemplate`, `UpdateItemTemplate`, `DeleteItemTemplate` | creator or admin |
+| `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListModules`, `ListAreas`, `GetArea`, `CreateArea`, `UpdateArea`, `DeleteArea`, `ListItemTemplates`, `GetItemTemplate`, `CreateItemTemplate`, `UpdateItemTemplate`, `DeleteItemTemplate`, `ListItemTemplateReferences` | creator or admin |
 | `ListPlayers`, `GetPlayer`, `UpdatePlayer`, `ListAudit`, `StartModule`, `StopModule`, `RestartModule` | admin only |
 
 Not in this card: `GetRoomMap` (the map is laid out by the web from `ListRooms`, as `RoomMapLayout` does today), `GetStats` and `Flush` (sketched in
@@ -181,7 +181,7 @@ Backend of the website Areas page and of every area dropdown. Logic: `MUD.Core/A
   at most 100 characters, no control characters), `description` (optional, one line, at most 200, no control characters), plus `updatedAt`
   and `updatedBy`. Text is normalised like room text (trailing whitespace trimmed). Areas are organisational for the back end and usually
   line up with regions of the game; `Room.Area` stays a string equal to the key prefix.
-- **Roles.** All five calls: creator or admin (token checked per call, role re-read; status codes as in the table above). Writes run on the
+- **Roles.** All six calls: creator or admin (token checked per call, role re-read; status codes as in the table above). Writes run on the
   game thread with the token check, via `Mutate`.
 - **Contract.** `AreaRecord { id, name, description, room_count }`; `room_count` is filled by core on every read and reply and ignored on
   input. `ListAreas(TokenRequest) -> ListAreasReply` (ordered by id), `GetArea(AreaIdRequest) -> GetAreaReply { found, area }`,
@@ -221,7 +221,7 @@ Backend of the website Areas page and of every area dropdown. Logic: `MUD.Core/A
 - **Web.** `IAdminClient` has `ListAreasAsync`, `GetAreaAsync` (null for an unknown id), `CreateAreaAsync`, `UpdateAreaAsync`, `DeleteAreaAsync`; the reply
   result carries every branch above; exceptions as for rooms. `FakeAdminClient` (MUD.Web.Tests) implements them with an in-memory dictionary.
 
-## Item templates (`ListItemTemplates`, `GetItemTemplate`, `CreateItemTemplate`, `UpdateItemTemplate`, `DeleteItemTemplate`)
+## Item templates (`ListItemTemplates`, `GetItemTemplate`, `CreateItemTemplate`, `UpdateItemTemplate`, `DeleteItemTemplate`, `ListItemTemplateReferences`)
 
 Backend of the website Item templates pages. The entity, its rules and open questions are in `specs/ITEM_TEMPLATES.md`; this section is the
 rpc surface. Logic: `MUD.Core/Administration/AdminApi.ItemTemplates.cs`; storage seam `IItemTemplateStore` (`MongoItemTemplateStore` in production,
@@ -229,7 +229,7 @@ an in-memory fake in tests) in `MUD.Core/ItemTemplates/ItemTemplateStore.cs`; fi
 by copying the Areas pattern above (five touch points: `admin.proto`, `AdminApi.*.cs`, `AdminService.cs`, the `AdminApi` constructor and
 `World.CreateAdminApi`, and the web client `IAdminClient` / `GrpcAdminClient` / `FakeAdminClient`).
 
-- **Roles.** All five calls: creator or admin, token checked per call (status codes as in the table above). Writes run on the game thread via `Mutate`.
+- **Roles.** All six calls: creator or admin, token checked per call (status codes as in the table above). Writes run on the game thread via `Mutate`.
 - **Contract.** `ItemTemplateRecord { id, area, short, long, handles, adjectives, plurals, components_json, behaviors (RoomBehavior), version }`.
   `ListItemTemplates(ListItemTemplatesRequest { token, area }) -> ListItemTemplatesReply` (ordered by id; empty `area` = all areas),
   `GetItemTemplate(ItemTemplateIdRequest) -> GetItemTemplateReply { found, template }`, `CreateItemTemplate` / `UpdateItemTemplate(SaveItemTemplateRequest) ->
@@ -252,7 +252,7 @@ by copying the Areas pattern above (five touch points: `admin.proto`, `AdminApi.
   | `INVALID` | field rules broken (above), including an unknown area |
   | `NOT_FOUND` | update or delete of an id that has no record (an update is never a rename; the id is the key) |
   | `ALREADY_EXISTS` | create of an id that exists (also when another writer created it between the read and the write) |
-  | `REFUSED` | no item template store is available. Delete refusal while something references the template is NOT built: nothing references templates yet (one place to add it in `RemoveItemTemplate`) |
+  | `REFUSED` | no item template store is available; or (delete) a stored search reward still carries the template's id: the message is the fixed sentence "This item template is still used by N search reward(s). Nothing was changed." and nothing is audited or written |
   | `AUDIT_FAILED` | the audit rows could not be written; nothing was written |
   | `FAILED` | the database write failed |
 
@@ -264,10 +264,20 @@ by copying the Areas pattern above (five touch points: `admin.proto`, `AdminApi.
 - **Collection** `item_template`: `_id` = the id, `area`, `short`, `long`, `handles`, `adjectives`, `plurals`, optional `components` (a document),
   `behaviors` (array of `{hook, module, type, priority, config, schemaVersion}`, the `BehaviorRef` shape), `version`, `updatedAt`, `updatedBy`.
   Nothing is seeded.
+- **References** (card t_0c2a2723; specs/ITEM_TEMPLATES.md "References"). A search reward the importer copied from a template carries
+  `templateId` and `templateVersion`. `ListItemTemplateReferences(ItemTemplateIdRequest) -> ListItemTemplateReferencesReply { current_version,
+  references[] { room_key, entry_id, template_version, stale } }`, creator or admin, read-only, ordered by room key then entry id; `stale` =
+  `template_version < current_version` (a missing or non-numeric version is 0). An unknown or blank id, or no store, answers an empty list and
+  `current_version` 0. If the template library or the rooms cannot be read the call answers gRPC `Unavailable`. The delete refusal above uses the
+  same scan (`IAdminQueries.RoomsWithTemplateReward(templateId)`: the rooms whose `search.entries` has an element with `reward.templateId` equal
+  to the id; `_id` and `search` only); a failing scan makes the delete `FAILED` with the template kept. The count is of rewards, not rooms.
+  Not refused (nothing is stored for them): an item taken from a reward, or made by `clone`, never carries a reference.
 - **Web.** `IAdminClient` has `ListItemTemplatesAsync(token, area?)`, `GetItemTemplateAsync` (null for an unknown id), `CreateItemTemplateAsync`,
-  `UpdateItemTemplateAsync`, `DeleteItemTemplateAsync`; exceptions as for rooms. `FakeAdminClient` implements them with an in-memory dictionary.
+  `UpdateItemTemplateAsync`, `DeleteItemTemplateAsync`, `ListItemTemplateReferencesAsync`; exceptions as for rooms. `FakeAdminClient` implements them
+  with an in-memory dictionary (references: a settable reply, and `CrashOnReferences`).
 - Tests: `MUD.Tests/ItemTemplateTests.cs` (rules, documents, every rpc branch, roles, audit failure, races, null lists, bad key prefix, unknown area,
-  oversize config).
+  oversize config, delete refusal and its count, the references call and the scan, the template copy), `MUD.Tests/TemplateReferenceTests.cs`
+  (the importer with a reward template, `clone`).
 
 ## Not verified here
 

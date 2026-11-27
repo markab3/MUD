@@ -279,10 +279,15 @@ the entity in `specs/ITEM_TEMPLATES.md`).
   entry: hook with a datalist of the known hooks, module, type, priority, config JSON; Add and Remove buttons). JSON that does not parse is reported
   by the page and nothing is sent; every other rule is core's and its messages are shown as they come, with the input kept. Core owns the version.
   The terrain editor has no list input component (its handles and adjectives are plain text boxes), so the same comma-or-space text box is reused.
+- **Used by** (`#it-refs`, an existing template only, read-only): a summary (`#it-refs-summary`, "N search rewards use this template; M hold an
+  older version."), then one card per stored copy (`.mud-refs`): the room (linked to its edit page), the search entry id and the version copied,
+  with "older than the template's version V" on a stale one. It explains that copies are made at import and that refreshing them is not available
+  yet (re-import the area file). No button or input. If the read fails the section shows `#it-refs-error` and the rest of the page still works.
+  Delete on the list shows core's refusal ("still used by N search rewards") and keeps the row.
 - **Preview** (`#it-preview`, updates as you type): the short description, the long description, and "A player can type: ..." built from the handles
   alone and each adjective in front of each handle (at most 12, then "..."); with no handle it says a player cannot name the item.
 - Palette variables only, 44px targets (shared rules), no horizontal scroll at 360px (cards, wrapping text, `min-width: 0`). `.mud-itemgroup*` and
-  `.mud-code` in `mobile.css`.
+  `.mud-code` and `.mud-refs` in `mobile.css`.
 - Tests: `MUD.Web.Tests/ItemTemplateWebTests.cs` (gRPC client over a socket, fake client, both presenters, rendered pages). Not verified: the layout
   at 360px in a real browser.
 

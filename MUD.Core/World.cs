@@ -915,7 +915,7 @@ namespace MUD.Core
             if (string.IsNullOrWhiteSpace(_settings.ContentDirectory) || !_settings.ImportOnStartup) { return; }
 
             var store = new MUD.Core.Import.RoomRepositoryImportStore(_serviceProvider.GetService<IRoomRepository>());
-            var service = new MUD.Core.Import.AreaFileService(new MUD.Core.Import.AreaImporter(store, new MUD.Core.Areas.MongoAreaStore(_serviceProvider.GetService<IMongoDatabase>())), _settings.ContentDirectory);
+            var service = new MUD.Core.Import.AreaFileService(new MUD.Core.Import.AreaImporter(store, new MUD.Core.Areas.MongoAreaStore(_serviceProvider.GetService<IMongoDatabase>()), new MUD.Core.ItemTemplates.MongoItemTemplateStore(_serviceProvider.GetService<IMongoDatabase>())), _settings.ContentDirectory);
             foreach (var line in service.ImportAll())
             {
                 Console.WriteLine(line);

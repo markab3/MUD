@@ -319,6 +319,7 @@ neighborPhrases:
             public int CountAdmins() { return 0; }
             public List<BsonDocument> ListRooms() { return new List<BsonDocument>(); }
             public List<string> RoomIdsWithExitTo(string key) { return new List<string>(); }
+            public List<BsonDocument> RoomsWithTemplateReward(string templateId) { return new List<BsonDocument>(); }
         }
 
         private class Person : Player
