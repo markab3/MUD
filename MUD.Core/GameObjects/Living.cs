@@ -37,6 +37,50 @@ namespace MUD.Core.GameObjects
 
         private MUD.Core.Components.Roles _roles;
 
+        // ---- Vitals, experience and ability scores (specs/ARCHITECTURE_V2.md, "Vitals and conditions") ----
+        // Plain stored properties; nothing uses them yet (no damage, regeneration, death or stat effects).
+        // A stored document without these fields must get the defaults, not zero: the driver would otherwise fill
+        // default(T), so each property carries [BsonDefaultValue] (which the class map applies for a missing element). Setters clamp rather than throw: a Max is kept within 1..1000, a current value within
+        // 0..its Max, experience at 0 or more. Ability scores are bytes, so 0..255 by type.
+        public const short VitalScale = 1000;
+        public const byte DefaultAbilityScore = 10;
+
+        private short _maxHealth = VitalScale, _maxStamina = VitalScale, _maxAlacrity = VitalScale;
+        private short _health = VitalScale, _stamina = VitalScale, _alacrity = VitalScale;
+        private long _experience;
+
+        private static short ClampMax(short value) { return value < 1 ? (short)1 : value > VitalScale ? VitalScale : value; }
+        private static short ClampCurrent(short value, short max) { return value < 0 ? (short)0 : value > max ? max : value; }
+
+        [BsonDefaultValue((short)1000)]
+        public short MaxHealth { get { return _maxHealth; } set { _maxHealth = ClampMax(value); _health = ClampCurrent(_health, _maxHealth); } }
+        [BsonDefaultValue((short)1000)]
+        public short Health { get { return _health; } set { _health = ClampCurrent(value, _maxHealth); } }
+        [BsonDefaultValue((short)1000)]
+        public short MaxStamina { get { return _maxStamina; } set { _maxStamina = ClampMax(value); _stamina = ClampCurrent(_stamina, _maxStamina); } }
+        [BsonDefaultValue((short)1000)]
+        public short Stamina { get { return _stamina; } set { _stamina = ClampCurrent(value, _maxStamina); } }
+        [BsonDefaultValue((short)1000)]
+        public short MaxAlacrity { get { return _maxAlacrity; } set { _maxAlacrity = ClampMax(value); _alacrity = ClampCurrent(_alacrity, _maxAlacrity); } }
+        [BsonDefaultValue((short)1000)]
+        public short Alacrity { get { return _alacrity; } set { _alacrity = ClampCurrent(value, _maxAlacrity); } }
+
+        [BsonDefaultValue((long)0)]
+        public long Experience { get { return _experience; } set { _experience = value < 0 ? 0 : value; } }
+
+        [BsonDefaultValue((byte)10)]
+        public byte Strength { get; set; } = DefaultAbilityScore;
+        [BsonDefaultValue((byte)10)]
+        public byte Dexterity { get; set; } = DefaultAbilityScore;
+        [BsonDefaultValue((byte)10)]
+        public byte Intelligence { get; set; } = DefaultAbilityScore;
+        [BsonDefaultValue((byte)10)]
+        public byte Wisdom { get; set; } = DefaultAbilityScore;
+        [BsonDefaultValue((byte)10)]
+        public byte Constitution { get; set; } = DefaultAbilityScore;
+        [BsonDefaultValue((byte)10)]
+        public byte Charisma { get; set; } = DefaultAbilityScore;
+
         protected Room _currentLocation;
 
         protected World _world;

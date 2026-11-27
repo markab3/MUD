@@ -73,6 +73,7 @@ MUD.Data.Entity            string Id (Mongo _id), Clone<T>()               MUD.D
  |                         Adjectives, Handles, List<ExtendedProperty>,
  |                         matching (IsMatchForString / IsPluralMatchForString), Examine()
  |    +-- Living           Gender, Race, Class, CurrentLocationId, KnownCommands,
+ |    |    |               Health/Stamina/Alacrity (+Max), Experience, six ability scores (LIVING_STATS.md),
  |    |    |               Inventory/WornItems/HeldItems, NextActionAt, MoveToRoom,
  |    |    |               ResolveCommand, MatchObjects, DoHeartbeat      Living.cs
  |    |    +-- Player      PlayerName, NameKey, Password (plaintext), Rev, Retired,
@@ -88,6 +89,10 @@ MUD.Data.Entity            string Id (Mongo _id), Clone<T>()               MUD.D
  +-- ExtendedProperty (abstract, an Entity) objectContext, InitializeProperty(), RemoveProperty()   Properties/ExtendedProperty.cs
       BleedingProperty (IHeartbeat) | AdminProperty | CreatorProperty | BasicSearchProperty (ISearchable)
 ```
+
+Vitals and conditions: `Living` stores Health, Stamina, Alacrity (each 0..Max, Max 1..1000, default 1000), Experience (long) and six
+ability scores (byte, default 10). They are stored values only: no death, exhaustion, stun or unconsciousness behaviour exists yet.
+See [LIVING_STATS.md](LIVING_STATS.md), section "Vitals and conditions".
 
 How behaviour is attached today:
 

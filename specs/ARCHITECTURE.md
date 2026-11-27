@@ -131,6 +131,8 @@ MUD.Data.Entity                    (abstract; string Id ↔ ObjectId)
     │                              Plurals, Adjectives, Handles,
     │                              Examine()
     ├── Living                   Race/Class/Gender, KnownCommands,
+    │   │                          Health/Stamina/Alacrity (+Max), Experience,
+    │   │                          six ability scores (LIVING_STATS.md),
     │   │                          Inventory/WornItems/HeldItems,
     │   │                          CurrentLocationId, MatchObjects,
     │   │                          ResolveCommand, DoHeartbeat,
