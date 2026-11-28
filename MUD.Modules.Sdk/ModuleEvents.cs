@@ -52,12 +52,11 @@ namespace MUD.Modules.Sdk
         }
 
         /// <summary>feature.add: adds a Feature to a room (D72). Features are identified by their short text.</summary>
-        public static EventRecord AddFeature(string roomId, string shortText, string longText = null, string roomLine = null, string detail = null, IEnumerable<string> handles = null)
+        public static EventRecord AddFeature(string roomId, string shortText, string longText = null, string roomLine = null, IEnumerable<string> handles = null)
         {
             Struct payload = Payloads.Map(("short", shortText));
             if (longText != null) { payload.Fields["long"] = Value.ForString(longText); }
             if (roomLine != null) { payload.Fields["roomLine"] = Value.ForString(roomLine); }
-            if (detail != null) { payload.Fields["detail"] = Value.ForString(detail); }
             if (handles != null) { payload.Fields["handles"] = Payloads.ToValue(new List<string>(handles)); }
             return Custom("feature.add", payload, roomId);
         }

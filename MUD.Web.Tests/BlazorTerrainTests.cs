@@ -666,6 +666,26 @@ public class TerrainPresenterTests
     private static Type Component(string name) =>
         typeof(IAdminClient).Assembly.GetTypes().Single(t => t.FullName == "MUD.Web.Components.Pages." + name);
 
+    [Fact]
+    public void TerrainEdit_HasNoDetailField_TheLongFieldIsTheLookText_AndAnOldDraftWithDetailIsIgnored()
+    {
+        var src = Read("MUD.Web/Components/Pages/TerrainEdit.razor");
+        Assert.DoesNotContain("te-detail", src);
+        Assert.DoesNotContain("Detail", src);
+        Assert.Contains("Look text (shown when a player looks at it)", src);
+        var old = "{\"Short\":\"a rock\",\"Long\":\"Look.\",\"RoomLine\":\"r\",\"Detail\":\"old detail\",\"Weight\":2}";
+        var draft = System.Text.Json.JsonSerializer.Deserialize<Components.Pages.TerrainEdit.TerrainDraft>(old);
+        Assert.NotNull(draft);
+        Assert.Equal("Look.", draft!.Long);
+        Assert.DoesNotContain("old detail", System.Text.Json.JsonSerializer.Serialize(draft));
+    }
+
+    [Fact]
+    public void TheVersionHintNoLongerNamesDetail()
+    {
+        Assert.DoesNotContain("detail", new TerrainEditPresenter(new FakeAdminClient(), Token, TerrainLibrary.Feature, "x").VersionHint, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string Read(string relative)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

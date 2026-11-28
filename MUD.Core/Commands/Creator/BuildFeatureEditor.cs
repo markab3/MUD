@@ -18,7 +18,8 @@ namespace MUD.Core.Commands
             "  build feature add <short description>\r\n" +
             "  build feature set <short description> = <field> <text>\r\n" +
             "  build feature remove <short description>\r\n" +
-            "Fields: short, long, roomline, detail, handles, adjectives, plurals (the last three take a space separated list; roomline and detail with no text clear them).";
+            "Fields: short, long, roomline, handles, adjectives, plurals (the last three take a space separated list; roomline with no text clears it).\r\n" +
+            "'long' is what players see when they look at the feature.";
 
         public static void Execute(Living issuer, string args)
         {
@@ -58,8 +59,8 @@ namespace MUD.Core.Commands
             var lines = new List<string>();
             foreach (var f in room.Features.Where(f => f != null))
             {
-                lines.Add(string.Format("{0}\r\n  handles: {1}\r\n  adjectives: {2}\r\n  plurals: {3}\r\n  long: {4}\r\n  roomline: {5}\r\n  detail: {6}",
-                    f.ShortDescription, Join(f.Handles), Join(f.Adjectives), Join(f.Plurals), f.LongDescription, f.RoomLine, f.DetailDescription));
+                lines.Add(string.Format("{0}\r\n  handles: {1}\r\n  adjectives: {2}\r\n  plurals: {3}\r\n  long: {4}\r\n  roomline: {5}",
+                    f.ShortDescription, Join(f.Handles), Join(f.Adjectives), Join(f.Plurals), f.LongDescription, f.RoomLine));
             }
             issuer.ReceiveMessage(string.Join("\r\n", lines));
         }
@@ -136,7 +137,6 @@ namespace MUD.Core.Commands
                     feature.LongDescription = text;
                     break;
                 case "roomline": feature.RoomLine = text.Length == 0 ? null : text; break;
-                case "detail": feature.DetailDescription = text.Length == 0 ? null : text; break;
                 case "handles": feature.Handles = words; break;
                 case "adjectives": feature.Adjectives = words; break;
                 case "plurals": feature.Plurals = words; break;

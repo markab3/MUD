@@ -5,16 +5,13 @@ namespace MUD.Core.GameObjects
     /// A feature has three independent pieces of static text/data:
     ///   - Handles/Adjectives/Plurals (inherited): the nouns a player can target, matched by the GameObject matching methods.
     ///   - RoomLine: appended to the room's long description when the room is examined. May be empty.
-    ///   - DetailDescription: shown when a player looks at this feature.
+    ///   - LongDescription (inherited): the one look text, shown when a player looks at this feature.
     public class Feature : GameObject
     {
         public Feature() { }
 
         /// Text this feature adds to the room description. Null or empty means it adds nothing.
         public virtual string RoomLine { get; set; }
-
-        /// Text shown when the feature itself is looked at.
-        public virtual string DetailDescription { get; set; }
 
         /// The library feature template this feature was generated from (specs/TERRAIN_GENERATORS.md 5.2). Null for authored features.
         [MongoDB.Bson.Serialization.Attributes.BsonIgnoreIfNull]
@@ -31,10 +28,10 @@ namespace MUD.Core.GameObjects
             return RoomLine;
         }
 
-        /// The look text as seen by the examiner. Base returns DetailDescription; subclasses may vary it per examiner.
-        public virtual string GetDetailDescription(Living examiner)
+        /// The look text as seen by the examiner. Base returns LongDescription; subclasses may vary it per examiner.
+        public virtual string GetLongDescription(Living examiner)
         {
-            return DetailDescription;
+            return LongDescription;
         }
 
         /// Examine with no particular examiner (examiner is null).
@@ -43,12 +40,10 @@ namespace MUD.Core.GameObjects
             return Examine(null);
         }
 
-        /// Returns GetDetailDescription(examiner). If that is empty (e.g. features created from area files, which
-        /// only carry a LongDescription), falls back to LongDescription so they stay lookable.
+        /// Returns GetLongDescription(examiner): a feature has one look text.
         public override string Examine(Living examiner)
         {
-            var detail = GetDetailDescription(examiner);
-            return string.IsNullOrEmpty(detail) ? LongDescription : detail;
+            return GetLongDescription(examiner);
         }
     }
 }

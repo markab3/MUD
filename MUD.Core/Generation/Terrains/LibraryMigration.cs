@@ -114,7 +114,7 @@ namespace MUD.Core.Generation.Terrains
                 Move(store.Features, f, "feature template", result, store, areas, maps, log, ensured, null, (copy, id, terrain) => { copy.Id = id; copy.Terrain = terrain; },
                     c => new FeatureTemplate
                     {
-                        Short = c.Short, Long = c.Long, Handles = c.Handles.ToList(), Adjectives = c.Adjectives.ToList(), RoomLine = c.RoomLine, Detail = c.Detail,
+                        Short = c.Short, Long = c.Long, Handles = c.Handles.ToList(), Adjectives = c.Adjectives.ToList(), RoomLine = c.RoomLine,
                         Weight = c.Weight, Chance = c.Chance, Version = c.Version, Tags = c.Tags.ToList(), LegacyTerrains = c.LegacyTerrains.ToList(),
                     }, n => result.Features += n);
             }

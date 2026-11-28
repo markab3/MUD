@@ -442,7 +442,7 @@ public class RoomEditPresenterTests
     private static FakeAdminClient WithFeatures()
     {
         var core = new FakeAdminClient().AddRoom("t.start").AddRoom("t.hall", "t", 1, 1, 0, ("north", "t.start"));
-        var a = new RoomFeature { Short = "fountain", Long = "A <b>stone</b> fountain.", RoomLine = "A fountain gurgles.", Detail = "Carved." };
+        var a = new RoomFeature { Short = "fountain", Long = "A <b>stone</b> fountain.", RoomLine = "A fountain gurgles." };
         a.Handles.AddRange(new[] { "fountain", "basin" });
         a.Adjectives.Add("stone");
         a.Plurals.Add("fountains");
@@ -510,7 +510,7 @@ public class RoomEditPresenterTests
         p.Features = new List<FeatureInput>
         {
             new() { Short = " bench ", Long = " A bench. ", Handles = "bench,  seat\tpew", Adjectives = "", Plurals = " , " },
-            new() { Short = "fountain", Long = "Wet.", RoomLine = "", Detail = "d", Handles = "fountain" },
+            new() { Short = "fountain", Long = "Wet.", RoomLine = "", Handles = "fountain" },
         };
         await p.SaveAsync();
         var sent = Assert.Single(core.RoomUpdates);
@@ -519,7 +519,6 @@ public class RoomEditPresenterTests
         Assert.Equal("A bench.", sent.Features[0].Long);
         Assert.Equal(new[] { "bench", "seat", "pew" }, sent.Features[0].Handles.ToArray());
         Assert.Empty(sent.Features[0].Plurals);
-        Assert.Equal("d", sent.Features[1].Detail);
         Assert.Equal("x", sent.ShortDescription); // other room fields travel in the same call
     }
 
@@ -941,7 +940,21 @@ public class RoomComponentGuardTests
         Assert.Contains("separate words with commas or spaces", src);
         Assert.True(src.IndexOf(">Exits</h2>", StringComparison.Ordinal) < src.IndexOf(">Features</h2>", StringComparison.Ordinal));
         Assert.Contains("<textarea id=\"re-f@(index)-long\"", src);
-        Assert.Contains("<textarea id=\"re-f@(index)-detail\"", src);
+        Assert.DoesNotContain("-detail", src);
+        Assert.Contains("Look text (shown when a player looks at it)", src);
+    }
+
+    [Fact]
+    public void AnOldSavedDraftThatStillHasDetail_IsReadAndTheDetailIsIgnored()
+    {
+        // Drafts are plain JSON in the browser; one saved before detail was merged into long carries a "Detail" property.
+        var old = "{\"Short\":\"a hall\",\"Long\":\"A hall.\",\"Features\":[{\"Short\":\"table\",\"Long\":\"Look text.\",\"RoomLine\":\"r\",\"Detail\":\"old detail\",\"Handles\":\"table\"}]}";
+        var draft = System.Text.Json.JsonSerializer.Deserialize<Components.Pages.RoomEdit.RoomEditDraft>(old);
+        Assert.NotNull(draft);
+        var feature = Assert.Single(draft!.Features);
+        Assert.Equal("Look text.", feature.Long);
+        Assert.Equal("table", feature.Handles);
+        Assert.DoesNotContain("old detail", System.Text.Json.JsonSerializer.Serialize(draft));
     }
 
     [Fact]

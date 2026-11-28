@@ -6,7 +6,7 @@ using Xunit;
 
 namespace MUD.Tests
 {
-    // Room features in area files: room_line and detail (specs/ROOM_FILES.md section 4.4).
+    // Room features in area files: room_line, and the deprecated detail alias of long (specs/ROOM_FILES.md section 4.4).
     public class FeatureYamlTests
     {
         private const string Area = @"
@@ -20,11 +20,10 @@ rooms:
     long: A plain hall.
     features:
       - short: a table
-        long: A table.
-        room_line: A heavy oak table stands against the wall.
-        detail: |
+        long: |
           The table is scarred.
           Someone carved a name into it.
+        room_line: A heavy oak table stands against the wall.
         handles: [table]
       - short: a rug
         long: A rug.
@@ -37,7 +36,7 @@ rooms:
         }
 
         [Fact]
-        public void ImportReadsRoomLineAndDetail()
+        public void ImportReadsRoomLineAndLong()
         {
             var store = new FakeStore();
             var result = new AreaImporter(store).Import(Area);
@@ -45,8 +44,8 @@ rooms:
             Assert.True(result.Success, string.Join("; ", result.Errors));
             var table = Feature(store, 0);
             Assert.Equal("A heavy oak table stands against the wall.", table["RoomLine"].AsString);
-            Assert.Equal("The table is scarred.\nSomeone carved a name into it.", table["DetailDescription"].AsString);
-            Assert.Equal("A table.", table["LongDescription"].AsString);
+            Assert.Equal("The table is scarred.\nSomeone carved a name into it.", table["LongDescription"].AsString);
+            Assert.False(table.Contains("DetailDescription"));
         }
 
         [Fact]
@@ -57,7 +56,7 @@ rooms:
 
             var rug = Feature(store, 1);
             Assert.True(rug["RoomLine"].IsBsonNull);
-            Assert.True(rug["DetailDescription"].IsBsonNull);
+            Assert.False(rug.Contains("DetailDescription"));
         }
 
         [Fact]
@@ -91,7 +90,7 @@ rooms:
         }
 
         [Fact]
-        public void UpsertUpdatesRoomLineAndDetailForAMatchedFeature()
+        public void UpsertUpdatesRoomLineAndLongForAMatchedFeature()
         {
             var store = new FakeStore();
             var importer = new AreaImporter(store);
@@ -107,7 +106,7 @@ rooms:
             Assert.Equal(new[] { "Features" }, result.Plan.Single().ChangedFields.ToArray());
             var table = Feature(store, 0);
             Assert.Equal("A table sits here.", table["RoomLine"].AsString);
-            Assert.Equal("Plain.", table["DetailDescription"].AsString);
+            Assert.Equal("Plain.", table["LongDescription"].AsString);
             Assert.Equal(originalId, table["_id"]);
         }
 
@@ -127,20 +126,18 @@ rooms:
         }
 
         [Fact]
-        public void RemovingRoomLineAndDetailFromTheFileClearsThem()
+        public void RemovingRoomLineFromTheFileClearsIt()
         {
             var store = new FakeStore();
             var importer = new AreaImporter(store);
             importer.Import(Area);
 
-            var stripped = Area.Replace("        room_line: A heavy oak table stands against the wall.\n", "")
-                               .Replace("        detail: |\n          The table is scarred.\n          Someone carved a name into it.\n", "");
+            var stripped = Area.Replace("        room_line: A heavy oak table stands against the wall.\n", "");
             var result = importer.Import(stripped);
 
             Assert.True(result.Success, string.Join("; ", result.Errors));
             var table = Feature(store, 0);
             Assert.True(table["RoomLine"].IsBsonNull);
-            Assert.True(table["DetailDescription"].IsBsonNull);
         }
 
         [Fact]
@@ -160,7 +157,7 @@ rooms:
         }
 
         [Fact]
-        public void ExportWritesRoomLineAndDetailAndOmitsEmptyOnes()
+        public void ExportWritesRoomLineAndLongAndNeverDetail()
         {
             var store = new FakeStore();
             new AreaImporter(store).Import(Area);
@@ -169,7 +166,7 @@ rooms:
 
             Assert.True(exported.Success, string.Join("; ", exported.Errors));
             Assert.Equal(1, CountOf(exported.Yaml, "room_line:"));
-            Assert.Equal(1, CountOf(exported.Yaml, "detail:"));
+            Assert.Equal(0, CountOf(exported.Yaml, "detail:"));
             Assert.Contains("A heavy oak table stands against the wall.", exported.Yaml);
         }
 
@@ -250,6 +247,83 @@ overrides:
             Assert.True(result.Success, string.Join("; ", result.Errors));
             var withLine = store.Docs.Values.Single(d => d["Features"].AsBsonArray.Count == 1);
             Assert.Equal("A statue stands here.", withLine["Features"][0]["RoomLine"].AsString);
+        }
+
+        // ---- the deprecated `detail` alias (one look text per feature)
+
+        private const string OldFile = @"
+area:
+  schema_version: 1
+  prefix: t
+  name: Test
+rooms:
+  - key: hall
+    short: a hall
+    long: A plain hall.
+    features:
+      - short: a table
+        long: The old long that players never saw.
+        detail: What players saw.
+        handles: [table]
+      - short: a rug
+        detail: Only a detail, no long.
+        handles: [rug]
+      - short: a lamp
+        long: Only a long.
+        handles: [lamp]
+";
+
+        [Fact]
+        public void DetailAliasWinsOverLong_AndWarnsOnlyWhenBothArePresent()
+        {
+            var store = new FakeStore();
+            var result = new AreaImporter(store).Import(OldFile);
+
+            Assert.True(result.Success, string.Join("; ", result.Errors));
+            Assert.Equal("What players saw.", Feature(store, 0)["LongDescription"].AsString);
+            Assert.Equal("Only a detail, no long.", Feature(store, 1)["LongDescription"].AsString);
+            Assert.Equal("Only a long.", Feature(store, 2)["LongDescription"].AsString);
+            Assert.False(Feature(store, 0).Contains("DetailDescription"));
+            var warning = Assert.Single(result.Warnings);
+            Assert.Equal("feature a table: detail merged into long; remove detail", warning);
+        }
+
+        [Fact]
+        public void AnEmptyDetailDoesNotWinAndDoesNotWarn()
+        {
+            var store = new FakeStore();
+            var result = new AreaImporter(store).Import(OldFile.Replace("detail: What players saw.", "detail: ''"));
+
+            Assert.True(result.Success, string.Join("; ", result.Errors));
+            Assert.Equal("The old long that players never saw.", Feature(store, 0)["LongDescription"].AsString);
+            Assert.Empty(result.Warnings);
+        }
+
+        [Fact]
+        public void LongIsStillRequiredWhenThereIsNoDetail()
+        {
+            var result = new AreaImporter(new FakeStore()).Import(Area.Replace("        long: |\n          The table is scarred.\n          Someone carved a name into it.\n", ""));
+
+            Assert.False(result.Success);
+            Assert.Contains(result.Errors, e => e.Contains("long"));
+        }
+
+        [Fact]
+        public void ImportOfAnOldFileThenExportThenImportIsStable_AndWritesOnlyLong()
+        {
+            var store = new FakeStore();
+            var importer = new AreaImporter(store);
+            Assert.True(importer.Import(OldFile).Success);
+
+            var exported = new AreaExporter(store).ExportArea("t");
+            Assert.DoesNotContain("detail:", exported.Yaml);
+            var before = store.UpsertCount;
+            var again = importer.Import(exported.Yaml);
+
+            Assert.True(again.Success, string.Join("; ", again.Errors));
+            Assert.Empty(again.Warnings);
+            Assert.Equal(before, store.UpsertCount);
+            Assert.Equal(exported.Yaml, new AreaExporter(store).ExportArea("t").Yaml);
         }
 
         private static int CountOf(string text, string needle)

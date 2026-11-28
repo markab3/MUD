@@ -122,7 +122,6 @@ namespace MUD.Core.Generation.Terrains
                     Short = pick.Short,
                     Long = pick.Long,
                     RoomLine = pick.RoomLine,
-                    Detail = pick.Detail,
                     Handles = new List<string>(pick.Handles),
                     Adjectives = new List<string>(pick.Adjectives),
                     TemplateId = pick.Id,

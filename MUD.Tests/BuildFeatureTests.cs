@@ -65,20 +65,51 @@ namespace MUD.Tests
             var rig = new Rig();
             rig.Run("build feature add stone table");
             rig.Run("build feature set stone table = roomline A stone table stands here.");
-            rig.Run("build feature set stone table = detail Cold and heavy.");
             rig.Run("build feature set stone table = long A big table.");
             rig.Run("build feature set stone table = handles table slab");
             rig.Run("build feature set stone table = adjectives stone");
             rig.Run("build feature set stone table = plurals tables");
             var f = rig.Room.Features.Single();
             Assert.Equal("A stone table stands here.", f.RoomLine);
-            Assert.Equal("Cold and heavy.", f.DetailDescription);
             Assert.Equal("A big table.", f.LongDescription);
             Assert.Equal(new[] { "table", "slab" }, f.Handles);
             Assert.Equal(new[] { "stone" }, f.Adjectives);
             Assert.Equal(new[] { "tables" }, f.Plurals);
             Assert.Contains("A stone table stands here.", rig.Room.Examine(null));
             Assert.Equal("A stone table stands here.", rig.Repo.Docs["t.hall"]["Features"][0]["RoomLine"].AsString);
+        }
+
+        [Fact]
+        public void TheDetailFieldIsGone_TheUnknownFieldMessageIsShown_AndNothingChanges()
+        {
+            var rig = new Rig();
+            rig.Run("build feature add stone table");
+            rig.Run("build feature set stone table = long Cold and heavy.");
+
+            var msg = rig.Run("build feature set stone table = detail Something else.");
+
+            Assert.Contains("Unknown field 'detail'", msg);
+            Assert.Equal("Cold and heavy.", rig.Room.Features.Single().LongDescription);
+        }
+
+        [Fact]
+        public void UsageAndListNoLongerMentionDetail_AndSayLongIsWhatPlayersSee()
+        {
+            var rig = new Rig();
+            Assert.DoesNotContain("detail", BuildFeatureEditor.Usage, System.StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("'long' is what players see when they look", BuildFeatureEditor.Usage);
+            rig.Run("build feature add stone table");
+            Assert.DoesNotContain("detail", rig.Run("build feature list"), System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void LookShowsTheLongText()
+        {
+            var rig = new Rig();
+            rig.Run("build feature add stone table");
+            rig.Run("build feature set stone table = handles table");
+            rig.Run("build feature set stone table = long Cold and heavy.");
+            Assert.Equal("Cold and heavy.", rig.Room.Features.Single().Examine(rig.Creator));
         }
 
         [Fact]

@@ -289,7 +289,7 @@ public sealed class TerrainListPresenter
         }
         if (Tab == TerrainLibrary.Feature)
         {
-            all.AddRange(Features.Select(f => (new Row(TerrainLibrary.Feature, f.Id, f.Terrain, f.Weight, "version " + f.Version + ", chance " + f.Chance + ": " + Shorten(f.Short)), (IReadOnlyList<string>)f.Tags.ToList(), f.Short + " " + f.Long + " " + f.RoomLine + " " + f.Detail)));
+            all.AddRange(Features.Select(f => (new Row(TerrainLibrary.Feature, f.Id, f.Terrain, f.Weight, "version " + f.Version + ", chance " + f.Chance + ": " + Shorten(f.Short)), (IReadOnlyList<string>)f.Tags.ToList(), f.Short + " " + f.Long + " " + f.RoomLine)));
         }
         if (Tab == TerrainLibrary.Phrase)
         {

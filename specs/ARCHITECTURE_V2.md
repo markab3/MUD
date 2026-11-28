@@ -84,7 +84,7 @@ MUD.Data.Entity            string Id (Mongo _id), Clone<T>()               MUD.D
  |    |                    ApplyDefinition, ApplyWebEdit                    Room.cs
  |    +-- InventoryItem    empty                                           InventoryItem.cs
  |    |    (the Food and Wand subclasses are retired: they are now the food and wand behaviors, see section 5)
- |    +-- Feature          RoomLine, DetailDescription, virtual getters     Feature.cs
+ |    +-- Feature          RoomLine, one look text (Long), virtual getters    Feature.cs
  +-- Exit (plain class)    Name, DestinationId                             Exit.cs
  +-- ExtendedProperty (abstract, an Entity) objectContext, InitializeProperty(), RemoveProperty()   Properties/ExtendedProperty.cs
       BleedingProperty (IHeartbeat) | AdminProperty | CreatorProperty | BasicSearchProperty (ISearchable)
@@ -330,7 +330,7 @@ Core-owned components (typed in C#, schema fixed by core, persisted by core):
 | `Body` | `Gender`, `Race`, `Class`, `KnownCommands` |
 | `Account` | `PlayerName`, `NameKey`, `Password`, `Retired`, `SelectedTerm` |
 | `Roles` | `AdminProperty`, `CreatorProperty` (+ `CreatorProperty.CurrentDirectory` stays as creator data) |
-| `FeatureText` | `Feature.RoomLine`, `Feature.DetailDescription` |
+| `FeatureText` | `Feature.RoomLine` (the look text is the entity's `Description.Long`; the former `DetailDescription` was merged into it) |
 
 Module-owned components are schemaless to core, namespaced `<module>.<name>` (examples: `desert.storm` on a room,
 `desert.sand_blind` on a player, `temple.trap` on a room, `temple.lever` on an item). Rules for who may write which component are in G13.

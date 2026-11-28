@@ -1042,8 +1042,7 @@ namespace MUD.Core.Administration
             {
                 Short = feature.ShortDescription ?? string.Empty,
                 Long = feature.LongDescription ?? string.Empty,
-                RoomLine = feature.RoomLine ?? string.Empty,
-                Detail = feature.DetailDescription ?? string.Empty
+                RoomLine = feature.RoomLine ?? string.Empty
             };
             detail.Handles.AddRange((feature.Handles ?? new List<string>()).Where(w => w != null));
             detail.Adjectives.AddRange((feature.Adjectives ?? new List<string>()).Where(w => w != null));
@@ -1060,7 +1059,6 @@ namespace MUD.Core.Administration
                 { "Short", f.Short },
                 { "Long", f.Long },
                 { "RoomLine", string.IsNullOrEmpty(f.RoomLine) ? (BsonValue)BsonNull.Value : f.RoomLine },
-                { "Detail", string.IsNullOrEmpty(f.Detail) ? (BsonValue)BsonNull.Value : f.Detail },
                 { "Handles", new BsonArray(f.Handles) },
                 { "Adjectives", new BsonArray(f.Adjectives) },
                 { "Plurals", new BsonArray(f.Plurals) }
@@ -1084,7 +1082,6 @@ namespace MUD.Core.Administration
                 doc["ShortDescription"] = feature.Short;
                 doc["LongDescription"] = feature.Long;
                 doc["RoomLine"] = string.IsNullOrEmpty(feature.RoomLine) ? (BsonValue)BsonNull.Value : feature.RoomLine;
-                doc["DetailDescription"] = string.IsNullOrEmpty(feature.Detail) ? (BsonValue)BsonNull.Value : feature.Detail;
                 doc["Handles"] = new BsonArray(feature.Handles);
                 doc["Adjectives"] = new BsonArray(feature.Adjectives);
                 doc["Plurals"] = new BsonArray(feature.Plurals);
@@ -1105,7 +1102,6 @@ namespace MUD.Core.Administration
                 live.ShortDescription = feature.Short;
                 live.LongDescription = feature.Long;
                 live.RoomLine = string.IsNullOrEmpty(feature.RoomLine) ? null : feature.RoomLine;
-                live.DetailDescription = string.IsNullOrEmpty(feature.Detail) ? null : feature.Detail;
                 live.Handles = feature.Handles.ToList();
                 live.Adjectives = feature.Adjectives.ToList();
                 live.Plurals = feature.Plurals.ToList();
@@ -1381,8 +1377,7 @@ namespace MUD.Core.Administration
                     {
                         Short = Text(f, "ShortDescription") ?? string.Empty,
                         Long = Text(f, "LongDescription") ?? string.Empty,
-                        RoomLine = Text(f, "RoomLine") ?? string.Empty,
-                        Detail = Text(f, "DetailDescription") ?? string.Empty
+                        RoomLine = Text(f, "RoomLine") ?? string.Empty
                     };
                     feature.Handles.AddRange(Words(f, "Handles"));
                     feature.Adjectives.AddRange(Words(f, "Adjectives"));

@@ -161,7 +161,6 @@ namespace MUD.Core.Import
                     Short = Str(featureDoc, "ShortDescription"),
                     Long = Str(featureDoc, "LongDescription"),
                     RoomLine = NullIfEmpty(Str(featureDoc, "RoomLine")),
-                    Detail = NullIfEmpty(Str(featureDoc, "DetailDescription")),
                     Handles = StrList(featureDoc, "Handles", fctx, errors),
                     Adjectives = StrList(featureDoc, "Adjectives", fctx, errors),
                     Plurals = StrList(featureDoc, "Plurals", fctx, errors)
@@ -421,7 +420,6 @@ namespace MUD.Core.Import
                 sb.Append(indent).Append("  - short: ").Append(Quote(feature.Short)).Append('\n');
                 WriteText(sb, item, "long", feature.Long);
                 if (feature.RoomLine != null) { WriteText(sb, item, "room_line", feature.RoomLine); }
-                if (feature.Detail != null) { WriteText(sb, item, "detail", feature.Detail); }
                 WriteList(sb, item, "handles", feature.Handles);
                 WriteList(sb, item, "adjectives", feature.Adjectives);
                 WriteList(sb, item, "plurals", feature.Plurals);

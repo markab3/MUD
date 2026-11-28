@@ -173,7 +173,7 @@ namespace MUD.Core.Administration
         private static void BumpFeatureVersion(FeatureTemplate entity, FeatureTemplate stored)
         {
             if (stored == null) { entity.Version = 1; return; }
-            bool changed = entity.Short != stored.Short || entity.Long != stored.Long || entity.RoomLine != stored.RoomLine || entity.Detail != stored.Detail
+            bool changed = entity.Short != stored.Short || entity.Long != stored.Long || entity.RoomLine != stored.RoomLine
                 || !entity.Handles.SequenceEqual(stored.Handles) || !entity.Adjectives.SequenceEqual(stored.Adjectives);
             entity.Version = changed ? stored.Version + 1 : stored.Version;
         }
@@ -334,7 +334,7 @@ namespace MUD.Core.Administration
             return new FeatureTemplate
             {
                 Id = Trim(r.Id), Terrain = Trim(r.Terrain), Short = r.Short, Long = r.Long, Handles = r.Handles.ToList(), Adjectives = r.Adjectives.ToList(),
-                RoomLine = string.IsNullOrEmpty(r.RoomLine) ? null : r.RoomLine, Detail = string.IsNullOrEmpty(r.Detail) ? null : r.Detail,
+                RoomLine = string.IsNullOrEmpty(r.RoomLine) ? null : r.RoomLine,
                 Weight = r.Weight, Chance = r.Chance, Version = 1, Tags = r.Tags.ToList(),
             };
         }
@@ -358,7 +358,7 @@ namespace MUD.Core.Administration
             var r = new FeatureTemplateRecord
             {
                 Id = f.Id ?? string.Empty, Terrain = f.Terrain ?? string.Empty, Area = TerrainTypeRules.AreaOf(f.Terrain), Short = f.Short ?? string.Empty, Long = f.Long ?? string.Empty,
-                RoomLine = f.RoomLine ?? string.Empty, Detail = f.Detail ?? string.Empty, Weight = f.Weight, Chance = f.Chance, Version = f.Version,
+                RoomLine = f.RoomLine ?? string.Empty, Weight = f.Weight, Chance = f.Chance, Version = f.Version,
             };
             r.Handles.AddRange(f.Handles ?? new List<string>());
             r.Adjectives.AddRange(f.Adjectives ?? new List<string>());

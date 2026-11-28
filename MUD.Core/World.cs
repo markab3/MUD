@@ -482,6 +482,11 @@ namespace MUD.Core
             }
             // The terrain library (specs/TERRAIN_GENERATORS.md section 6): seeded from the embedded YAML on a fresh install only.
             // If the database or the seed fails, the Admin service still starts without a library (library calls answer REFUSED).
+            // One look text per feature: merge any stored detail into long (rooms' embedded features and terrain feature templates) BEFORE the
+            // library migration below, which copies templates through the typed entity that no longer has a detail. Idempotent. A failure is
+            // logged and does not stop the start; the next start runs it again.
+            try { MUD.Core.Generation.Terrains.FeatureDetailMigration.Run(new MUD.Core.Generation.Terrains.MongoFeatureDetailStore(database), Console.WriteLine); }
+            catch (Exception ex) when (!(ex is OutOfMemoryException)) { Console.WriteLine("The feature detail migration failed (" + ex.GetType().Name + ": " + ex.Message + "); it runs again on the next start."); }
             MUD.Core.Generation.Terrains.MongoLibraryStore libraryStore = null;
             MUD.Core.Generation.Terrains.StoreLibrary libraryCache = null;
             try

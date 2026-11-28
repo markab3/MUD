@@ -230,9 +230,8 @@ A feature is a described, matchable thing in a room that is not an item
 ```
 features:
   - short: "a heavy oak table"
-    long: "A heavy oak table, scarred by years of use."
+    long: "The table is scarred by years of use."                 # the one look text
     room_line: "A heavy oak table stands against the far wall."   # optional
-    detail: "The table is scarred by years of use."               # optional
     handles: [table]
     adjectives: [oak, heavy]
     plurals: [tables]
@@ -245,19 +244,35 @@ Feature text fields (all independent; any may be omitted):
 - `room_line` -> `Feature.RoomLine`: appended to the room description (after
   the room's `long`, one space between pieces). Omitted or empty means the
   feature adds nothing to the room description.
-- `detail` -> `Feature.DetailDescription`: shown for `look <noun>`. Omitted or
-  empty means `look` falls back to `long`.
-- `long` -> `LongDescription`: required, as before; it is the fallback
-  described above.
+- `long` -> `LongDescription`: required. The ONE look text of the feature:
+  shown for `look <noun>`. (A feature used to have a second text, `detail`;
+  it was merged into `long`, see the deprecation note below.)
 
-`room_line` and `detail` follow the text rules of section 11. An empty value
+`room_line` follows the text rules of section 11. An empty value
 is the same as an omitted one and is stored as null. Features are replaced as
 part of the `Features` list (6.2): a feature is matched by `short`; for a
-matched feature the file's `room_line` and `detail` replace the stored values,
-and omitting them clears them. Removing a feature from the file removes it
+matched feature the file's `long` and `room_line` replace the stored values,
+and omitting `room_line` clears it. Removing a feature from the file removes it
 from the room on the next import. The creator `export` command writes
-`room_line` and `detail` only when set, and import -> export -> import is
-stable.
+`room_line` only when set, and import -> export -> import is stable.
+
+**Deprecated alias `detail` (accepted for one more release).** Old area files
+may still carry `detail:` on a feature. The parser accepts it as an alias of
+`long`: a non-empty `detail` WINS and becomes `long` (it is what players have
+been seeing, so old files keep behaving the same), and `long` is then not
+required. When both are present the import report gets a warning line
+`feature <short>: detail merged into long; remove detail`. An empty `detail`
+is ignored. The exporter and the creator `export` command write only `long`.
+The alias will be removed in a later release (the key then becomes an unknown
+key error like any other).
+
+**Stored data.** At server start an idempotent migration (`FeatureDetailMigration`,
+logged) merges any stored `DetailDescription` of a room's embedded features into
+`LongDescription` and removes the element; where it was empty the element is
+just removed. The same step does this for terrain feature templates
+(`terrain_features.detail`) and bumps a template's `version` only when its
+`long` actually changed. The old `long` of a feature that had a `detail` is
+discarded (it was never shown to players).
 
 Features have no key, so identity within a room is the `short` string
 (case-insensitive, unique within the room; duplicates are a validation

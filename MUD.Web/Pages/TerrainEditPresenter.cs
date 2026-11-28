@@ -49,7 +49,6 @@ public sealed class TerrainEditPresenter
     public string? Short { get; set; }
     public string? Long { get; set; }
     public string? RoomLine { get; set; }
-    public string? Detail { get; set; }
     public string? Handles { get; set; }
     public string? Adjectives { get; set; }
     public double Chance { get; set; } = 1.0;
@@ -80,7 +79,7 @@ public sealed class TerrainEditPresenter
 
     public string VersionHint => IsNew
         ? "A new template starts at version 1."
-        : "Saving a change to the short, long, room line, detail, handles or adjectives raises the version from " + Version + " to " + (Version + 1) + ".";
+        : "Saving a change to the short, long, room line, handles or adjectives raises the version from " + Version + " to " + (Version + 1) + ".";
 
     public string KindLabel => TerrainLibrary.KindLabel(Kind ?? string.Empty);
 
@@ -146,7 +145,7 @@ public sealed class TerrainEditPresenter
                     var t = new FeatureTemplateRecord
                     {
                         Id = id, Short = Short ?? string.Empty, Long = Long ?? string.Empty, RoomLine = RoomLine ?? string.Empty,
-                        Detail = Detail ?? string.Empty, Weight = Weight, Chance = Chance,
+                        Weight = Weight, Chance = Chance,
                     };
                     t.Terrain = terrain; t.Handles.AddRange(TerrainLibrary.Split(Handles)); t.Adjectives.AddRange(TerrainLibrary.Split(Adjectives));
                     t.Tags.AddRange(TerrainLibrary.Split(Tags));
@@ -207,7 +206,7 @@ public sealed class TerrainEditPresenter
             case TerrainLibrary.Feature:
                 var t = await _core.GetFeatureTemplateAsync(_token, id, ct);
                 if (t == null) { return false; }
-                Terrain = t.Terrain; Short = t.Short; Long = t.Long; RoomLine = t.RoomLine; Detail = t.Detail;
+                Terrain = t.Terrain; Short = t.Short; Long = t.Long; RoomLine = t.RoomLine;
                 Handles = TerrainLibrary.Join(t.Handles); Adjectives = TerrainLibrary.Join(t.Adjectives); Weight = t.Weight; Chance = t.Chance;
                 Tags = TerrainLibrary.Join(t.Tags); Version = t.Version;
                 return true;

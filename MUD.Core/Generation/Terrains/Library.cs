@@ -39,7 +39,6 @@ namespace MUD.Core.Generation.Terrains
         public List<string> Handles { get; set; } = new List<string>();
         public List<string> Adjectives { get; set; } = new List<string>();
         public string RoomLine { get; set; }
-        public string Detail { get; set; }
         public int Weight { get; set; } = 1;
         public double Chance { get; set; } = 1.0;
         public int Version { get; set; } = 1;

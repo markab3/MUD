@@ -322,7 +322,6 @@ namespace MUD.Core.Generation
                             feature["ShortDescription"] = newShort;
                             feature["LongDescription"] = template.Long ?? "";
                             feature["RoomLine"] = string.IsNullOrEmpty(template.RoomLine) ? (BsonValue)BsonNull.Value : template.RoomLine;
-                            feature["DetailDescription"] = string.IsNullOrEmpty(template.Detail) ? (BsonValue)BsonNull.Value : template.Detail;
                             feature["Handles"] = new BsonArray((template.Handles ?? new List<string>()).Select(h => (BsonValue)h));
                             feature["Adjectives"] = new BsonArray((template.Adjectives ?? new List<string>()).Select(a => (BsonValue)a));
                             feature["TemplateVersion"] = template.Version;

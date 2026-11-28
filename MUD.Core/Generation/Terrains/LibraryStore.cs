@@ -61,7 +61,7 @@ namespace MUD.Core.Generation.Terrains
             {
                 { "_id", f.Id }, { "terrain", f.Terrain ?? string.Empty }, { "short", f.Short ?? string.Empty }, { "long", f.Long ?? string.Empty },
                 { "handles", Array(f.Handles) }, { "adjectives", Array(f.Adjectives) },
-                { "roomLine", f.RoomLine ?? string.Empty }, { "detail", f.Detail ?? string.Empty },
+                { "roomLine", f.RoomLine ?? string.Empty },
                 { "weight", f.Weight }, { "chance", f.Chance }, { "version", f.Version }, { "tags", Array(f.Tags) },
             }, f);
         }
@@ -97,7 +97,7 @@ namespace MUD.Core.Generation.Terrains
             {
                 Id = Text(d, "_id"), Terrain = Empty(Text(d, "terrain")), LegacyTerrains = List(d, "terrains"), Short = Text(d, "short"), Long = Text(d, "long"),
                 Handles = List(d, "handles"), Adjectives = List(d, "adjectives"),
-                RoomLine = Empty(Text(d, "roomLine")), Detail = Empty(Text(d, "detail")),
+                RoomLine = Empty(Text(d, "roomLine")),
                 Weight = Int(d, "weight", 1), Chance = d.TryGetValue("chance", out var c) && c.IsNumeric ? c.ToDouble() : 1.0,
                 Version = Int(d, "version", 1), Tags = List(d, "tags"),
             };

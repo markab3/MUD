@@ -92,9 +92,9 @@ namespace MUD.Modules.Sdk
         }
 
         /// <summary>feature.add: shows a temporary condition in `look` by adding a Feature to a room (D71, D72).</summary>
-        public Task<IReadOnlyList<EmitRefusal>> AddFeatureAsync(string roomId, string shortText, string longText = null, string roomLine = null, string detail = null, IEnumerable<string> handles = null)
+        public Task<IReadOnlyList<EmitRefusal>> AddFeatureAsync(string roomId, string shortText, string longText = null, string roomLine = null, IEnumerable<string> handles = null)
         {
-            return EmitAsync(ModuleEvents.AddFeature(roomId, shortText, longText, roomLine, detail, handles));
+            return EmitAsync(ModuleEvents.AddFeature(roomId, shortText, longText, roomLine, handles));
         }
 
         public Task<IReadOnlyList<EmitRefusal>> RemoveFeatureAsync(string roomId, string shortText)

@@ -377,7 +377,7 @@ neighborPhrases:
             var feature = new FeatureTemplate
             {
                 Id = "b", Terrain = "demo.grass", Short = "s", Long = "l", Handles = new List<string> { "h" }, Adjectives = new List<string> { "a" },
-                RoomLine = "r", Detail = "d", Weight = 3, Chance = 0.25, Version = 4, Tags = new List<string> { "t" },
+                RoomLine = "r", Weight = 3, Chance = 0.25, Version = 4, Tags = new List<string> { "t" },
             };
             BsonDocument document = LibraryDocuments.ToDocument(feature);
             Assert.Equal("b", document["_id"].AsString);
@@ -385,8 +385,8 @@ neighborPhrases:
             Assert.False(document.Contains("terrains"));   // a document that was never legacy has no retired array
             FeatureTemplate back = LibraryDocuments.FeatureFrom(document);
             Assert.Equal("demo.grass", back.Terrain);
-            Assert.Equal((feature.Short, feature.Long, feature.RoomLine, feature.Detail, feature.Weight, feature.Chance, feature.Version),
-                (back.Short, back.Long, back.RoomLine, back.Detail, back.Weight, back.Chance, back.Version));
+            Assert.Equal((feature.Short, feature.Long, feature.RoomLine, feature.Weight, feature.Chance, feature.Version),
+                (back.Short, back.Long, back.RoomLine, back.Weight, back.Chance, back.Version));
 
             var fragment = new DescriptionFragment { Id = "f", Terrain = "demo.forest", Slot = "ground", Text = "x", Weight = 0, Tags = new List<string> { "wet" } };
             DescriptionFragment fragmentBack = LibraryDocuments.FragmentFrom(LibraryDocuments.ToDocument(fragment));
@@ -765,6 +765,19 @@ neighborPhrases:
             Assert.Equal(3, f.Api.UpdateFeatureTemplate(new SaveFeatureTemplateRequest { Token = token, Template = handlesEdit }).Template.Version);
             Assert.Equal(3, f.Store.FeatureTable.Items["t1"].Version);
             Assert.Equal(3, f.Cache.FeatureById("t1").Version);   // update of rooms compares against this
+        }
+
+        [Fact]
+        public void AFeatureTemplateRecord_HasNoDetail_AndALongEditBumpsTheVersion()
+        {
+            Assert.Null(typeof(FeatureTemplateRecord).GetProperty("Detail"));
+            var f = new Fixture();
+            string token = f.Creator();
+            f.Api.CreateFeatureTemplate(new SaveFeatureTemplateRequest { Token = token, Template = Template("t1", "grass") });
+            var edit = Template("t1", "grass");
+            edit.Long = "The one look text.";
+            Assert.Equal(2, f.Api.UpdateFeatureTemplate(new SaveFeatureTemplateRequest { Token = token, Template = edit }).Template.Version);
+            Assert.Equal("The one look text.", f.Store.FeatureTable.Items["t1"].Long);
         }
 
         [Fact]

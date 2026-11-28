@@ -422,9 +422,8 @@ namespace MUD.Modules.Desert
             {
                 ModuleEvents.SetComponent(storm.Room, StormComponent, StormComponentData(storm)),
                 ModuleEvents.AddFeature(storm.Room, StormFeatureText,
-                    longText: "A wall of swirling sand fills the air, stinging and blinding.",
+                    longText: "The sand is so thick you can barely see your own hands.",
                     roomLine: "A wall of swirling sand roars through here.",
-                    detail: "The sand is so thick you can barely see your own hands.",
                     handles: new[] { "sand", "storm", "sandstorm", "wall" })
             };
         }

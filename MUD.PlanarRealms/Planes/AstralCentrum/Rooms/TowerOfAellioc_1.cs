@@ -15,7 +15,7 @@ namespace MUD.PlanarRealms.Planes.Neutral.Rooms
                 Adjectives = new List<string> { "heavy", "oak" },
                 Plurals = new List<string> { "tables" },
                 RoomLine = "A heavy oak table stands against the far wall.",
-                DetailDescription = "The oak table is scarred by countless knife marks and ringed with the stains of long-forgotten cups."
+                LongDescription = "The oak table is scarred by countless knife marks and ringed with the stains of long-forgotten cups."
             });
 
             Features.Add(new Feature
@@ -25,7 +25,7 @@ namespace MUD.PlanarRealms.Planes.Neutral.Rooms
                 Adjectives = new List<string> { "narrow" },
                 Plurals = new List<string> { "windows" },
                 RoomLine = "A narrow window lets in a thin shaft of pale light.",
-                DetailDescription = "Through the narrow window you glimpse the shimmering, shifting expanse of the Astral sea far below."
+                LongDescription = "Through the narrow window you glimpse the shimmering, shifting expanse of the Astral sea far below."
             });
 
             // TODO: SearchProperty no longer exists (replaced by BasicSearchProperty); disabled until the behavior registry replaces this lambda.

@@ -92,12 +92,11 @@ else
                         <h3>Feature @(index + 1)</h3>
                         <div class="mud-field"><label for="re-f@(index)-short">Short</label>
                             <input id="re-f@(index)-short" value="@f.Short" @onchange="e => Edit(() => f.Short = e.Value?.ToString())" maxlength="100" /></div>
-                        <div class="mud-field"><label for="re-f@(index)-long">Long</label>
-                            <textarea id="re-f@(index)-long" value="@f.Long" @onchange="e => Edit(() => f.Long = e.Value?.ToString())" maxlength="4000" rows="4"></textarea></div>
+                        <div class="mud-field"><label for="re-f@(index)-long">Look text (shown when a player looks at it)</label>
+                            <textarea id="re-f@(index)-long" value="@f.Long" @onchange="e => Edit(() => f.Long = e.Value?.ToString())" maxlength="4000" rows="4" aria-describedby="re-f@(index)-long-hint"></textarea>
+                            <span class="mud-hint" id="re-f@(index)-long-hint">This is the one text players see for "look" at this feature. The room line below is the separate sentence added to the room description.</span></div>
                         <div class="mud-field"><label for="re-f@(index)-line">Room line (optional)</label>
                             <input id="re-f@(index)-line" value="@f.RoomLine" @onchange="e => Edit(() => f.RoomLine = e.Value?.ToString())" maxlength="4000" /></div>
-                        <div class="mud-field"><label for="re-f@(index)-detail">Detail (optional)</label>
-                            <textarea id="re-f@(index)-detail" value="@f.Detail" @onchange="e => Edit(() => f.Detail = e.Value?.ToString())" maxlength="4000" rows="3"></textarea></div>
                         <div class="mud-field"><label for="re-f@(index)-handles">Handles (comma or space separated)</label>
                             <input id="re-f@(index)-handles" value="@f.Handles" @onchange="e => Edit(() => f.Handles = e.Value?.ToString())" autocapitalize="none" /></div>
                         <div class="mud-field"><label for="re-f@(index)-adj">Adjectives (comma or space separated)</label>
@@ -289,7 +288,7 @@ else
         Exits = _presenter.Exits.Select(e => new ExitInput { Dir = e.Dir, To = e.To }).ToList(),
         Features = _presenter.Features.Select(f => new FeatureInput
         {
-            Short = f.Short, Long = f.Long, RoomLine = f.RoomLine, Detail = f.Detail, Handles = f.Handles, Adjectives = f.Adjectives, Plurals = f.Plurals,
+            Short = f.Short, Long = f.Long, RoomLine = f.RoomLine, Handles = f.Handles, Adjectives = f.Adjectives, Plurals = f.Plurals,
         }).ToList(),
     };
 

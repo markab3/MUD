@@ -74,8 +74,9 @@ Facts, with the file read. Each is relied on by a later section.
 7. **Live objects.** `RoomRepository.RefreshCached` calls `Room.ApplyDefinition(fresh)`, which copies description, handles, `Components`,
    `Search`, `Features`, `Exits`, `Area`, `X/Y/Z` onto the live room; `Items` and `Occupants` are untouched. `UpsertFields` runs this under the
    repository lock. `ApplyDefinition` does not copy `Behaviors` today (a gap for replace-on-import of behaviours; see 8.2 and Q5).
-8. **Feature model.** `Feature : GameObject` with `RoomLine`, `DetailDescription`, handles/adjectives/plurals. Feature id is
-   `<roomKey>#<short lowercased>`. Area-file features: `short`, `long`, `room_line`, `detail`, `handles`, `adjectives`, `plurals`; unknown keys
+8. **Feature model.** `Feature : GameObject` with `RoomLine`, handles/adjectives/plurals; its one look text is `LongDescription` (the former `DetailDescription` was merged
+   into it, ROOM_FILES.md 4.4). Feature id is
+   `<roomKey>#<short lowercased>`. Area-file features: `short`, `long`, `room_line`, `handles`, `adjectives`, `plurals` (`detail` is a deprecated alias of `long`); unknown keys
    other than `x-` are errors; duplicate `short` in a room is a phase-1 error.
 9. **Admin API.** `contracts/mud/admin.proto`, `Admin` service, unary calls, token on every request, roles creator/admin; gRPC layer
    `MUD.Core/Administration/AdminService.cs`, logic `AdminApi.cs`, specified in `specs/ADMIN_API.md`. `RoomFeature` has no provenance field;
@@ -190,10 +191,9 @@ Where a table below still says `terrains`, read `terrain` (string, required).
 | `id` | string | unique, stable; this is what `templateId` references |
 | `terrain` | string | |
 | `short` | string | the feature `short` (identity within the room, case-insensitive). **Added to the owner's field list**: a feature needs `short` and `long` to pass phase 1; see Q1 |
-| `long` | string | |
+| `long` | string | the one look text: what `look <noun>` shows (the former `detail` was merged into it) |
 | `handles`, `adjectives` | string[] | |
 | `roomLine` | string | optional; text appended to the room description when examined |
-| `detail` | string | optional; `look <noun>` text |
 | `weight` | int | pick weight among eligible templates |
 | `chance` | number 0..1 | probability the template is *attempted* per room, rolled before weight selection |
 | `version` | int >= 1 | bumped by the editor on any text/handles change; referenced by `templateVersion` |
@@ -239,7 +239,6 @@ features:
     handles: [boulder, rock]
     adjectives: [grey, lichen-spotted]
     roomLine: "A grey boulder squats nearby."
-    detail: "..."
     weight: 2
     chance: 0.15
     version: 1
@@ -270,7 +269,7 @@ All in the world database; accessed only by core.
 |---|---|---|
 | `terrain_type` | `<area>.<local>` | `{_id, area, name, description, updatedAt, updatedBy}` |
 | `terrain_fragments` | entity `id` | `{_id, terrain, slot, text, weight, tags, updatedAt, updatedBy}` |
-| `terrain_features` | entity `id` | `{_id, terrain, short, long, handles, adjectives, roomLine, detail, weight, chance, version, tags, updatedAt, updatedBy}` |
+| `terrain_features` | entity `id` | `{_id, terrain, short, long, handles, adjectives, roomLine, weight, chance, version, tags, updatedAt, updatedBy}` |
 | `terrain_neighbor_phrases` | entity `id` | `{_id, terrain, neighborTerrain, text, weight, merge, updatedAt, updatedBy}` |
 | `terrain_meta` | `"library"` | `{_id: "library", version: int, seededAt}` |
 
@@ -507,7 +506,7 @@ a new seed rerolls). Library: current. The map file is read from the content dir
 reports `MAP_NOT_FOUND` and changes nothing. The room's `gen.libVersion` becomes the current version.
 
 **UPDATE of selected rooms (OD9).** `UpdateRooms(keys[])`: per room (generated rooms only), for each stored feature with a `templateId`:
-1. template found, `template.version > feature.templateVersion` -> rewrite that feature's `long`, `short`, `handles`, `adjectives`, `roomLine`, `detail`
+1. template found, `template.version > feature.templateVersion` -> rewrite that feature's `long`, `short`, `handles`, `adjectives`, `roomLine`
    and `templateVersion` from the template. If `short` changes, the Feature id changes (`<roomKey>#<short>`); an update that would cause a duplicate
    `short` in the room is skipped and reported (`CONFLICT`);
 2. template found and `version == templateVersion` -> unchanged; `version < templateVersion` (a rollback) -> reported `NEWER_IN_ROOM`, unchanged;
@@ -564,16 +563,16 @@ message TerrainLibraryReply {
 // Section 18: `terrains = 2` is reserved in the three records (never reused); each has `terrain` (new field number) and a read-only `area`. The shipped admin.proto is the truth.
 message FragmentRecord { reserved 2; string id = 1; string slot = 3; string text = 4; int32 weight = 5; repeated string tags = 6; string terrain = 7; string area = 8; }
 message FeatureTemplateRecord {
-  reserved 2; string id = 1; string short = 3; string long = 4; string terrain = 13; string area = 14;
+  reserved 2, 8; reserved "terrains", "detail"; string id = 1; string short = 3; string long = 4; string terrain = 13; string area = 14;
   repeated string handles = 5; repeated string adjectives = 6;
-  string room_line = 7; string detail = 8; int32 weight = 9; double chance = 10; int32 version = 11; repeated string tags = 12;
+  string room_line = 7; int32 weight = 9; double chance = 10; int32 version = 11; repeated string tags = 12;
 }
 message NeighborPhraseRecord { reserved 2; string id = 1; string terrain = 7; string area = 8; string neighbor_terrain = 3; string text = 4; int32 weight = 5; bool merge = 6; }
 
 message SaveFragmentRequest { string token = 1; FragmentRecord fragment = 2; bool create = 3; }
 message SaveFeatureTemplateRequest {
   string token = 1; FeatureTemplateRecord template = 2; bool create = 3;
-  // The server sets version = stored version + 1 when any of short/long/handles/adjectives/room_line/detail changed; weight/chance/terrain/tags edits do not bump it.
+  // The server sets version = stored version + 1 when any of short/long/handles/adjectives/room_line changed; weight/chance/terrain/tags edits do not bump it.
   // The client-sent version is ignored.
 }
 message SaveNeighborPhraseRequest { string token = 1; NeighborPhraseRecord phrase = 2; bool create = 3; }
@@ -712,7 +711,7 @@ Implemented in `MUD.Core/Generation/Terrains/` and `MapGenerator.cs`; tests in `
 
 ## 16. Implementation status: library and admin API (card t_e62bb6f3, branch tglibrary)
 
-Implemented: library entities (already in `Library.cs`), `ILibraryStore` / `MongoLibraryStore` (collections of 6.3, multikey index on `terrains`, `$inc` version counter), `StoreLibrary` (`ILibrary` over a store, one cached snapshot, refreshed after every admin write), `LibrarySeed` (schema of 6.2, validation, seeds only when `terrain_meta` has no `library` document; the file ships as an embedded resource, Q3 default) with `MUD.Core/Generation/Library/terrain-library.yaml`, and the 15 CRUD rpcs plus `IAdminClient`/`GrpcAdminClient`/`FakeAdminClient`. The rpc set differs from section 10 (explicit List/Get/Create/Update/Delete per kind instead of `Save*`/`DeleteLibraryEntity`); see specs/ADMIN_API.md "Terrain library". Feature template `version` is server-owned (bumped when short/long/roomLine/detail/handles/adjectives change). Not built here: `ResetTerrainLibrary`, `known_terrains`/filters in the list calls, map and regen/update rpcs, web pages. Mongo-backed code was not run against a database.
+Implemented: library entities (already in `Library.cs`), `ILibraryStore` / `MongoLibraryStore` (collections of 6.3, multikey index on `terrains`, `$inc` version counter), `StoreLibrary` (`ILibrary` over a store, one cached snapshot, refreshed after every admin write), `LibrarySeed` (schema of 6.2, validation, seeds only when `terrain_meta` has no `library` document; the file ships as an embedded resource, Q3 default) with `MUD.Core/Generation/Library/terrain-library.yaml`, and the 15 CRUD rpcs plus `IAdminClient`/`GrpcAdminClient`/`FakeAdminClient`. The rpc set differs from section 10 (explicit List/Get/Create/Update/Delete per kind instead of `Save*`/`DeleteLibraryEntity`); see specs/ADMIN_API.md "Terrain library". Feature template `version` is server-owned (bumped when short/long/roomLine/handles/adjectives change). Not built here: `ResetTerrainLibrary`, `known_terrains`/filters in the list calls, map and regen/update rpcs, web pages. Mongo-backed code was not run against a database.
 
 ## 17. Implementation status: integration and map re-import (card t_d4afabb3, branch tgintegrate)
 

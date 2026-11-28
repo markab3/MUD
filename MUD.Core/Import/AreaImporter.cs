@@ -36,6 +36,9 @@ namespace MUD.Core.Import
     {
         public List<string> Errors { get; set; } = new List<string>();
 
+        // Notes that do not stop the import (for example the deprecated feature `detail` key merged into `long`).
+        public List<string> Warnings { get; set; } = new List<string>();
+
         public List<RoomImportPlan> Plan { get; set; } = new List<RoomImportPlan>();
 
         // Rooms stored under this area whose key is no longer in the file. Never deleted.
@@ -138,6 +141,7 @@ namespace MUD.Core.Import
             // Phase 1: parse and validate. Read-only.
             var parsed = AreaParser.Parse(yaml);
             result.Errors.AddRange(parsed.Errors);
+            result.Warnings.AddRange(parsed.Warnings);
             if (parsed.Area == null) { return result; }
             var area = parsed.Area;
             Validate(area, result);
@@ -388,7 +392,6 @@ namespace MUD.Core.Import
                         ShortDescription = f.Short,
                         LongDescription = f.Long,
                         RoomLine = f.RoomLine,
-                        DetailDescription = f.Detail,
                         Handles = new List<string>(f.Handles),
                         Adjectives = new List<string>(f.Adjectives),
                         Plurals = new List<string>(f.Plurals),
