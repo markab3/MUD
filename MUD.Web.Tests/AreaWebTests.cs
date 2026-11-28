@@ -708,6 +708,26 @@ public class AreaPageRenderTests
     }
 
     [Fact]
+    public async Task AreasPage_EditAgain_ClosesTheForm_NewAgainToo_AndThereIsNoCancelButton()
+    {
+        var core = new FakeAdminClient().AddArea("desert", "Desert").AddArea("keep", "Keep");
+        await using var page = await Page<AreaList>.OpenAsync(core);
+        await page.Invoke("Edit", "desert");
+        var html = await page.Html();
+        Assert.Contains("<h2 id=\"ar-form-h\">Edit area</h2>", html);
+        Assert.DoesNotContain(">Cancel<", html);
+        Assert.Matches("<button type=\"submit\" class=\"mud-btn mud-btn-primary mud-btn-block mud-save\" id=\"ar-save\"", html);
+        await page.Invoke("Edit", "keep");                                  // another row switches the form
+        Assert.Contains("value=\"keep\"", await page.Html());
+        await page.Invoke("Edit", "keep");                                  // the same row again closes it
+        Assert.DoesNotContain("ar-form-h", await page.Html());
+        await page.Invoke("ToggleNew");
+        Assert.Contains("<h2 id=\"ar-form-h\">New area</h2>", await page.Html());
+        await page.Invoke("ToggleNew");
+        Assert.DoesNotContain("ar-form-h", await page.Html());
+    }
+
+    [Fact]
     public async Task AreasPage_Delete_Cancel_SendsNothing()
     {
         var core = new FakeAdminClient().AddArea("desert");

@@ -166,8 +166,6 @@ public class TerrainHierarchyPageTests
         Assert.Equal("/creator/terrain?area=b&tab=phrase", TestNav.Navigations.Last().Uri);
         await page.Invoke("ChooseTerrain", "a.forest");
         Assert.Equal("/creator/terrain?area=a&terrain=a.forest&tab=phrase", TestNav.Navigations.Last().Uri);
-        await page.Invoke("ChooseTab", "feature");
-        Assert.Equal("/creator/terrain?area=a&terrain=a.grass&tab=feature", TestNav.Navigations.Last().Uri);
     }
 
     [Fact]
@@ -198,18 +196,17 @@ public class TerrainHierarchyPageTests
         var core = Core();
         await using var page = await Page<TerrainList>.OpenAsync(core, Q("c"));
         var p = page.Presenter<TerrainListPresenter>();
-        p.BeginNewType();
         p.FormLocal = "moor"; p.FormName = "Moor"; p.FormDescription = "Wet.";
         await page.Refresh();
         var html = await page.Html();
-        Assert.Contains("id=\"tt-local\"", html);
-        Assert.Contains("id=\"tt-name\"", html);
-        Assert.Contains("id=\"tt-desc\"", html);
-        await page.Invoke("SaveTypeAsync");
+        Assert.Contains("id=\"tn-local\"", html);
+        Assert.Contains("id=\"tn-name\"", html);
+        Assert.Contains("id=\"tn-desc\"", html);
+        await page.Invoke("SaveNewTypeAsync");
         html = await page.Html();
         Assert.Contains("Terrain type created.", html);
         Assert.True(core.TerrainTypes.ContainsKey("c.moor"));
-        Assert.Equal("/creator/terrain?area=c&terrain=c.moor&tab=fragment", TestNav.Navigations.Last().Uri);
+        Assert.Equal("/creator/terrain?area=c&terrain=c.moor", TestNav.Navigations.Last().Uri);
         Assert.Contains("<option value=\"c.moor\" selected", html);
         Assert.DoesNotContain("No terrain types yet", html);
     }
@@ -241,36 +238,154 @@ public class TerrainHierarchyPageTests
     }
 
     [Fact]
-    public async Task List_TabsShowACountEach_AndOnlyTheChosenTerrainsEntries()
+    public async Task List_SectionsInOrder_TerrainTypeOpen_EntrySectionsAndNewTypeClosed_NoTabsNoShowSelect()
     {
         await using var page = await Page<TerrainList>.OpenAsync(Core(), Q("a", "a.grass"));
         var html = await page.Html();
-        Assert.Contains("Fragments (1)", html);
-        Assert.Contains("Feature templates (1)", html);
-        Assert.Contains("Neighbour phrases (1)", html);
-        Assert.Contains(">g1<", html);
-        Assert.DoesNotContain(">g2<", html);       // a.forest's fragment
-        var forest = await Page<TerrainList>.OpenAsync(Core(), Q("a", "a.forest"));
-        var fh = await forest.Html();
-        Assert.Contains("Fragments (1)", fh);
-        Assert.Contains("Feature templates (0)", fh);
-        await using var _ = forest;
+        var sections = Regex.Matches(html, "<details class=\"mud-section mud-collapse\" id=\"([^\"]+)\"([^>]*)>\\s*<summary><h2 id=\"[^\"]+\">([^<]*)</h2>")
+            .Select(m => (Id: m.Groups[1].Value, Open: m.Groups[2].Value.Contains("open"), Title: m.Groups[3].Value)).ToList();
+        Assert.Equal(new[] { "Terrain type", "Fragments (1)", "Feature templates (1)", "Neighbour phrases (1)", "New terrain type" }, sections.Select(s => s.Title));
+        Assert.Equal(new[] { true, false, false, false, false }, sections.Select(s => s.Open));
+        Assert.DoesNotContain("mud-tabs", html);
+        Assert.DoesNotContain("tl-tab", html);
+        Assert.DoesNotContain("Showing:", html);
+        Assert.DoesNotContain(">Show<", html);
+        Assert.DoesNotContain("tl-edittype", html);
+        Assert.DoesNotContain(">Edit a.grass<", html);
+        Assert.DoesNotContain("Cancel", html);
     }
 
     [Fact]
-    public async Task List_EmptyTabOfATerrain_SaysSo_InBothLayouts()
+    public async Task List_EachSectionHoldsOnlyItsOwnKind_AndTheOtherTerrainsEntriesAreNotThere()
+    {
+        await using var page = await Page<TerrainList>.OpenAsync(Core(), Q("a", "a.grass"));
+        var html = await page.Html();
+        string Section(string id) => Regex.Match(html, "<details[^>]* id=\"" + id + "\".*?</details>", RegexOptions.Singleline).Value;
+        Assert.Contains(">g1<", Section("tl-fragments"));
+        Assert.DoesNotContain(">t1<", Section("tl-fragments"));
+        Assert.Contains(">t1<", Section("tl-features"));
+        Assert.DoesNotContain(">g1<", Section("tl-features"));
+        Assert.Contains(">p1<", Section("tl-phrases"));
+        Assert.DoesNotContain(">g2<", html);       // a.forest's fragment
+        // Edit and Delete share the row.
+        Assert.Contains("<div class=\"mud-actions\">", Section("tl-fragments"));
+        Assert.Contains("data-mutating", Section("tl-fragments"));
+    }
+
+    [Fact]
+    public async Task List_CountsShowShownOfTotal_WhileAFilterIsActive_WithoutOpeningSections()
+    {
+        await using var page = await Page<TerrainList>.OpenAsync(Core(), Q("a", "a.grass", null, "green"));
+        var html = await page.Html();
+        Assert.Contains("Fragments (1 of 1)", html);
+        Assert.Contains("Feature templates (0 of 1)", html);
+        Assert.Contains("Neighbour phrases (0 of 1)", html);
+        Assert.DoesNotMatch("id=\"tl-fragments\" open", html);
+        await using var tagged = await Page<TerrainList>.OpenAsync(Core(), Q("a", "a.grass", null, null, "nope"));
+        Assert.Contains("Fragments (0 of 1)", await tagged.Html());
+    }
+
+    [Fact]
+    public async Task List_TabQueryOpensTheMatchingSection_OnLoad()
+    {
+        foreach (var (tab, id) in new[] { ("fragment", "tl-fragments"), ("feature", "tl-features"), ("phrase", "tl-phrases") })
+        {
+            await using var page = await Page<TerrainList>.OpenAsync(Core(), Q("a", "a.grass", tab));
+            var html = await page.Html();
+            Assert.Contains("id=\"" + id + "\" open", html);
+            Assert.Equal(2, Regex.Matches(html, "<details[^>]* open[ >=]").Count);   // Terrain type and the named one
+        }
+    }
+
+    [Fact]
+    public async Task List_EmptySectionOfATerrain_SaysSo_InBothLayouts()
     {
         await using var page = await Page<TerrainList>.OpenAsync(Core(), Q("a", "a.forest", "feature"));
         var html = await page.Html();
         Assert.Equal(2, Regex.Matches(html, "No feature templates for this terrain type\\.").Count);
+        Assert.Equal(2, Regex.Matches(html, "No neighbour phrases for this terrain type\\.").Count);
+        Assert.DoesNotContain("No fragments for this terrain type.", html);    // forest has one
     }
 
     [Fact]
-    public async Task List_NewEntryLink_CarriesAreaTerrainAndTab()
+    public async Task List_NewEntryButtons_AreFullWidthLinks_CarryingAreaAndTerrain()
     {
         await using var page = await Page<TerrainList>.OpenAsync(Core(), Q("a", "a.grass", "phrase"));
         var html = await page.Html();
-        Assert.Contains("href=\"/creator/terrain/edit?kind=phrase&amp;area=a&amp;terrain=a.grass\"", html);
+        Assert.Contains("class=\"mud-btn mud-btn-primary mud-btn-block\" id=\"tl-fragments-new\" href=\"/creator/terrain/edit?kind=fragment&amp;area=a&amp;terrain=a.grass\">New fragment</a>", html);
+        Assert.Contains("id=\"tl-features-new\" href=\"/creator/terrain/edit?kind=feature&amp;area=a&amp;terrain=a.grass\">New feature template</a>", html);
+        Assert.Contains("id=\"tl-phrases-new\" href=\"/creator/terrain/edit?kind=phrase&amp;area=a&amp;terrain=a.grass\">New neighbour phrase</a>", html);
+    }
+
+    [Fact]
+    public async Task List_TerrainTypeSection_HasIdReadOnly_NameAndDescription_DeleteInside_AndOnePinnedSaveForItsForm()
+    {
+        await using var page = await Page<TerrainList>.OpenAsync(Core(), Q("a", "a.grass"));
+        var html = await page.Html();
+        var section = Regex.Match(html, "<details[^>]* id=\"tl-type\".*?</details>", RegexOptions.Singleline).Value;
+        Assert.Contains("<input id=\"tt-id\" value=\"a.grass\" readonly", section);
+        Assert.Contains("id=\"tt-name\" value=\"Grass\"", section);   // TerrainType Name is "Grass" here
+        Assert.Contains("id=\"tt-desc\"", section);
+        Assert.Contains("id=\"tl-deltype\"", section);
+        Assert.Contains("mud-btn-danger mud-btn-block", section);
+        Assert.Contains("<form id=\"tl-type-form\"", section);
+        // Exactly one pinned bar, after everything, targeting the type form.
+        Assert.Single(Regex.Matches(html, "class=\"mud-pinbar\""));
+        Assert.Matches("<button type=\"submit\" form=\"tl-type-form\" class=\"mud-btn mud-btn-primary mud-btn-block mud-save\"", html);
+        Assert.True(html.IndexOf("class=\"mud-pinbar\"", StringComparison.Ordinal) > html.LastIndexOf("</details>", StringComparison.Ordinal));
+        // The new-type form keeps its own Save inside its section, not the bar.
+        var fresh = Regex.Match(html, "<details[^>]* id=\"tl-newtype\".*?</details>", RegexOptions.Singleline).Value;
+        Assert.Contains("id=\"tl-newtype-save\"", fresh);
+        Assert.DoesNotContain("tl-type-form\"", fresh.Replace("tl-newtype-form", ""));
+    }
+
+    [Fact]
+    public async Task List_SavingTheTypeSection_WritesNameAndDescriptionThroughCore()
+    {
+        var core = Core();
+        await using var page = await Page<TerrainList>.OpenAsync(core, Q("a", "a.grass"));
+        var p = page.Presenter<TerrainListPresenter>();
+        p.TypeName = "Meadow"; p.TypeDescription = "Soft.";
+        await page.Invoke("SaveCurrentTypeAsync");
+        Assert.Equal(("Meadow", "Soft."), (core.TerrainTypes["a.grass"].Name, core.TerrainTypes["a.grass"].Description));
+        var html = await page.Html();
+        Assert.Contains("Terrain type saved.", html);
+        Assert.Contains("a.grass - Meadow", html);
+    }
+
+    [Fact]
+    public async Task List_AnUnsavedTypeEdit_StaysInThePageState_UntilItIsSaved()
+    {
+        var core = Core();
+        await using var page = await Page<TerrainList>.OpenAsync(core, Q("a", "a.grass"));
+        page.Presenter<TerrainListPresenter>().TypeName = "Draft";
+        await page.Refresh();
+        Assert.Contains("id=\"tt-name\" value=\"Draft\"", await page.Html());
+        Assert.Equal("Grass", core.TerrainTypes["a.grass"].Name);   // nothing was written
+    }
+
+    [Fact]
+    public async Task List_AreaWithoutTerrainTypes_HasNoTypeSectionNoPinnedBar_AndTheNewTypeSectionIsOpen()
+    {
+        await using var page = await Page<TerrainList>.OpenAsync(Core(), Q("c"));
+        var html = await page.Html();
+        Assert.DoesNotContain("id=\"tl-type\"", html);
+        Assert.DoesNotContain("mud-pinbar", html);
+        Assert.DoesNotContain("id=\"tl-fragments\"", html);
+        Assert.Matches("id=\"tl-newtype\" open", html);
+        await using var other = await Page<TerrainList>.OpenAsync(Core(), Q("a", "a.grass"));
+        Assert.DoesNotMatch("id=\"tl-newtype\" open", await other.Html());
+    }
+
+    [Fact]
+    public async Task List_NoAreaOrCoreDown_HasNoPinnedBar_AndTheErrorStillShows()
+    {
+        await using var none = await Page<TerrainList>.OpenAsync(Core(), Q());
+        Assert.DoesNotContain("mud-pinbar", await none.Html());
+        await using var down = await Page<TerrainList>.OpenAsync(new FakeAdminClient { Unavailable = true }, Q("a"));
+        var html = await down.Html();
+        Assert.Contains(TerrainLibrary.UnavailableError, html);
+        Assert.DoesNotContain("mud-pinbar", html);
     }
 
     [Fact]
@@ -282,7 +397,7 @@ public class TerrainHierarchyPageTests
         Assert.Contains("id=\"tl-tag\"", html);
         Assert.DoesNotContain("id=\"tl-terrain\" type", html);
         Assert.DoesNotContain(">Filter<", html);
-        Assert.DoesNotContain("<form", html);
+        Assert.DoesNotContain("<form id=\"tl-text\"", html);
     }
 
     // ---- the edit page

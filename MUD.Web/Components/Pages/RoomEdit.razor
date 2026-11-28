@@ -14,7 +14,7 @@
 else if (_presenter.IsMissing)
 {
     <p role="alert" class="mud-error">@_presenter.Error</p>
-    <p><a class="mud-btn" href="@WebRoutes.Map">Back to the map</a></p>
+    <p><a class="mud-btn mud-btn-block" href="@WebRoutes.Map">Back to the map</a></p>
 }
 else
 {
@@ -181,11 +181,11 @@ else
         <p class="mud-hint">Everything inside is moved to a neighbouring room, or to the default room. The default room cannot be deleted.</p>
         </section>
     </details>
-    @* The Save button sits outside the form (the sections above are not form fields) and belongs to it through the form attribute. *@
+    @* Back ends the page content (in the flow); the pinned Save bar comes last and belongs to the form through the form attribute. *@
     <div class="mud-bottom-actions">
-        <button type="submit" form="re-form" class="mud-btn mud-btn-primary mud-btn-block mud-save" id="re-save" disabled="@_busy">Save room</button>
         <a class="mud-btn mud-btn-block" id="re-back" href="@_backUrl">Back to the map</a>
     </div>
+    <PinnedSave FormId="re-form" Id="re-save" Text="Save room" Busy="_busy" />
 }
 
 @code {

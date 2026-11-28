@@ -14,13 +14,12 @@ else if (_presenter.IsMissing)
 {
     <h1>Edit terrain library entry</h1>
     <p role="alert" class="mud-error">@_presenter.Error</p>
-    <p><a class="mud-btn" href="@WebRoutes.Terrain">Back to the library</a></p>
+    <p><a class="mud-btn mud-btn-block" href="@WebRoutes.Terrain">Back to the library</a></p>
 }
 else
 {
     var p = _presenter;
     <h1>@(p.IsNew ? "New" : "Edit") @p.KindLabel.ToLowerInvariant()</h1>
-    <p><a class="mud-btn" href="@p.BackUrl()">Back to the library</a></p>
     @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
     @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
     @if (p.Problems.Count > 0)
@@ -39,7 +38,7 @@ else
             </div>
         </div>
     }
-    <form @onsubmit="SaveAsync" @onsubmit:preventDefault novalidate>
+    <form id="te-form" @onsubmit="SaveAsync" @onsubmit:preventDefault novalidate>
         <div class="mud-field"><label for="te-id">Id</label>
             @if (p.IsNew)
             {
@@ -134,9 +133,6 @@ else
                 <input id="te-weight" type="number" inputmode="numeric" min="0" value="@p.Weight" @onchange="e => Edit(() => p.Weight = ParseInt(e.Value, p.Weight))" /></div>
             <div class="mud-check"><label><input type="checkbox" checked="@p.Merge" @onchange="e => Edit(() => p.Merge = (bool)(e.Value ?? false))" /> Merge several sides into one phrase ("north and east")</label></div>
         }
-        <div class="mud-sticky-actions">
-            <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Save</button>
-        </div>
     </form>
     @if (p.HasPreview)
     {
@@ -144,6 +140,10 @@ else
         <p>@p.PreviewText</p>
         <p><small>Preview of the saved values. Core offers no sample-room render yet.</small></p>
     }
+    <div class="mud-bottom-actions">
+        <a class="mud-btn mud-btn-block" id="te-back" href="@p.BackUrl()">Back to the library</a>
+    </div>
+    <PinnedSave FormId="te-form" Id="te-save" Busy="_busy" />
 }
 
 @code {

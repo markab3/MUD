@@ -445,9 +445,9 @@ public class LiveFilterPageTests
         Assert.Empty(core.LibraryCalls);
         var nav = Assert.Single(TestNav.Navigations);
         Assert.True(nav.Replace);
-        Assert.Equal("/creator/terrain?area=a&terrain=a.forest&tab=fragment&q=trees", nav.Uri);
+        Assert.Equal("/creator/terrain?area=a&terrain=a.forest&q=trees", nav.Uri);
         await page.Settle("calm", "ApplyTagAsync");
-        Assert.Equal("/creator/terrain?area=a&terrain=a.forest&tab=fragment&q=trees&tag=calm", TestNav.Navigations.Last().Uri);
+        Assert.Equal("/creator/terrain?area=a&terrain=a.forest&q=trees&tag=calm", TestNav.Navigations.Last().Uri);
         Assert.Contains("0 entries", await page.Html());
     }
 
@@ -482,9 +482,11 @@ public class LiveFilterPageTests
     {
         var src = Read("MUD.Web/" + file);
         Assert.Contains("<LiveFilter Id=\"" + id + "\"", src);
-        Assert.DoesNotContain("<form", src);
-        Assert.DoesNotContain("type=\"submit\"", src);
-        Assert.DoesNotContain("onsubmit", src);
+        // The terrain page also holds the terrain type forms (after the filters); the filters themselves are never inside a form.
+        var filters = file.EndsWith("TerrainList.razor") ? src.Substring(0, src.IndexOf("<details", StringComparison.Ordinal)) : src;
+        Assert.DoesNotContain("<form", filters);
+        Assert.DoesNotContain("type=\"submit\"", filters);
+        Assert.DoesNotContain("onsubmit", filters);
     }
 
     [Fact]

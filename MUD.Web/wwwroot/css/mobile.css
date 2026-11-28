@@ -22,6 +22,7 @@
 
   --mud-hit: 44px;
   --mud-bar-h: 56px;
+  --mud-pinbar-h: 61px;         /* the pinned Save bar: 8px + 44px button + 8px + 1px border */
   --mud-drawer-w: 280px;
 
   /* Fluent UI design tokens mapped to the palette: accent fills, foreground and focus ring. */
@@ -128,6 +129,8 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-check label { display: inline-flex; align-items: center; gap: 8px; min-height: var(--mud-hit); }
 .mud-check input { min-height: 24px; width: 24px; height: 24px; }
 .mud-actions { flex-wrap: wrap; }
+/* Website UI guidelines: buttons grouped on one line share it evenly; a button alone on its line (a one-button row) spans it. */
+.mud-actions > .mud-btn { flex: 1 1 0; }
 .mud-btn-danger { background: var(--mud-red); color: var(--mud-on-dark); border-color: var(--mud-red); }
 .mud-danger { border-top: 2px solid var(--mud-red); padding-top: 8px; }
 .mud-draft, .mud-confirm { border: 1px solid var(--mud-warn-border); background: var(--mud-warn-bg); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
@@ -137,9 +140,14 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-bottom-actions { display: flex; flex-direction: column; gap: 8px; margin: 16px 0 8px; }
 .mud-btn-block { display: flex; width: 100%; min-height: var(--mud-hit); }
 .mud-static { display: block; padding: 8px 0; min-height: var(--mud-hit); box-sizing: border-box; }
-.mud-sticky-actions { position: sticky; bottom: 0; z-index: 10; background: var(--mud-page); padding: 8px 0; border-top: 1px solid var(--mud-border); display: flex; gap: 8px; }
-.mud-sticky-actions .mud-btn { flex: 1 1 auto; }
-@media (min-width: 600px) { .mud-sticky-actions .mud-btn { flex: 0 0 auto; } }
+/* Pinned Save bar (PinnedSave.razor): fixed to the bottom of the viewport, as wide as the content column (.mud-main), below the pull-out
+   menu (z 40) and the confirm dialogs (z 25), above the page. The spacer in the page flow keeps the end of the content clear of it, and
+   scroll-padding keeps a focused field out from under it (the browser scrolls a focused field into the padded area). */
+html { scroll-padding-bottom: calc(var(--mud-pinbar-h) + env(safe-area-inset-bottom) + 8px); }
+.mud-pinbar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: min(100%, 1100px); z-index: 20; box-sizing: border-box; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: var(--mud-page); border-top: 1px solid var(--mud-border); }
+.mud-pinbar .mud-btn { margin: 0; }
+.mud-pinbar-space { height: calc(var(--mud-pinbar-h) + env(safe-area-inset-bottom)); }
+.mud-confirm { position: relative; z-index: 25; }
 .mud-map-toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-width: 560px; }
 /* Export YAML sits under the two dropdowns on a phone (they keep their half each) and beside them from 600px. */
 .mud-map-export { grid-column: 1 / -1; margin-bottom: 0; justify-content: flex-end; }
@@ -192,9 +200,6 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
   .mud-cards { display: none; }
 }
 
-/* Terrain library: tabs are links from 600px and one select below. */
-.mud-tabs { display: none; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.mud-tabselect { display: flex; }
 .mud-pair { display: grid; grid-template-columns: 1fr; gap: 0 8px; }
 /* Area and terrain type dropdowns: stacked at every width, 44px targets (the shared select rule), never wider than the screen. */
 .mud-scope { display: flex; flex-direction: column; min-width: 0; }
@@ -204,8 +209,6 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-arealinks .mud-btn { justify-content: flex-start; }
 @media (min-width: 600px) { .mud-arealinks { flex-direction: row; flex-wrap: wrap; } }
 @media (min-width: 600px) {
-  .mud-tabs { display: flex; }
-  .mud-tabselect { display: none; }
   .mud-pair { grid-template-columns: 1fr 1fr; max-width: 560px; }
 }
 

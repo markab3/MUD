@@ -34,7 +34,7 @@ else
             </div>
         </div>
     }
-    <form @onsubmit="SubmitAsync" @onsubmit:preventDefault novalidate>
+    <form id="cr-form" @onsubmit="SubmitAsync" @onsubmit:preventDefault novalidate>
         @{ var f = _presenter.Form; }
         <div class="mud-field"><label for="cr-area">Area</label>
             <select id="cr-area" @onchange="e => Edit(() => f.Area = e.Value?.ToString())" required>
@@ -65,10 +65,8 @@ else
         <ExitRows Id="cr-exit" Exits="f.Exits" ConfirmDangling="f.ConfirmDangling"
                   ConfirmDanglingChanged="v => Edit(() => f.ConfirmDangling = v)" Changed="SaveDraftAsync"
                   RowErrors="ExitErrors" />
-        <div class="mud-sticky-actions">
-            <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Create room</button>
-        </div>
     </form>
+    <PinnedSave FormId="cr-form" Id="cr-save" Text="Create room" Busy="_busy" />
 }
 
 @code {

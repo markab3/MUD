@@ -11,7 +11,7 @@
 else if (_presenter.IsMissing)
 {
     <p role="alert" class="mud-error">@_presenter.Error</p>
-    <p><a class="mud-btn" href="@WebRoutes.Players">Back to the player list</a></p>
+    <p><a class="mud-btn mud-btn-block" href="@WebRoutes.Players">Back to the player list</a></p>
 }
 else
 {
@@ -28,6 +28,7 @@ else
     @if (!p.CanEdit)
     {
         <p>@Messages.PlayerCannotEdit</p>
+        <p><a class="mud-btn mud-btn-block" href="@WebRoutes.Players">Back to the player list</a></p>
     }
     else
     {
@@ -41,7 +42,7 @@ else
                 </div>
             </div>
         }
-        <form @onsubmit="SubmitAsync" @onsubmit:preventDefault novalidate>
+        <form id="pe-form" @onsubmit="SubmitAsync" @onsubmit:preventDefault novalidate>
             <div class="mud-field"><label for="pe-short">Short description</label>
                 <input id="pe-short" value="@p.Short" @onchange="e => Edit(() => p.Short = e.Value?.ToString())" maxlength="100" required /></div>
             <div class="mud-field"><label for="pe-long">Long description</label>
@@ -70,12 +71,12 @@ else
                 <ConfirmDialog Label="Confirm retire" Text="@Messages.RetirePlayerConfirm" ConfirmText="Retire and save"
                                Busy="_busy" OnConfirm="ConfirmRetireAsync" OnCancel="CancelRetire" />
             }
-            <div class="mud-sticky-actions">
-                <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Save player</button>
-            </div>
         </form>
+        <div class="mud-bottom-actions">
+            <a class="mud-btn mud-btn-block" id="pe-back" href="@WebRoutes.Players">Back to the player list</a>
+        </div>
+        <PinnedSave FormId="pe-form" Id="pe-save" Text="Save player" Busy="_busy" />
     }
-    <p><a class="mud-btn" href="@WebRoutes.Players">Back to the player list</a></p>
 }
 
 @code {

@@ -41,7 +41,7 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/creator/players` | `AdminOnly` | player list (see "Player pages") |
 | `/creator/players/{nameKey}` | `AdminOnly` | player edit page (see "Player pages") |
 | `/creator/modules` | list: `CreatorOrAdmin`; start/stop/restart buttons: admin only | module list with state (see "Modules page") |
-| `/creator/terrain?area=&terrain=&tab=` | `CreatorOrAdmin` | terrain library by area and terrain type: dropdowns, terrain types, tabs, Delete (see "Terrain library pages") |
+| `/creator/terrain?area=&terrain=&tab=` | `CreatorOrAdmin` | terrain library by area and terrain type: dropdowns, collapsible sections (`tab` opens one), Delete (see "Terrain library pages") |
 | `/creator/terrain/edit?kind=&id=&area=&terrain=` | `CreatorOrAdmin` | create or edit one library entity (see "Terrain library pages") |
 | `/creator/areas` | `CreatorOrAdmin` | the areas hub: list, create, edit, delete, and what each area contains (see "Areas page") |
 | `/creator/items` | `CreatorOrAdmin` | item templates grouped by area, filter, delete (see "Item templates pages") |
@@ -114,10 +114,11 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   per-click rpc beyond a first read if it is not loaded). The status line ("Added N exits to the form: north -> key, ... Save to apply."
   or "No adjacent rooms to link.") is `aria-live`. Unsaved added rows are kept in the browser draft like any other exit edit and are lost
   on reload unless the draft is restored. The 32-row form limit applies; extra exits are reported, not added.
-- Save and Back at the bottom (card "Website: room edit Save at the bottom ..."): the page ends with one action row (`.mud-bottom-actions`, no
-  longer sticky): the primary `Save room` button (`#re-save`, full width, 44px, disabled while a write runs) and, directly below it, a
-  full-width `Back to the map` link (`#re-back`). The form has `id="re-form"` and holds only Basics, Exits and Features; the Save button is
-  outside it (after the Delete section) and joins it with `form="re-form"` (no script; Enter in a form text field still submits through it).
+- Save pinned, Back at the bottom (cards "Website: room edit Save at the bottom ..." and "Website: terrain page as collapsible sections, pinned
+  Save bar ..."): the page content ends with a full-width `Back to the map` link (`#re-back`, in the page flow, not pinned). The primary
+  `Save room` button (`#re-save`) is the shared **pinned Save bar** (`PinnedSave`, `.mud-pinbar`): fixed to the bottom of the viewport, as wide as the
+  content column, full width, 44px, disabled while a write runs, last in the page. The form has `id="re-form"` and holds only Basics, Exits and Features; the Save button is
+  outside it and joins it with `form="re-form"` (no script; Enter in a form text field still submits through it).
   Back goes to `WebRoutes.MapFor(<area>, <Z>, center: <room key>)` with the area and Z the room has as loaded or last saved (not unsaved form
   edits; a null Z is level 0, as `RoomMapLayout.LevelOf`); a room with no area goes to the bare map. Centering on the room is an addition so
   the user lands where they were. Leaving with unsaved changes just leaves (the browser draft keeps them). The link in the room-not-found view
@@ -420,14 +421,20 @@ Built (`Components/Pages/TerrainList.razor`, `TerrainEdit.razor`, `TerrainListPr
 - **List** (`?area=&terrain=&tab=&q=&tag=`, the query string is the only state, so links and the Back button work): at the top an **Area** dropdown (`#tl-area`,
   native select, from `ListAreas`) and BENEATH it a **Terrain type** dropdown (`#tl-terrain`) that lists only the chosen area's terrain types (`ListTerrainTypes(area)`).
   Choosing another area drops the terrain, so the page picks the first terrain type of that area (or none); a terrain that is not in the chosen area is ignored.
-  With no area chosen only the area dropdown is shown (the last choice is NOT remembered). Below, tabs Fragments / Feature templates / Neighbour phrases with a count
-  each (links from 600px, one select below) show only the chosen terrain's entries (`ListFragments` etc. with the terrain filter), a table from 600px and stacked cards
-  below, with live filters (`#tl-text` on id and the entry's own words, `#tl-tag` on tags; fragments and features only; no submit; the old free-text terrain filter is gone).
-  "New fragment / feature template / neighbour phrase" links carry the area, terrain and tab to the edit page. Empty states: no areas, no area chosen,
-  "No terrain types yet" (an area without terrain types, with the create form available), "No <kind> for this terrain type." per tab.
-- **Terrain types** (same page, section "Terrain types of <area>"): New terrain type (id local part `#tt-local` typed, the area is the chosen one, so the id sent is `<area>.<local>`;
-  name `#tt-name`; description `#tt-desc`), edit of the chosen terrain type (name and description only; the id is read-only and the presenter writes the chosen id), and Delete
-  with `ConfirmDialog`. Core's refusal message (it names how many entries still use the type) is shown verbatim. The local-part box has a suggestion list of the legend template
+  With no area chosen only the area dropdown is shown (the last choice is NOT remembered). Below the dropdowns and the live filters (`#tl-text` on id and the entry's own words,
+  `#tl-tag` on tags; no submit; they narrow all three sections at once) come native `<details>` sections, heading inside the `<summary>`, in this order:
+  **Terrain type** (`#tl-type`, open by default), **Fragments (n)**, **Feature templates (n)**, **Neighbour phrases (n)** (closed) and **New terrain type** (`#tl-newtype`, closed,
+  open when the area has no terrain type; then the Terrain type and entry sections are not shown). The tabs, the `Show` select and the "Showing:" line are gone.
+  While a text or tag filter is active the counts read "shown of total" (`Fragments (3 of 13)`) so matches in a closed section are visible; sections are never auto-opened.
+  Each entry section has a full-width "New fragment / feature template / neighbour phrase" link (`#tl-fragments-new` etc.) that carries the area and terrain to the edit page, and
+  the rows of that kind only (table from 600px, stacked cards below) with Edit and Delete sharing the row; Delete asks through `ConfirmDialog`. The `tab` query parameter
+  (`fragment`, `feature`, `phrase`) means "open this section on load"; it is still accepted and written by links back from the entry edit page. Empty states: no areas, no area chosen,
+  "No terrain types yet" (an area without terrain types, with the New terrain type section open), "No <kind> for this terrain type." per section.
+- **Terrain types** (same page): the **Terrain type** section is always there for the current terrain type (no Edit button): the id read-only (`#tt-id`), name `#tt-name` and description
+  `#tt-desc` editable (form `#tl-type-form`, saved through `UpdateTerrainType`, name and description only; the presenter writes the current id), and the danger Delete (`#tl-deltype`, full width,
+  inside the section) with `ConfirmDialog`. The page's one pinned Save bar targets this form. A not-yet-saved edit lives in the page state; leaving the page drops it (no Cancel).
+  The **New terrain type** section (id local part `#tn-local` typed, the area is the chosen one, so the id sent is `<area>.<local>`; name `#tn-name`; description `#tn-desc`) has its own full-width
+  Save (`#tl-newtype-save`) inside the section, not in the pinned bar. Core's refusal message to a delete (it names how many entries still use the type) is shown verbatim. The local-part box has a suggestion list of the legend template
   names of the area's map file that are not terrain types yet (`ListTerrainColors`, map name = area prefix; any failure just means no suggestions).
 - **Edit/create**: `kind` (`fragment`, `feature`, `phrase`) and `id` come from the query string only; no id means create. The form never
   binds the kind or the stored id, so a form cannot redirect a write to another entity. The form shows an **Area** dropdown (`#te-area`) and beneath it the

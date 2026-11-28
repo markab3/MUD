@@ -14,13 +14,9 @@ else
     <p class="mud-hint">@AreaListPresenter.Help</p>
     @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
     @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
-    @if (!p.FormOpen)
-    {
-        <div class="mud-actions">
-            <button type="button" class="mud-btn mud-btn-primary" id="ar-new" disabled="@_busy" @onclick="p.BeginNew">New area</button>
-        </div>
-    }
-    else
+    @* No Cancel button: pressing New area (or the row's Edit) again while the form is open closes it. *@
+    <button type="button" class="mud-btn mud-btn-primary mud-btn-block" id="ar-new" aria-expanded="@(p.IsNew ? "true" : "false")" disabled="@_busy" @onclick="ToggleNew">New area</button>
+    @if (p.FormOpen)
     {
         <section class="mud-section" aria-labelledby="ar-form-h">
             <h2 id="ar-form-h">@(p.IsNew ? "New area" : "Edit area")</h2>
@@ -47,10 +43,7 @@ else
                 <div class="mud-field"><label for="ar-desc">Short description</label>
                     <input id="ar-desc" value="@p.FormDescription" @onchange="e => p.FormDescription = e.Value?.ToString()" maxlength="@MUD.Data.AreaRules.MaxDescription" autocomplete="off" />
                     <span class="mud-hint">(optional, at most @MUD.Data.AreaRules.MaxDescription characters)</span></div>
-                <div class="mud-actions">
-                    <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Save</button>
-                    <button type="button" class="mud-btn" @onclick="p.CancelForm">Cancel</button>
-                </div>
+                <button type="submit" class="mud-btn mud-btn-primary mud-btn-block mud-save" id="ar-save" disabled="@_busy">Save</button>
             </form>
         </section>
     }
@@ -139,7 +132,18 @@ else
         _presenter = presenter;
     }
 
-    private void Edit(string id) => _presenter?.BeginEdit(id);
+    // The same button again closes the form it opened (there is no Cancel button).
+    private void Edit(string id)
+    {
+        if (_presenter == null) { return; }
+        if (_presenter.FormOpen && !_presenter.IsNew && _presenter.EditingId == id) { _presenter.CancelForm(); } else { _presenter.BeginEdit(id); }
+    }
+
+    private void ToggleNew()
+    {
+        if (_presenter == null) { return; }
+        if (_presenter.IsNew) { _presenter.CancelForm(); } else { _presenter.BeginNew(); }
+    }
 
     private void Ask(Contracts.AreaRecord area) => _confirm = area;
 

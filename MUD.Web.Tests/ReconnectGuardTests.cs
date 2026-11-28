@@ -36,6 +36,7 @@ public class ReconnectGuardTests
     [InlineData("Components/Pages/Creator.razor")]
     [InlineData("Components/Pages/TerrainList.razor")]
     [InlineData("Components/Shared/ConfirmDialog.razor")]
+    [InlineData("Components/Shared/PinnedSave.razor")]
     public void EveryMutatingButtonCarriesTheReconnectMarker(string file)
     {
         var buttons = Buttons(Read("MUD.Web/" + file)).ToList();
@@ -51,10 +52,12 @@ public class ReconnectGuardTests
     public void TheNamedButtonsOfTheSpecAreMarked()
     {
         var room = Read("MUD.Web/Components/Pages/RoomEdit.razor");
-        foreach (var label in new[] { ">Save room", ">Delete this room", ">Move room", ">Update", ">Regen" })
+        foreach (var label in new[] { ">Delete this room", ">Move room", ">Update", ">Regen" })
             Assert.Contains(Buttons(room), b => b.EndsWith(label, StringComparison.Ordinal) && Marked(b));
-        Assert.Contains(Buttons(Read("MUD.Web/Components/Pages/PlayerEdit.razor")), b => b.EndsWith(">Save player") && Marked(b));
-        Assert.Contains(Buttons(Read("MUD.Web/Components/Pages/TerrainEdit.razor")), b => b.EndsWith(">Save") && Marked(b));
+        Assert.Contains("Text=\"Save player\"", Read("MUD.Web/Components/Pages/PlayerEdit.razor"));
+        // The Save of every edit page is the shared pinned bar, whose button carries the marker.
+        Assert.Contains(Buttons(Read("MUD.Web/Components/Shared/PinnedSave.razor")), b => b.EndsWith(">@Text") && Marked(b));
+        Assert.Contains("<PinnedSave", Read("MUD.Web/Components/Pages/TerrainEdit.razor"));
         Assert.Contains(Buttons(Read("MUD.Web/Components/Pages/Password.razor")), b => b.EndsWith(">Change password") && Marked(b));
         var modules = Buttons(Read("MUD.Web/Components/Pages/Modules.razor"));
         foreach (var label in new[] { ">Stop", ">Start", ">Restart" })

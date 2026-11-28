@@ -1,0 +1,15 @@
+@* The Save bar of an edit page (WEB_BLAZOR.md, Website UI guidelines): one full-width primary button pinned to the bottom of the viewport.
+   It sits outside the form and belongs to it through the form attribute, so sections after the form still work and Enter in a text field still submits.
+   Put it LAST in the page. The in-flow spacer keeps the end of the page clear of the bar (CSS: .mud-pinbar, .mud-pinbar-space). *@
+<div class="mud-pinbar-space" aria-hidden="true"></div>
+<div class="mud-pinbar">
+    <button type="submit" form="@FormId" class="mud-btn mud-btn-primary mud-btn-block mud-save" id="@Id" disabled="@Busy">@Text</button>
+</div>
+
+@code {
+    // The id of the <form> this button submits.
+    [Parameter, EditorRequired] public string FormId { get; set; } = string.Empty;
+    [Parameter] public string Text { get; set; } = "Save";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public string? Id { get; set; }
+}

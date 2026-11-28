@@ -33,7 +33,8 @@ public sealed class TerrainListPresenter
     public IReadOnlyList<string> Suggestions { get; private set; } = Array.Empty<string>();
     public string? Area { get; private set; }
     public string? Terrain { get; private set; }
-    public string Tab { get; private set; } = TerrainLibrary.Fragment;
+    // The section to open on load (a kind), or null: every entry section starts closed. The page is one list of collapsible sections.
+    public string? Tab { get; private set; }
     public string? TextFilter { get; private set; }
     public string? TagFilter { get; private set; }
     public string? Error { get; private set; }
@@ -41,17 +42,23 @@ public sealed class TerrainListPresenter
 
     public TerrainTypeRecord? CurrentType => Terrain == null ? null : Types.FirstOrDefault(t => t.Id == Terrain);
 
-    public string TabLabel => Tab switch
+    public bool FilterActive => TextFilter != null || TagFilter != null;
+    public IEnumerable<Row> RowsOf(string kind) => Rows.Where(r => r.Kind == kind);
+    public int TotalOf(string kind) => kind switch
     {
-        TerrainLibrary.Feature => "Feature templates",
-        TerrainLibrary.Phrase => "Neighbour phrases",
-        _ => "Description fragments",
+        TerrainLibrary.Fragment => Fragments.Count,
+        TerrainLibrary.Feature => Features.Count,
+        _ => Phrases.Count,
     };
+    // The count in a section heading: "3" or, while a text or tag filter is active, "3 of 13" (shown of total).
+    public string CountLabel(string kind) => FilterActive ? RowsOf(kind).Count() + " of " + TotalOf(kind) : TotalOf(kind).ToString();
 
-    // The terrain type form. EditingTypeId null = a new terrain type (the local part is typed; the area is the chosen one).
-    public bool TypeFormOpen { get; private set; }
-    public string? EditingTypeId { get; private set; }
-    public bool IsNewType => EditingTypeId == null;
+    // The form of the CURRENT terrain type (name and description; the id is read-only). Not-yet-saved edits live here until the page is left.
+    public string? TypeName { get; set; }
+    public string? TypeDescription { get; set; }
+    public List<string> TypeProblems { get; } = new();
+
+    // The form of a NEW terrain type: the local part is typed, the area is the chosen one.
     public string? FormLocal { get; set; }
     public string? FormName { get; set; }
     public string? FormDescription { get; set; }
@@ -64,17 +71,18 @@ public sealed class TerrainListPresenter
     // The list address; the query string is the only state of the page.
     public static string ListUrl(string? area, string? terrain, string? tab, string? text = null, string? tag = null)
     {
-        var url = WebRoutes.Terrain + "?";
-        if (!string.IsNullOrWhiteSpace(area)) { url += "area=" + Uri.EscapeDataString(area.Trim()) + "&"; }
-        if (!string.IsNullOrWhiteSpace(terrain)) { url += "terrain=" + Uri.EscapeDataString(terrain.Trim()) + "&"; }
-        url += "tab=" + Uri.EscapeDataString(NormaliseTab(tab));
-        if (!string.IsNullOrWhiteSpace(text)) { url += "&q=" + Uri.EscapeDataString(text.Trim()); }
-        if (!string.IsNullOrWhiteSpace(tag)) { url += "&tag=" + Uri.EscapeDataString(tag.Trim()); }
-        return url;
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(area)) { parts.Add("area=" + Uri.EscapeDataString(area.Trim())); }
+        if (!string.IsNullOrWhiteSpace(terrain)) { parts.Add("terrain=" + Uri.EscapeDataString(terrain.Trim())); }
+        var open = NormaliseTab(tab);
+        if (open != null) { parts.Add("tab=" + Uri.EscapeDataString(open)); }
+        if (!string.IsNullOrWhiteSpace(text)) { parts.Add("q=" + Uri.EscapeDataString(text.Trim())); }
+        if (!string.IsNullOrWhiteSpace(tag)) { parts.Add("tag=" + Uri.EscapeDataString(tag.Trim())); }
+        return WebRoutes.Terrain + (parts.Count == 0 ? string.Empty : "?" + string.Join("&", parts));
     }
 
-    public static string NormaliseTab(string? tab) =>
-        tab == TerrainLibrary.Feature || tab == TerrainLibrary.Phrase ? tab : TerrainLibrary.Fragment;
+    // A known kind opens its section on load; anything else (or nothing) opens none.
+    public static string? NormaliseTab(string? tab) => TerrainLibrary.IsKind(tab) ? tab : null;
 
     // The address a choice of area stands for: the terrain is dropped (the next load picks the first terrain type of the area).
     public static string AreaUrl(string? area, string? tab) => ListUrl(area, null, tab);
@@ -100,6 +108,8 @@ public sealed class TerrainListPresenter
                 Phrases = await _core.ListNeighborPhrasesAsync(_token, Terrain, null, cancellation);
             }
             Rows = BuildRows();
+            TypeName = CurrentType?.Name; TypeDescription = CurrentType?.Description;
+            TypeProblems.Clear();
             await LoadSuggestionsAsync(cancellation);
             return TerrainListOutcome.Ok;
         }
@@ -178,36 +188,15 @@ public sealed class TerrainListPresenter
 
     // ---- terrain types of the chosen area ----
 
-    public void BeginNewType()
+    public void ResetNewTypeForm()
     {
-        TypeFormOpen = true;
-        EditingTypeId = null;
         FormLocal = null; FormName = null; FormDescription = null;
-        Problems.Clear();
-    }
-
-    public bool BeginEditType(string id)
-    {
-        var type = Types.FirstOrDefault(t => t.Id == id);
-        if (type == null) { return false; }
-        TypeFormOpen = true;
-        EditingTypeId = type.Id;
-        FormLocal = LocalPart(type.Id); FormName = type.Name; FormDescription = type.Description;
-        Problems.Clear();
-        return true;
-    }
-
-    public void CancelTypeForm()
-    {
-        TypeFormOpen = false;
-        EditingTypeId = null;
         Problems.Clear();
     }
 
     public static string LocalPart(string id) => id.Contains('.') ? id.Substring(id.LastIndexOf('.') + 1) : id;
 
-    // Saves the form. A create sends "<area>.<local>"; an update always writes EditingTypeId (name and description only), so a form can never
-    // change which terrain type is written. On Ok the form closes. Core's refusal or message is shown as core worded it.
+    // Creates a terrain type: sends "<area>.<local>". On Ok the form is emptied. Core's refusal or message is shown as core worded it.
     public async Task<TerrainListOutcome> SaveTypeAsync(CancellationToken cancellation = default)
     {
         Error = null;
@@ -215,13 +204,28 @@ public sealed class TerrainListPresenter
         Problems.Clear();
         CreatedId = null;
         if (Area == null) { Error = TerrainLibrary.FailedError; return TerrainListOutcome.Failed; }
-        var creating = EditingTypeId == null;
-        var record = new TerrainTypeRecord
-        {
-            Id = creating ? Area + "." + (FormLocal ?? string.Empty).Trim() : EditingTypeId!,
-            Name = FormName ?? string.Empty,
-            Description = FormDescription ?? string.Empty,
-        };
+        var record = new TerrainTypeRecord { Id = Area + "." + (FormLocal ?? string.Empty).Trim(), Name = FormName ?? string.Empty, Description = FormDescription ?? string.Empty };
+        var outcome = await WriteTypeAsync(record, true, Problems, cancellation);
+        if (outcome == TerrainListOutcome.Ok) { ResetNewTypeForm(); }
+        return outcome;
+    }
+
+    // Saves the name and description of the CURRENT terrain type. It always writes CurrentType.Id, so the form can never change which
+    // terrain type is written (the id is read-only).
+    public async Task<TerrainListOutcome> SaveCurrentTypeAsync(CancellationToken cancellation = default)
+    {
+        Error = null;
+        Notice = null;
+        TypeProblems.Clear();
+        CreatedId = null;
+        var current = CurrentType;
+        if (current == null) { Error = TerrainLibrary.FailedError; return TerrainListOutcome.Failed; }
+        var record = new TerrainTypeRecord { Id = current.Id, Area = current.Area, Name = TypeName ?? string.Empty, Description = TypeDescription ?? string.Empty };
+        return await WriteTypeAsync(record, false, TypeProblems, cancellation);
+    }
+
+    private async Task<TerrainListOutcome> WriteTypeAsync(TerrainTypeRecord record, bool creating, List<string> problems, CancellationToken cancellation)
+    {
         try
         {
             var reply = creating ? await _core.CreateTerrainTypeAsync(_token, record, cancellation) : await _core.UpdateTerrainTypeAsync(_token, record, cancellation);
@@ -231,15 +235,13 @@ public sealed class TerrainListPresenter
                 case AdminResult.Ok:
                     Notice = creating ? "Terrain type created." : "Terrain type saved.";
                     if (creating) { CreatedId = record.Id; }
-                    CancelTypeForm();
                     return TerrainListOutcome.Ok;
                 case AdminResult.NoChange:
                     Notice = message ?? "Nothing was changed.";
-                    CancelTypeForm();
                     return TerrainListOutcome.Ok;
                 case AdminResult.Invalid:
-                    foreach (var e in reply.Errors) { Problems.Add(TerrainLibrary.ErrorText(e)); }
-                    if (Problems.Count == 0) { Error = message ?? TerrainLibrary.FailedError; }
+                    foreach (var e in reply.Errors) { problems.Add(TerrainLibrary.ErrorText(e)); }
+                    if (problems.Count == 0) { Error = message ?? TerrainLibrary.FailedError; }
                     break;
                 case AdminResult.AlreadyExists: Error = message ?? "A terrain type with that id already exists."; break;
                 case AdminResult.NotFound: Error = message ?? "That terrain type does not exist."; break;
@@ -283,20 +285,11 @@ public sealed class TerrainListPresenter
     private IReadOnlyList<Row> BuildRows()
     {
         var all = new List<(Row Row, IReadOnlyList<string> Tags, string Text)>();
-        if (Tab == TerrainLibrary.Fragment)
-        {
-            all.AddRange(Fragments.Select(f => (new Row(TerrainLibrary.Fragment, f.Id, f.Terrain, f.Weight, "slot " + f.Slot + ": " + Shorten(f.Text)), (IReadOnlyList<string>)f.Tags.ToList(), f.Slot + " " + f.Text)));
-        }
-        if (Tab == TerrainLibrary.Feature)
-        {
-            all.AddRange(Features.Select(f => (new Row(TerrainLibrary.Feature, f.Id, f.Terrain, f.Weight, "version " + f.Version + ", chance " + f.Chance + ": " + Shorten(f.Short)), (IReadOnlyList<string>)f.Tags.ToList(), f.Short + " " + f.Long + " " + f.RoomLine)));
-        }
-        if (Tab == TerrainLibrary.Phrase)
-        {
-            all.AddRange(Phrases.Select(f => (new Row(TerrainLibrary.Phrase, f.Id, f.Terrain, f.Weight, "next to " + f.NeighborTerrain + ": " + Shorten(TerrainLibrary.PhrasePreview(f.Text))), (IReadOnlyList<string>)Array.Empty<string>(), f.NeighborTerrain + " " + f.Text)));
-        }
+        all.AddRange(Fragments.Select(f => (new Row(TerrainLibrary.Fragment, f.Id, f.Terrain, f.Weight, "slot " + f.Slot + ": " + Shorten(f.Text)), (IReadOnlyList<string>)f.Tags.ToList(), f.Slot + " " + f.Text)));
+        all.AddRange(Features.Select(f => (new Row(TerrainLibrary.Feature, f.Id, f.Terrain, f.Weight, "version " + f.Version + ", chance " + f.Chance + ": " + Shorten(f.Short)), (IReadOnlyList<string>)f.Tags.ToList(), f.Short + " " + f.Long + " " + f.RoomLine)));
+        all.AddRange(Phrases.Select(f => (new Row(TerrainLibrary.Phrase, f.Id, f.Terrain, f.Weight, "next to " + f.NeighborTerrain + ": " + Shorten(TerrainLibrary.PhrasePreview(f.Text))), (IReadOnlyList<string>)Array.Empty<string>(), f.NeighborTerrain + " " + f.Text)));
         IEnumerable<(Row Row, IReadOnlyList<string> Tags, string Text)> q = all;
-        // The text filter matches the id and the entry's own words, case-insensitively.
+        // The text filter matches the id and the entry's own words, case-insensitively. It applies to all three kinds at once.
         if (TextFilter != null) { q = q.Where(x => x.Row.Id.Contains(TextFilter, StringComparison.OrdinalIgnoreCase) || x.Text.Contains(TextFilter, StringComparison.OrdinalIgnoreCase)); }
         if (TagFilter != null) { q = q.Where(x => x.Tags.Contains(TagFilter, StringComparer.Ordinal)); }
         return q.Select(x => x.Row).OrderBy(r => r.Kind, StringComparer.Ordinal).ThenBy(r => r.Id, StringComparer.Ordinal).ToList();
