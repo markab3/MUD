@@ -40,8 +40,12 @@ public sealed class ItemTemplateListPresenter
     public bool Filtering => !string.IsNullOrWhiteSpace(Filter);
     public int Total => _items.Count;
 
+    // ?area=<prefix> (the areas hub links here): only that area's group is listed. Empty = every area.
+    public string? AreaFilter { get; set; }
+    public bool AreaFiltering => !string.IsNullOrWhiteSpace(AreaFilter);
+
     // Templates that match the filter now (the live result count).
-    public int MatchCount => _items.Count(Matches);
+    public int MatchCount => _items.Count(i => Matches(i) && (!AreaFiltering || i.Area == AreaFilter));
 
     // Areas in id order. Without a filter every area is listed (an empty one says so); with a filter only the groups that match. A template whose
     // area has no record gets a group named by its id.
@@ -61,7 +65,7 @@ public sealed class ItemTemplateListPresenter
             {
                 groups.Add(new ItemTemplateGroup(orphan.Key, orphan.Key, string.Empty, orphan.ToList()));
             }
-            return groups.OrderBy(g => g.AreaId, StringComparer.Ordinal).ToList();
+            return groups.Where(g => !AreaFiltering || g.AreaId == AreaFilter).OrderBy(g => g.AreaId, StringComparer.Ordinal).ToList();
         }
     }
 

@@ -20,7 +20,7 @@ else
 {
     var p = _presenter;
     <h1>@(p.IsNew ? "New" : "Edit") @p.KindLabel.ToLowerInvariant()</h1>
-    <p><a class="mud-btn" href="@WebRoutes.Terrain">Back to the library</a></p>
+    <p><a class="mud-btn" href="@p.BackUrl()">Back to the library</a></p>
     @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
     @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
     @if (p.Problems.Count > 0)
@@ -50,15 +50,29 @@ else
                 <input id="te-id" value="@p.OriginalId" readonly="readonly" maxlength="100" />
             }
             <span class="mud-hint">(letters, digits, '-', '_' and '.'; fixed once created)</span></div>
+        <div class="mud-scope">
+        <div class="mud-field"><label for="te-area">Area</label>
+            <select id="te-area" value="@p.Area" @onchange="e => Edit(() => p.ChooseArea(e.Value?.ToString()))">
+                <option value="" selected="@string.IsNullOrEmpty(p.Area)">(choose an area)</option>
+                @foreach (var a in p.AreaChoices)
+                {
+                    <option value="@a" selected="@(p.Area == a)">@a</option>
+                }
+            </select></div>
         <div class="mud-field"><label for="te-terrain">Terrain type</label>
-            <select id="te-terrain" value="@p.Terrain" @onchange="e => Edit(() => p.Terrain = e.Value?.ToString())" required>
+            <select id="te-terrain" value="@p.Terrain" @onchange="e => Edit(() => p.ChooseTerrain(e.Value?.ToString()))" required>
                 <option value="" selected="@string.IsNullOrEmpty(p.Terrain)">(choose a terrain type)</option>
+                @if (p.TerrainIsMissing)
+                {
+                    <option value="@p.Terrain" selected="selected">@TerrainEditPresenter.MissingLabel(p.Terrain!)</option>
+                }
                 @foreach (var t in p.TerrainChoices)
                 {
-                    <option value="@t" selected="@(p.Terrain == t)">@t</option>
+                    <option value="@t.Id" selected="@(p.Terrain == t.Id)">@t.Id</option>
                 }
             </select>
-            <span class="mud-hint">(every entry belongs to exactly one terrain type)</span></div>
+            <span class="mud-hint">(every entry belongs to exactly one terrain type; changing it moves the entry)</span></div>
+        </div>
         @if (p.Kind == TerrainLibrary.Fragment)
         {
             <div class="mud-field"><label for="te-slot">Slot</label>
@@ -103,10 +117,18 @@ else
         else
         {
             <div class="mud-field"><label for="te-neighbor">Neighbour terrain</label>
-                <input id="te-neighbor" value="@p.NeighborTerrain" @onchange="e => Edit(() => p.NeighborTerrain = e.Value?.ToString())" maxlength="100" required list="terrain-list" autocomplete="off" /></div>
-            <datalist id="terrain-list">
-                @foreach (var t in p.TerrainChoices) { <option value="@t"></option> }
-            </datalist>
+                <select id="te-neighbor" value="@p.NeighborTerrain" @onchange="e => Edit(() => p.NeighborTerrain = e.Value?.ToString())" required>
+                    <option value="" selected="@string.IsNullOrEmpty(p.NeighborTerrain)">(choose a neighbour terrain)</option>
+                    @if (p.NeighborIsMissing)
+                    {
+                        <option value="@p.NeighborTerrain" selected="selected">@TerrainEditPresenter.MissingLabel(p.NeighborTerrain!)</option>
+                    }
+                    @foreach (var t in p.NeighborChoices)
+                    {
+                        <option value="@t.Id" selected="@(p.NeighborTerrain == t.Id)">@t.Id</option>
+                    }
+                </select>
+                <span class="mud-hint">(a terrain type of the same area)</span></div>
             <div class="mud-field"><label for="te-text">Text</label>
                 <input id="te-text" value="@p.Text" @onchange="e => Edit(() => p.Text = e.Value?.ToString())" maxlength="2000" required />
                 <span class="mud-hint">(must contain <code>{dir}</code> exactly once)</span></div>
@@ -130,6 +152,9 @@ else
     // The kind and the id come from the query string only.
     [SupplyParameterFromQuery(Name = "kind")] public string? Kind { get; set; }
     [SupplyParameterFromQuery(Name = "id")] public string? Id { get; set; }
+    // The list page's choice; they only pre-fill a new entry.
+    [SupplyParameterFromQuery(Name = "area")] public string? PrefillArea { get; set; }
+    [SupplyParameterFromQuery(Name = "terrain")] public string? PrefillTerrain { get; set; }
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
 
     private TerrainEditPresenter? _presenter;
@@ -145,6 +170,7 @@ else
     public sealed class TerrainDraft
     {
         public string? NewId { get; set; }
+        public string? Area { get; set; }
         public string? Terrain { get; set; }
         public string? Slot { get; set; }
         public string? Text { get; set; }
@@ -166,7 +192,7 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        var signature = Kind + "|" + Id;
+        var signature = Kind + "|" + Id + "|" + (string.IsNullOrEmpty(Id) ? PrefillArea + "|" + PrefillTerrain : string.Empty);
         if (_loadedFor == signature) { return; }
         _loadedFor = signature;
         _draftOffer = null;
@@ -182,7 +208,7 @@ else
 
     private async Task LoadAsync(string? notice)
     {
-        var presenter = new TerrainEditPresenter(Core, _token, Kind, Id);
+        var presenter = new TerrainEditPresenter(Core, _token, Kind, Id, PrefillArea, PrefillTerrain);
         await presenter.LoadAsync();
         presenter.Notice = notice;
         _presenter = presenter;
@@ -205,7 +231,7 @@ else
 
     private TerrainDraft? Snapshot() => _presenter == null || _presenter.IsMissing ? null : new TerrainDraft
     {
-        NewId = _presenter.NewId, Terrain = _presenter.Terrain,
+        NewId = _presenter.NewId, Area = _presenter.Area, Terrain = _presenter.Terrain,
         Slot = _presenter.Slot, Text = _presenter.Text, Weight = _presenter.Weight, Tags = _presenter.Tags, Short = _presenter.Short,
         Long = _presenter.Long, RoomLine = _presenter.RoomLine, Detail = _presenter.Detail, Handles = _presenter.Handles,
         Adjectives = _presenter.Adjectives, Chance = _presenter.Chance, NeighborTerrain = _presenter.NeighborTerrain, Merge = _presenter.Merge,
@@ -238,6 +264,7 @@ else
         var p = _presenter;
         if (d == null || p == null) { return; }
         if (p.IsNew) { p.NewId = d.NewId; }
+        if (!string.IsNullOrEmpty(d.Area)) { p.ChooseArea(d.Area); }
         p.Terrain = d.Terrain;
         p.Slot = d.Slot; p.Text = d.Text; p.Weight = d.Weight; p.Tags = d.Tags; p.Short = d.Short; p.Long = d.Long; p.RoomLine = d.RoomLine;
         p.Detail = d.Detail; p.Handles = d.Handles; p.Adjectives = d.Adjectives; p.Chance = d.Chance; p.NeighborTerrain = d.NeighborTerrain; p.Merge = d.Merge;

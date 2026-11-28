@@ -185,15 +185,20 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
   .mud-cards { display: none; }
 }
 
-/* Terrain library: tabs are links from 600px and one select below; the terrain tick list scrolls on a phone. */
+/* Terrain library: tabs are links from 600px and one select below. */
 .mud-tabs { display: none; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .mud-tabselect { display: flex; }
-.mud-terrain-list { max-height: 40vh; overflow-y: auto; border: 1px solid var(--mud-border); border-radius: 6px; padding: 4px 8px; margin-bottom: 8px; }
 .mud-pair { display: grid; grid-template-columns: 1fr; gap: 0 8px; }
+/* Area and terrain type dropdowns: stacked at every width, 44px targets (the shared select rule), never wider than the screen. */
+.mud-scope { display: flex; flex-direction: column; min-width: 0; }
+.mud-scope .mud-field select { min-height: var(--mud-hit); max-width: 100%; }
+/* Area hub: the counts are links, one under another on a phone, side by side from 600px. */
+.mud-arealinks { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.mud-arealinks .mud-btn { justify-content: flex-start; }
+@media (min-width: 600px) { .mud-arealinks { flex-direction: row; flex-wrap: wrap; } }
 @media (min-width: 600px) {
   .mud-tabs { display: flex; }
   .mud-tabselect { display: none; }
-  .mud-terrain-list { max-height: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .mud-pair { grid-template-columns: 1fr 1fr; max-width: 560px; }
 }
 

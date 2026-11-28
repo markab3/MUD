@@ -429,21 +429,25 @@ public class LiveFilterPageTests
     public async Task Terrain_TypingNarrowsTheLoadedRows_WithNoCallToCore_AndWritesTheAddressInPlace()
     {
         var core = new FakeAdminClient();
-        var f1 = new MUD.Contracts.FragmentRecord { Id = "g1", Slot = "opening", Text = "Grass.", Weight = 1, Terrain = "a.grass" };
-        var f2 = new MUD.Contracts.FragmentRecord { Id = "g2", Slot = "opening", Text = "Trees.", Weight = 1, Terrain = "a.forest" };
-        core.Fragments["g1"] = f1; core.Fragments["g2"] = f2;
-        await using var page = await Page<TerrainList>.OpenAsync(core);
-        Assert.Contains("2 entries", await page.Html());
-        await page.Settle("a.forest", "ApplyTerrainAsync");
+        core.Fragments["g1"] = new MUD.Contracts.FragmentRecord { Id = "g1", Slot = "opening", Text = "Grass.", Weight = 1, Terrain = "a.forest" };
+        core.Fragments["g2"] = new MUD.Contracts.FragmentRecord { Id = "g2", Slot = "opening", Text = "Trees.", Weight = 1, Terrain = "a.forest" };
+        core.Fragments["g3"] = new MUD.Contracts.FragmentRecord { Id = "g3", Slot = "opening", Text = "Sand.", Weight = 1, Terrain = "a.grass" };
+        core.AddArea("a").AddTerrainType("a.grass").AddTerrainType("a.forest");
+        await using var page = await Page<TerrainList>.OpenAsync(core, new() { ["Area"] = "a", ["Terrain"] = "a.forest" });
+        Assert.Contains("2 entries", await page.Html());      // only the chosen terrain's entries
+        core.LibraryCalls.Clear();
+        await page.Settle("trees", "ApplyTextAsync");
         var html = await page.Html();
-        Assert.Contains("g2", html);
+        Assert.Contains(">g2<", html);
         Assert.DoesNotContain(">g1<", html);
+        Assert.DoesNotContain(">g3<", html);
         Assert.Contains("1 entry", html);
+        Assert.Empty(core.LibraryCalls);
         var nav = Assert.Single(TestNav.Navigations);
         Assert.True(nav.Replace);
-        Assert.Equal("/creator/terrain?tab=fragment&terrain=a.forest", nav.Uri);
+        Assert.Equal("/creator/terrain?area=a&terrain=a.forest&tab=fragment&q=trees", nav.Uri);
         await page.Settle("calm", "ApplyTagAsync");
-        Assert.Equal("/creator/terrain?tab=fragment&terrain=a.forest&tag=calm", TestNav.Navigations.Last().Uri);
+        Assert.Equal("/creator/terrain?area=a&terrain=a.forest&tab=fragment&q=trees&tag=calm", TestNav.Navigations.Last().Uri);
         Assert.Contains("0 entries", await page.Html());
     }
 
@@ -451,10 +455,11 @@ public class LiveFilterPageTests
     public async Task Terrain_DeepLink_PrefillsBothBoxes()
     {
         var core = new FakeAdminClient();
+        core.AddArea("a").AddTerrainType("a.grass");
         core.Fragments["g1"] = new MUD.Contracts.FragmentRecord { Id = "g1", Slot = "opening", Text = "Grass.", Weight = 1, Terrain = "a.grass" };
-        await using var page = await Page<TerrainList>.OpenAsync(core, new() { ["TerrainFilter"] = "a.grass", ["TagFilter"] = "calm" });
+        await using var page = await Page<TerrainList>.OpenAsync(core, new() { ["Area"] = "a", ["Terrain"] = "a.grass", ["TextFilter"] = "gra", ["TagFilter"] = "calm" });
         var html = await page.Html();
-        Assert.Matches("id=\"tl-terrain\"[^>]*value=\"a.grass\"", html);
+        Assert.Matches("id=\"tl-text\"[^>]*value=\"gra\"", html);
         Assert.Matches("id=\"tl-tag\"[^>]*value=\"calm\"", html);
     }
 
@@ -471,7 +476,7 @@ public class LiveFilterPageTests
     [Theory]
     [InlineData("Components/Pages/PlayerList.razor", "pl-q")]
     [InlineData("Components/Pages/ItemTemplateList.razor", "it-filter")]
-    [InlineData("Components/Pages/TerrainList.razor", "tl-terrain")]
+    [InlineData("Components/Pages/TerrainList.razor", "tl-text")]
     [InlineData("Components/Pages/TerrainList.razor", "tl-tag")]
     public void EveryListFilter_IsALiveFilter_NotAFormWithASubmitButton(string file, string id)
     {
