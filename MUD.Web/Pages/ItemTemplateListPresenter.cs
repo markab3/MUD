@@ -40,6 +40,9 @@ public sealed class ItemTemplateListPresenter
     public bool Filtering => !string.IsNullOrWhiteSpace(Filter);
     public int Total => _items.Count;
 
+    // Templates that match the filter now (the live result count).
+    public int MatchCount => _items.Count(Matches);
+
     // Areas in id order. Without a filter every area is listed (an empty one says so); with a filter only the groups that match. A template whose
     // area has no record gets a group named by its id.
     public IReadOnlyList<ItemTemplateGroup> Groups

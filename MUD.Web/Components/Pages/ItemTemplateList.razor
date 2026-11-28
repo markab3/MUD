@@ -17,12 +17,10 @@ else
     <div class="mud-actions">
         <a class="mud-btn mud-btn-primary" id="it-new" href="@WebRoutes.ItemTemplateEdit()">New item template</a>
     </div>
-    <form class="mud-filter" @onsubmit="ApplyFilter" @onsubmit:preventDefault>
-        <div class="mud-field"><label for="it-filter">Filter</label>
-            <input id="it-filter" type="search" value="@_filterText" @oninput="e => _filterText = e.Value?.ToString()" maxlength="100" autocomplete="off" />
-            <span class="mud-hint">(matches the id, short description, handles and adjectives)</span></div>
-        <div class="mud-actions"><button type="submit" class="mud-btn mud-btn-primary">Filter</button></div>
-    </form>
+    <div class="mud-filter">
+        <LiveFilter Id="it-filter" Label="Filter" Value="@p.Filter" MaxLength="100" Apply="ApplyFilterAsync"
+                    Hint="(matches the id, short description, handles and adjectives)" ResultText="@LiveFilterRunner.Count(p.MatchCount, "item template")" />
+    </div>
     @if (_confirm != null)
     {
         <ConfirmDialog Label="Confirm delete" Text="@(ItemTemplateListPresenter.DeleteConfirm + " (" + _confirm.Id + ")")" ConfirmText="Delete"
@@ -79,7 +77,6 @@ else
     private ItemTemplateListPresenter? _presenter;
     private Contracts.ItemTemplateRecord? _confirm;
     private string _token = string.Empty;
-    private string? _filterText;
     private bool _busy;
 
     protected override async Task OnInitializedAsync()
@@ -91,10 +88,9 @@ else
         _presenter = presenter;
     }
 
-    private void ApplyFilter()
-    {
-        if (_presenter != null) { _presenter.Filter = _filterText ?? string.Empty; }
-    }
+    // Client-side: narrows the templates already loaded (no call to core).
+    private Task<Action?> ApplyFilterAsync(string text, CancellationToken cancellation) =>
+        Task.FromResult<Action?>(() => { if (_presenter != null) { _presenter.Filter = text; } });
 
     private void Ask(Contracts.ItemTemplateRecord item) => _confirm = item;
 

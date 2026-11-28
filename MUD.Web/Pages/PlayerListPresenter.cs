@@ -42,6 +42,13 @@ public sealed class PlayerListPresenter
     public static string PageUrl(string? filter, bool descending, int page) =>
         WebRoutes.Players + "?q=" + Uri.EscapeDataString(filter ?? string.Empty) + "&sort=" + (descending ? "desc" : "asc") + "&page=" + page;
 
+    // The state a list address stands for (cleaned filter, sort, page). The page compares it with the address a live filter just wrote, so that
+    // address coming back as a navigation does not reload the list a second time.
+    public static string StateKey(string? filter, string? sort, int? page) =>
+        Clean(filter) + "|" + (string.Equals(sort, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc") + "|" + Math.Max(1, page ?? 1);
+
+    public static string Clean(string? filter) => LiveFilterRunner.Clean(filter, MaxFilterLength);
+
     public string UrlFor(int page, bool? descending = null) => PageUrl(Filter, descending ?? Descending, page);
 
     public async Task<PlayerListOutcome> LoadAsync(string? filter, string? sort, int page, CancellationToken cancellation = default)

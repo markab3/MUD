@@ -75,6 +75,17 @@ public sealed class TerrainListPresenter
         return TerrainListOutcome.Failed;
     }
 
+    // Narrows the already loaded lists by the two text filters. No call to core: the live filter boxes use this on every settled value.
+    public void ApplyFilters(string? terrain, string? tag)
+    {
+        TerrainFilter = string.IsNullOrWhiteSpace(terrain) ? null : terrain.Trim();
+        TagFilter = string.IsNullOrWhiteSpace(tag) ? null : tag.Trim();
+        Rows = BuildRows();
+    }
+
+    // The state a list address stands for; see PlayerListPresenter.StateKey.
+    public static string StateKey(string? tab, string? terrain, string? tag) => ListUrl(tab, LiveFilterRunner.Clean(terrain, 100), LiveFilterRunner.Clean(tag, 100));
+
     // Deletes one entry. Sets Notice (fixed sentence or core's message) on any reply, Error when core cannot be reached or refuses the
     // session. The caller reloads the list afterwards. An unknown kind never reaches core.
     public async Task<TerrainListOutcome> DeleteAsync(string? kind, string? id, CancellationToken cancellation = default)

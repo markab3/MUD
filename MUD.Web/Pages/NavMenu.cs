@@ -40,8 +40,15 @@ public sealed class NavMenu
         {
             sections.Add(new("admin", "Admin", new[] { new NavItem("Players", WebRoutes.Players) }));
         }
-        return sections.Where(s => s.Items.Count > 0).ToList();
+        return Sorted(sections);
     }
+
+    // Drops empty sections and orders each section's items by visible label (case-insensitive ordinal), so a link added later lands in order
+    // by itself. The sections keep their order.
+    public static IReadOnlyList<NavSection> Sorted(IEnumerable<NavSection> sections) =>
+        sections.Where(s => s.Items.Count > 0)
+            .Select(s => s with { Items = s.Items.OrderBy(i => i.Label, StringComparer.OrdinalIgnoreCase).ToList() })
+            .ToList();
 
     public bool IsOpen { get; private set; }
 

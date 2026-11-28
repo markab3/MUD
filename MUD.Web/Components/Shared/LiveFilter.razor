@@ -1,0 +1,96 @@
+@* A text filter that applies as you type (WEB_BLAZOR.md "Live filters"). No form and no submit button. Behaviour is LiveFilterRunner:
+   about 250 ms debounce, latest wins. The input is never re-rendered with a new value while typing (its value attribute only changes when the
+   page sets it from outside), so focus, caret and the phone keyboard survive every re-render. Apply gets the trimmed, length-limited text and
+   returns the action that publishes the result (null = nothing to show); a result that arrives after a newer keystroke is dropped. *@
+@using Microsoft.JSInterop
+@inject IJSRuntime Js
+@implements IDisposable
+<div class="mud-field mud-live">
+    <label for="@Id">@Label</label>
+    <span class="mud-liverow">
+        <input @ref="_input" id="@Id" type="text" inputmode="search" enterkeyhint="search" value="@_rendered" @oninput="OnInput"
+               maxlength="@MaxLength" list="@ListId" aria-describedby="@(Id)-status" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" />
+        <button type="button" class="mud-btn mud-liveclear" aria-label="@("Clear " + Label.ToLowerInvariant())" hidden="@(!_hasText)" @onclick="ClearAsync">&times;</button>
+    </span>
+    @if (!string.IsNullOrEmpty(Hint)) { <span class="mud-hint">@Hint</span> }
+    <span class="mud-livestatus" id="@(Id)-status">
+        <span role="status" aria-live="polite">@ResultText</span>
+        @if (_runner.Busy) { <span class="mud-busy" aria-hidden="true">Searching...</span> }
+    </span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "live-filter";
+    [Parameter, EditorRequired] public string Label { get; set; } = "Filter";
+    // The applied text (the page's own state). A change from outside (a link, the back button) replaces the box unless the user is mid-typing.
+    [Parameter] public string? Value { get; set; }
+    // Takes the settled text; returns the publish action (see LiveFilterRunner) or null.
+    [Parameter, EditorRequired] public Func<string, CancellationToken, Task<Action?>> Apply { get; set; } = default!;
+    [Parameter] public string? ResultText { get; set; }
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public int MaxLength { get; set; } = 100;
+    [Parameter] public string? ListId { get; set; }
+    [Parameter] public int DelayMs { get; set; } = LiveFilterRunner.DefaultDelayMs;
+    // Replaces the timer (tests only).
+    [Parameter] public LiveFilterRunner.Delayer? Delayer { get; set; }
+
+    private LiveFilterRunner _runner = default!;
+    private ElementReference _input;
+    private string _text = string.Empty;       // what the box holds
+    private string _rendered = string.Empty;   // the value attribute: changes only when the page or Clear sets the box
+    private string? _lastValue;
+    private bool _hasText;
+    private bool _setBox;
+    private bool _focusBox;
+
+    protected override void OnInitialized()
+    {
+        _runner = new LiveFilterRunner(
+            (text, cancellation) => Apply(text, cancellation),
+            TimeSpan.FromMilliseconds(DelayMs),
+            work => InvokeAsync(work),
+            Delayer,
+            () => _ = InvokeAsync(StateHasChanged));
+    }
+
+    protected override void OnParametersSet()
+    {
+        var value = Value ?? string.Empty;
+        if (_lastValue != null && value == _lastValue) { return; }
+        var first = _lastValue == null;
+        _lastValue = value;
+        if (!first && _runner.Pending) { return; }
+        if (!first && LiveFilterRunner.Clean(_text, MaxLength) == value) { return; }
+        _text = _rendered = value;
+        _hasText = value.Length > 0;
+        _setBox = !first;
+    }
+
+    private Task OnInput(ChangeEventArgs e)
+    {
+        _text = e.Value?.ToString() ?? string.Empty;
+        _hasText = _text.Length > 0;
+        return _runner.Input(LiveFilterRunner.Clean(_text, MaxLength));
+    }
+
+    private Task ClearAsync()
+    {
+        _text = _rendered = string.Empty;
+        _hasText = false;
+        _setBox = true;
+        _focusBox = true;
+        return _runner.Immediate(string.Empty);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_setBox) { return; }
+        var focus = _focusBox;
+        _setBox = false;
+        _focusBox = false;
+        try { await Js.InvokeVoidAsync("mudLive.set", _input, _text, focus); }
+        catch (Exception) { }   // no circuit yet (prerender) or it is gone: the value attribute already carries the text
+    }
+
+    public void Dispose() => _runner.Dispose();
+}
