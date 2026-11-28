@@ -114,7 +114,7 @@ public class UiGuidelinesTests
         // Pages whose "alone on its line" buttons must carry mud-btn-block (or sit alone in a .mud-actions row, which spans it).
         string[] expected =
         {
-            "Pages/AreaList.razor:id=\"ar-new\"", "Pages/AreaList.razor:id=\"ar-save\"", "Pages/Password.razor:Change password",
+            "Pages/AreaList.razor:id=\"ar-new\"", "Pages/AreaList.razor:id=\"ar-save\"", "Pages/Password.razor:Change password", "Pages/Login.razor:>Log in",
             "Pages/RoomEdit.razor:id=\"re-back\"", "Pages/TerrainEdit.razor:id=\"te-back\"", "Pages/ItemTemplateEdit.razor:id=\"it-back\"",
             "Pages/PlayerEdit.razor:id=\"pe-back\"", "Pages/TerrainList.razor:id=\"tl-deltype\"", "Pages/TerrainList.razor:id=\"tl-newtype-save\"",
         };
