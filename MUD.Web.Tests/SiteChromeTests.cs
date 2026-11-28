@@ -31,7 +31,7 @@ public class NavMenuTests
     public void ACreator_GetsPlayerThenCreator_AndNoAdminSection()
     {
         Assert.Equal(new[] { "Player", "Creator" }, Headings(true, false));
-        Assert.Equal(new[] { new[] { "Change password", "Character" }, new[] { "Areas", "Create room", "Items", "Map", "Modules", "Terrain" } }, Labels(true, false));
+        Assert.Equal(new[] { new[] { "Change password", "Character" }, new[] { "Areas", "Create room", "Items", "Map", "Modules", "NPC templates", "Terrain" } }, Labels(true, false));
         Assert.DoesNotContain(NavMenu.SectionsFor(true, false).SelectMany(s => s.Items), i => i.Label == "Players");
     }
 
@@ -39,7 +39,7 @@ public class NavMenuTests
     public void AnAdmin_GetsPlayerCreatorAndAdminSections_InThatOrder()
     {
         Assert.Equal(new[] { "Player", "Creator", "Admin" }, Headings(true, true));
-        Assert.Equal(new[] { new[] { "Change password", "Character" }, new[] { "Areas", "Create room", "Items", "Map", "Modules", "Terrain" }, new[] { "Players" } }, Labels(true, true));
+        Assert.Equal(new[] { new[] { "Change password", "Character" }, new[] { "Areas", "Create room", "Items", "Map", "Modules", "NPC templates", "Terrain" }, new[] { "Players" } }, Labels(true, true));
     }
 
     [Fact]

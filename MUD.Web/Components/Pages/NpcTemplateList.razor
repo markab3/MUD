@@ -1,0 +1,64 @@
+@page "/creator/npcs"
+@attribute [Authorize(Policy = WebPolicies.CreatorOrAdmin)]
+@inject IAdminClient Core
+<PageTitle>NPC templates - Planar Realms</PageTitle>
+<h1>NPC templates</h1>
+@if (_presenter == null)
+{
+    <p class="mud-loading" aria-busy="true">Loading...</p>
+}
+else
+{
+    var p = _presenter;
+    <p class="mud-hint" id="npc-notice">@NpcTemplateListPresenter.Notice</p>
+    @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
+    else
+    {
+        var groups = p.Groups;
+        <p class="mud-hint" id="npc-count">@(p.Total == 1 ? "1 NPC template" : p.Total + " NPC templates")</p>
+        @if (p.Total == 0) { <p class="mud-empty">@NpcTemplateListPresenter.Empty</p> }
+        @* One native details element per area, read-only: no script, a 44px summary. *@
+        @foreach (var g in groups)
+        {
+            <details class="mud-section mud-collapse mud-itemgroup" @key="g.AreaId" data-area="@g.AreaId">
+                <summary>
+                    <span class="mud-itemgroup-title"><strong>@g.Name</strong> <span class="mud-muted">(@g.AreaId)</span></span>
+                    <span class="mud-itemgroup-count">@g.Items.Count</span>
+                </summary>
+                <div class="mud-section-body">
+                    @if (!string.IsNullOrWhiteSpace(g.Description)) { <p class="mud-hint">@g.Description</p> }
+                    @if (g.Items.Count == 0)
+                    {
+                        <p class="mud-empty">No NPC templates in this area.</p>
+                    }
+                    <ul class="mud-cardlist">
+                        @foreach (var i in g.Items)
+                        {
+                            <li>
+                                <strong class="mud-card-title">@i.Short</strong>
+                                <dl class="mud-facts">
+                                    <dt>Id</dt><dd>@i.Id</dd>
+                                    <dt>Version</dt><dd>@i.Version</dd>
+                                </dl>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </details>
+        }
+    }
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private NpcTemplateListPresenter? _presenter;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var token = (await AuthState).User.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
+        var presenter = new NpcTemplateListPresenter(Core, token);
+        await presenter.LoadAsync();
+        _presenter = presenter;
+    }
+}

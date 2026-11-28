@@ -148,19 +148,20 @@ namespace MUD.Core.Administration
             if (_areas == null) { return AreaReply(AdminResult.Refused, AreaUnavailableMessage); }
             string id = (rawId ?? string.Empty).Trim();
             AreaEntry stored;
-            int roomCount, terrainTypeCount;
+            int roomCount, terrainTypeCount, npcTemplateCount;
             try
             {
                 stored = id.Length == 0 ? null : _areas.Get(id);
                 roomCount = stored == null ? 0 : CountOf(RoomCountsByArea(), id);
                 terrainTypeCount = stored == null ? 0 : CountTerrainTypesInArea(id);
+                npcTemplateCount = stored == null ? 0 : CountNpcTemplatesInArea(id);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException) { return AreaFailed("read", id, ex); }
             if (stored == null) { return AreaReply(AdminResult.NotFound, AreaNotFoundMessage); }
-            // Item templates are not counted (see specs/ADMIN_API.md "Areas"); rooms and terrain types are.
-            if (roomCount > 0 || terrainTypeCount > 0)
+            // Item templates are not counted (see specs/ADMIN_API.md "Areas"); rooms, terrain types and NPC templates are.
+            if (roomCount > 0 || terrainTypeCount > 0 || npcTemplateCount > 0)
             {
-                return AreaReply(AdminResult.Refused, AreaInUseMessage(roomCount, terrainTypeCount), null, stored);
+                return AreaReply(AdminResult.Refused, AreaInUseMessage(roomCount, terrainTypeCount, npcTemplateCount), null, stored);
             }
 
             List<AuditRecord> entries = BuildEntries(actor, AreaEntity, id, id, new List<AuditChange> { new AuditChange("*delete*", AreaDocuments.ToDocument(stored), BsonNull.Value) });
@@ -178,12 +179,13 @@ namespace MUD.Core.Administration
         }
 
         // "3 rooms still use this area. ...", "2 terrain types still use this area. ...", "1 room and 4 terrain types still use this area. ...".
-        public static string AreaInUseMessage(int rooms, int terrainTypes)
+        public static string AreaInUseMessage(int rooms, int terrainTypes, int npcTemplates = 0)
         {
             var parts = new List<string>();
             if (rooms > 0) { parts.Add(rooms == 1 ? "1 room" : rooms + " rooms"); }
             if (terrainTypes > 0) { parts.Add(terrainTypes == 1 ? "1 terrain type" : terrainTypes + " terrain types"); }
-            bool singular = parts.Count == 1 && (rooms == 1 || terrainTypes == 1);
+            if (npcTemplates > 0) { parts.Add(npcTemplates == 1 ? "1 NPC template" : npcTemplates + " NPC templates"); }
+            bool singular = parts.Count == 1 && (rooms == 1 || terrainTypes == 1 || npcTemplates == 1);
             return string.Join(" and ", parts) + (singular ? " still uses" : " still use") + " this area. Move or delete them first. Nothing was changed.";
         }
 

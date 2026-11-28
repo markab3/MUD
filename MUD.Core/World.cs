@@ -501,6 +501,7 @@ namespace MUD.Core
                 libraryCache = null;
             }
             MUD.Core.ItemTemplates.IItemTemplateStore itemTemplateStore = new MUD.Core.ItemTemplates.MongoItemTemplateStore(database);
+            MUD.Core.NpcTemplates.INpcTemplateStore npcTemplateStore = new MUD.Core.NpcTemplates.MongoNpcTemplateStore(database);
             return new MUD.Core.Administration.AdminApi(
                 new MUD.Core.Administration.WorldAdminHost(this, _settings.StartRoomKey),
                 GetPlayerRepository(),
@@ -516,7 +517,8 @@ namespace MUD.Core
                 libraryCache,
                 _settings.ContentDirectory,
                 areaStore,
-                itemTemplateStore);
+                itemTemplateStore,
+                npcTemplateStore);
         }
 
         // Runs work on the game thread and waits for it, at most ApiCallTimeout. Called on the game thread itself the

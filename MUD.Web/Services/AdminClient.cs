@@ -147,6 +147,18 @@ public interface IAdminClient
     // The stored search rewards that were copied from a template, with the version copied and whether it is behind the template's current
     // version (read-only; creator or admin). Empty for an unknown id.
     Task<ListItemTemplateReferencesReply> ListItemTemplateReferencesAsync(string token, string id, CancellationToken cancellation = default);
+
+    // NPC templates (specs/NPC_TEMPLATES.md; creator or admin). A data library only. The page is read-only for now, but the whole surface is here.
+    // Write calls answer through the reply's Result (Ok, NoChange, Invalid, NotFound, AlreadyExists, Refused, AuditFailed, Failed).
+    Task<IReadOnlyList<NpcTemplateRecord>> ListNpcTemplatesAsync(string token, string? area = null, CancellationToken cancellation = default);
+
+    Task<NpcTemplateRecord?> GetNpcTemplateAsync(string token, string id, CancellationToken cancellation = default);
+
+    Task<NpcTemplateEditReply> CreateNpcTemplateAsync(string token, NpcTemplateRecord template, CancellationToken cancellation = default);
+
+    Task<NpcTemplateEditReply> UpdateNpcTemplateAsync(string token, NpcTemplateRecord template, CancellationToken cancellation = default);
+
+    Task<NpcTemplateEditReply> DeleteNpcTemplateAsync(string token, string id, CancellationToken cancellation = default);
 }
 
 // Core refused the session token (SessionEnded: unknown, revoked, or its player is retired) or the caller's current role is too low.
@@ -456,6 +468,24 @@ public sealed class GrpcAdminClient : IAdminClient
 
     public Task<ListItemTemplateReferencesReply> ListItemTemplateReferencesAsync(string token, string id, CancellationToken cancellation = default) =>
         Call(() => _client.ListItemTemplateReferencesAsync(new ItemTemplateIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public async Task<IReadOnlyList<NpcTemplateRecord>> ListNpcTemplatesAsync(string token, string? area = null, CancellationToken cancellation = default) =>
+        (await Call(() => _client.ListNpcTemplatesAsync(new ListNpcTemplatesRequest { Token = token ?? string.Empty, Area = area ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Templates.ToList();
+
+    public async Task<NpcTemplateRecord?> GetNpcTemplateAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        var reply = await Call(() => _client.GetNpcTemplateAsync(new NpcTemplateIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+        return reply.Found ? reply.Template : null;
+    }
+
+    public Task<NpcTemplateEditReply> CreateNpcTemplateAsync(string token, NpcTemplateRecord template, CancellationToken cancellation = default) =>
+        Call(() => _client.CreateNpcTemplateAsync(new SaveNpcTemplateRequest { Token = token ?? string.Empty, Template = template }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<NpcTemplateEditReply> UpdateNpcTemplateAsync(string token, NpcTemplateRecord template, CancellationToken cancellation = default) =>
+        Call(() => _client.UpdateNpcTemplateAsync(new SaveNpcTemplateRequest { Token = token ?? string.Empty, Template = template }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<NpcTemplateEditReply> DeleteNpcTemplateAsync(string token, string id, CancellationToken cancellation = default) =>
+        Call(() => _client.DeleteNpcTemplateAsync(new NpcTemplateIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
 
     // Unauthenticated and PermissionDenied are core's answers about the caller; any other failure means core could not answer.
     private static async Task<T> Call<T>(Func<Grpc.Core.AsyncUnaryCall<T>> call)
