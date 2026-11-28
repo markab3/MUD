@@ -19,6 +19,12 @@ namespace MUD.Web.Tests;
 // applying a settled value without a submit, and the menu order.
 public class LiveFilterRunnerTests
 {
+    // Waits (bounded) for a condition instead of guessing how many scheduler turns a continuation needs.
+    private static async Task Until(Func<bool> condition)
+    {
+        for (var i = 0; i < 500 && !condition(); i++) { await Task.Delay(10); }
+    }
+
     // A clock the test controls: every Delay waits until the test releases it (or its token is cancelled).
     private sealed class FakeClock
     {
@@ -60,7 +66,7 @@ public class LiveFilterRunnerTests
         Assert.Empty(source.Calls);              // nothing before the delay ends
         Assert.True(runner.Pending);
         clock.Release(0);
-        await Task.Yield();
+        await Until(() => source.Calls.Count >= 1);
         Assert.Equal("zel", Assert.Single(source.Calls).Text);
         Assert.True(runner.Busy);
         source.Finish(0);
@@ -77,7 +83,7 @@ public class LiveFilterRunnerTests
         using var runner = new LiveFilterRunner(source.Apply, delayer: clock.Delay);
         var runs = new[] { runner.Input("z"), runner.Input("ze"), runner.Input("zel") };
         clock.Release(0); clock.Release(1); clock.Release(2);   // the first two were cancelled by the later keystrokes
-        await Task.Yield();
+        await Until(() => source.Calls.Count >= 1);
         Assert.Equal("zel", Assert.Single(source.Calls).Text);
         source.Finish(0);
         await Task.WhenAll(runs);
@@ -91,12 +97,12 @@ public class LiveFilterRunnerTests
         using var runner = new LiveFilterRunner(source.Apply, delayer: clock.Delay);
         var first = runner.Input("a");
         clock.Release(0);
-        await Task.Yield();
+        await Until(() => source.Calls.Count >= 1);
         Assert.Single(source.Calls);                       // "a" is in flight
         var second = runner.Input("ab");                   // a newer keystroke
         Assert.True(source.Calls[0].Token.IsCancellationRequested);
         clock.Release(1);
-        await Task.Yield();
+        await Until(() => source.Calls.Count >= 2);
         Assert.Equal(2, source.Calls.Count);
         source.Finish(1);                                  // the newer reply comes first
         await second;
@@ -116,7 +122,7 @@ public class LiveFilterRunnerTests
         {
             runs.Add(runner.Input(new string('x', i + 1)));
             clock.Release(i);
-            await Task.Yield();
+            await Until(() => source.Calls.Count >= i + 1);
         }
         Assert.Equal(5, source.Calls.Count);
         Assert.Equal(4, source.Calls.Count(c => c.Token.IsCancellationRequested));
@@ -130,7 +136,7 @@ public class LiveFilterRunnerTests
         using var runner = new LiveFilterRunner(source.Apply, delayer: clock.Delay);
         var typed = runner.Input("abc");
         var cleared = runner.Immediate(string.Empty);
-        await Task.Yield();
+        await Until(() => source.Calls.Count >= 1);
         Assert.Empty(clock.Waits.Skip(1));                 // Immediate waited for nothing
         Assert.Equal(string.Empty, Assert.Single(source.Calls).Text);
         source.Finish(0);
@@ -169,7 +175,7 @@ public class LiveFilterRunnerTests
         using var runner = new LiveFilterRunner(source.Apply, delayer: clock.Delay, marshal: work => { marshalled++; return work(); });
         var run = runner.Input("x");
         clock.Release(0);
-        await Task.Yield();
+        await Until(() => source.Calls.Count >= 1);
         source.Finish(0);
         await run;
         Assert.Equal(1, marshalled);
