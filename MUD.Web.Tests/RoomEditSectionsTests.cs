@@ -29,8 +29,9 @@ public class RoomEditSectionsTests
 
     private sealed class TestNav : NavigationManager
     {
+        public List<string> Visited { get; } = new();
         public TestNav() { Initialize("http://localhost/", "http://localhost/creator/rooms/t.hall"); }
-        protected override void NavigateToCore(string uri, bool forceLoad) { }
+        protected override void NavigateToCore(string uri, bool forceLoad) { Visited.Add(uri); }
     }
 
     private sealed class Host : ComponentBase
@@ -82,6 +83,18 @@ public class RoomEditSectionsTests
                 await renderer.RenderComponentAsync<Host>(ParameterView.FromDictionary(new Dictionary<string, object?> { ["Key"] = key, ["Capture"] = (Action<RoomEdit>)(e => edit = e) })));
             return new Page(provider, renderer, () => root.ToHtmlString(), edit!);
         }
+
+        public List<string> Visited => ((TestNav)_provider.GetRequiredService<NavigationManager>()).Visited;
+        public NoticeService Notices => _provider.GetRequiredService<NoticeService>();
+        public DraftStore Drafts => _provider.GetRequiredService<DraftStore>();
+
+        // What a field's change handler does: set the value on the page's presenter, then re-render.
+        public Task Edit<T>(Action<T> change) => _renderer.Dispatcher.InvokeAsync(() =>
+        {
+            var presenter = (T)typeof(RoomEdit).GetField("_presenter", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_edit)!;
+            change(presenter);
+            typeof(ComponentBase).GetMethod("StateHasChanged", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(_edit, null);
+        });
 
         public Task<string> Html() => _renderer.Dispatcher.InvokeAsync(() => _root());
 
@@ -261,5 +274,159 @@ public class RoomEditSectionsTests
         Assert.Contains(">Update<", section);
         await page.Call("AskRegen");
         Assert.Contains("Confirm regen", await page.Html());
+    }
+
+    // ---- Save at the bottom, Back to the room's map level, Save goes to the map ----
+
+    private static readonly Regex BackLink = new("<a class=\"mud-btn mud-btn-block\" id=\"re-back\" href=\"([^\"]*)\"");
+
+    private static string BackHref(string html) => System.Net.WebUtility.HtmlDecode(BackLink.Match(html).Groups[1].Value);
+
+    [Fact]
+    public async Task SaveButton_IsTheLastActionOfThePage_AfterDelete_AndBelongsToTheForm()
+    {
+        await using var page = await Page.OpenAsync(Core(), "t.hall");
+        var html = await page.Html();
+        var save = html.IndexOf("Save room</button>", StringComparison.Ordinal);
+        Assert.True(save > html.IndexOf("Delete this room", StringComparison.Ordinal));
+        // No other button follows it: Save is the last <button> on the page.
+        Assert.Equal(save, html.LastIndexOf("<button", StringComparison.Ordinal) + html.Substring(html.LastIndexOf("<button", StringComparison.Ordinal)).IndexOf("Save room</button>", StringComparison.Ordinal));
+        Assert.DoesNotContain("<button", html.Substring(save));
+        Assert.DoesNotContain("mud-sticky-actions", html);
+        Assert.Contains("<form id=\"re-form\"", html);
+        Assert.Matches("<button type=\"submit\" form=\"re-form\" class=\"mud-btn mud-btn-primary mud-btn-block mud-save\"", html);
+        // The Save button is outside the form element; the form holds no other section.
+        var formEnd = html.IndexOf("</form>", StringComparison.Ordinal);
+        Assert.True(save > formEnd);
+        Assert.Single(Regex.Matches(html, "<form"));
+        // Back follows Save directly.
+        Assert.True(html.IndexOf("id=\"re-back\"", StringComparison.Ordinal) > save);
+    }
+
+    [Fact]
+    public async Task SaveButton_IsDisabledWhileBusy_ThroughTheBusyFlag()
+    {
+        await using var page = await Page.OpenAsync(Core(), "t.hall");
+        Assert.DoesNotContain("disabled", System.Text.RegularExpressions.Regex.Match(await page.Html(), "<button type=\"submit\"[^>]*>").Value);
+        Assert.Contains("disabled=\"@_busy\"", File.ReadAllText(SourcePath()));
+    }
+
+    private static string SourcePath()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir != null && !File.Exists(Path.Combine(dir, "MUD.sln"))) { dir = Path.GetDirectoryName(dir); }
+        return Path.Combine(dir!, "MUD.Web", "Components", "Pages", "RoomEdit.razor");
+    }
+
+    [Fact]
+    public async Task BackLink_IsFullWidth_AndGoesToTheStoredAreaAndLevel_CenteredOnTheRoom()
+    {
+        var core = new FakeAdminClient().AddRoom("t.hall", "t", 1, 1, 2);
+        await using var page = await Page.OpenAsync(core, "t.hall");
+        var html = await page.Html();
+        Assert.Equal(WebRoutes.MapFor("t", 2, null, null, "t.hall"), BackHref(html));
+        Assert.Contains("mud-btn-block", BackLink.Match(html).Value);
+        Assert.Contains(".mud-btn-block { display: flex; width: 100%;", File.ReadAllText(Path.Combine(Path.GetDirectoryName(SourcePath())!, "..", "..", "wwwroot", "css", "mobile.css")));
+    }
+
+    [Fact]
+    public async Task BackLink_NullZ_MeansLevelZero()
+    {
+        var core = new FakeAdminClient().AddRoom("t.hall", "t", null, null, null);
+        await using var page = await Page.OpenAsync(core, "t.hall");
+        Assert.Equal(WebRoutes.MapFor("t", 0, null, null, "t.hall"), BackHref(await page.Html()));
+    }
+
+    [Fact]
+    public async Task BackLink_RoomWithoutArea_GoesToTheBareMap()
+    {
+        var core = new FakeAdminClient().AddRoom("t.hall", "", 1, 1, 1);
+        await using var page = await Page.OpenAsync(core, "t.hall");
+        Assert.Equal(WebRoutes.Map, BackHref(await page.Html()));
+    }
+
+    [Fact]
+    public async Task BackLink_IgnoresAnUnsavedZEdit()
+    {
+        var core = new FakeAdminClient().AddRoom("t.hall", "t", 1, 1, 0);
+        await using var page = await Page.OpenAsync(core, "t.hall");
+        var before = BackHref(await page.Html());
+        await page.Edit<RoomEditPresenter>(p => p.Z = 5);
+        Assert.Equal(before, BackHref(await page.Html()));
+        Assert.Equal(WebRoutes.MapFor("t", 0, null, null, "t.hall"), before);
+    }
+
+    [Fact]
+    public async Task Save_Ok_GoesToTheMapOfTheSavedLevel_WithTheSavedNotice_AndDropsTheDraft()
+    {
+        var core = new FakeAdminClient().AddRoom("t.hall", "t", 1, 1, 0);
+        await using var page = await Page.OpenAsync(core, "t.hall");
+        await page.Edit<RoomEditPresenter>(p => p.Z = 3);
+        await page.Call("SaveAsync");
+        Assert.Equal(new[] { WebRoutes.MapFor("t", 3, null, null, "t.hall") }, page.Visited);
+        Assert.Equal(Messages.RoomSaved, page.Notices.Take());
+        Assert.Null(page.Notices.Take());
+    }
+
+    [Fact]
+    public async Task Save_NothingChanged_AlsoGoesToTheMap_WithThatNotice()
+    {
+        var core = new FakeAdminClient { RoomEditResult = AdminResult.NoChange }.AddRoom("t.hall", "t", 1, 1, 0);
+        await using var page = await Page.OpenAsync(core, "t.hall");
+        await page.Call("SaveAsync");
+        Assert.Equal(new[] { WebRoutes.MapFor("t", 0, null, null, "t.hall") }, page.Visited);
+        Assert.Equal(Messages.RoomNoChange, page.Notices.Take());
+    }
+
+    [Fact]
+    public async Task Save_Problem_StaysOnThePage_AndOpensTheSection()
+    {
+        var core = Core();
+        core.RoomEditResult = AdminResult.Invalid;
+        core.RoomEditErrors.Add(new FieldError { Field = "Exits[0].To", Message = "Bad." });
+        await using var page = await Page.OpenAsync(core, "t.hall");
+        await page.Call("SaveAsync");
+        Assert.Empty(page.Visited);
+        Assert.Null(page.Notices.Take());
+        Assert.True(Sections(await page.Html())["Exits"]);
+    }
+
+    [Fact]
+    public async Task OtherActions_KeepTheirOutcome_DeleteGoesToTheBareMap_NothingElseNavigatesOnOk()
+    {
+        var core = Core();
+        core.Rooms["t.hall"].Gen = new RoomGen { Map = "meadow", Terrain = "grass" };
+        await using var page = await Page.OpenAsync(core, "t.hall");
+        await page.Call("UpdateGeneratedAsync");
+        await page.Call("AskRegen");
+        await page.Call("ConfirmRegenAsync");
+        Assert.Empty(page.Visited);
+        await page.Call("DeleteAsync");
+        Assert.Equal(new[] { WebRoutes.Map }, page.Visited);
+        Assert.Equal(Messages.RoomDeleted, page.Notices.Take());
+    }
+
+    // No component may bind an editable text input to an area field: the area of an existing room, rooms, items or terrain is chosen from a select.
+    // The one exception is the new area's prefix on the Areas page (a free-text id by nature).
+    [Fact]
+    public void NoComponent_BindsAnEditableTextInput_ToAnAreaField_ExceptTheNewAreaPrefix()
+    {
+        var root = Path.GetDirectoryName(Path.GetDirectoryName(SourcePath())!)!;   // .../Components
+        var offenders = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(root, "*.razor", SearchOption.AllDirectories))
+        {
+            var text = File.ReadAllText(file);
+            foreach (Match m in Regex.Matches(text, "<(input|InputText)\\b[^>]*>", RegexOptions.Singleline))
+            {
+                var tag = m.Value;
+                var isArea = Regex.IsMatch(tag, "\\b(id|name)=\"[a-z]+-(new)?area\"|\\bArea\\b|\\.Area\\b|\\.NewArea\\b|datalist|list=\"[^\"]*area", RegexOptions.IgnoreCase);
+                var readOnly = Regex.IsMatch(tag, "\\breadonly\\b");
+                var isPrefixBox = Path.GetFileName(file) == "AreaList.razor" && tag.Contains("id=\"ar-id\"");
+                if (isArea && !readOnly && !isPrefixBox) { offenders.Add(Path.GetFileName(file) + ": " + tag); }
+            }
+            // The remaining datalists suggest terrain types and hooks; none may offer areas.
+            Assert.DoesNotMatch("<datalist[^>]*area", text);
+        }
+        Assert.Empty(offenders);
     }
 }

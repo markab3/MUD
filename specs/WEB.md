@@ -90,7 +90,7 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   live room, writes one audit row per changed field (audit first) and applies the change to the live room on the game
   thread. The reply carries the room as it is now, which the page shows. The web holds no `Rev`, no allow-list and no
   Mongo access for rooms.
-- Move: a second form on the page gives the room a new key (`<area prefix>.<local key>`; the area is a real `<select id="re-newarea">` of the area records, preselected to the room's current one, and its prefix is shown as fixed text `#re-newprefix` before the local key input `#re-newlocal`; the read-only `#re-area` field above stays plain text) through the Admin
+- Move: a second form on the page gives the room a new key (`<area prefix>.<local key>`; the area is a real `<select id="re-newarea">` of the area records, preselected to the room's current one, and its prefix is shown as fixed text `#re-newprefix` before the local key input `#re-newlocal`; the room's own area `#re-area` above is plain text) through the Admin
   `MoveRoom` call. Core inserts the room under the new key, deletes the old one, repoints exits in other rooms and players'
   stored locations, keeps occupants inside, and audits a `Key` change. Refused for the default room and for a key that
   already exists.
@@ -114,6 +114,20 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   per-click rpc beyond a first read if it is not loaded). The status line ("Added N exits to the form: north -> key, ... Save to apply."
   or "No adjacent rooms to link.") is `aria-live`. Unsaved added rows are kept in the browser draft like any other exit edit and are lost
   on reload unless the draft is restored. The 32-row form limit applies; extra exits are reported, not added.
+- Save and Back at the bottom (card "Website: room edit Save at the bottom ..."): the page ends with one action row (`.mud-bottom-actions`, no
+  longer sticky): the primary `Save room` button (`#re-save`, full width, 44px, disabled while a write runs) and, directly below it, a
+  full-width `Back to the map` link (`#re-back`). The form has `id="re-form"` and holds only Basics, Exits and Features; the Save button is
+  outside it (after the Delete section) and joins it with `form="re-form"` (no script; Enter in a form text field still submits through it).
+  Back goes to `WebRoutes.MapFor(<area>, <Z>, center: <room key>)` with the area and Z the room has as loaded or last saved (not unsaved form
+  edits; a null Z is level 0, as `RoomMapLayout.LevelOf`); a room with no area goes to the bare map. Centering on the room is an addition so
+  the user lands where they were. Leaving with unsaved changes just leaves (the browser draft keeps them). The link in the room-not-found view
+  is unchanged (bare map).
+- Save, then the map: when Save succeeds (including "Nothing was changed.") the draft is removed, the saved text is set as a notice and the
+  page goes to the map of the room's saved area and level (the Z may have just changed), centred on it, as the Create room flow does but
+  without the word "Created" (the map shows the notice once through `NoticeService`). A problem keeps the user on the page with the sections
+  opened as before. Move, Delete, Regen and Update behave as before.
+- The room's own area (`#re-area`) is plain text ("prefix - Name"), not an input. No text box chooses an existing area anywhere; the only
+  free-text area field is the new area's prefix on the Areas page.
 - Collapsible sections (card "Website: collapsible sections on the room edit page"): every section (Basics, Exits, Features, Behaviors,
   Generated room when present, Move room, Delete) is a native `<details>` whose `<summary>` holds the section's `<h2>` (44px target, chevron,
   focus ring, palette variables only; no script). Basics starts open, all others closed. Collapsing is display only: the fields stay in the page

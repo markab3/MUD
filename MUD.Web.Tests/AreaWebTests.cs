@@ -801,10 +801,9 @@ public class AreaPageRenderTests
         Assert.DoesNotContain("<input id=\"re-newarea\"", html);
         Assert.Contains("<span class=\"mud-keyprefix\" id=\"re-newprefix\" aria-hidden=\"true\">t.</span>", html);
         Assert.Contains("<input id=\"re-newlocal\" value=\"hall\"", html);
-        // The room's own area stays read-only text.
-        var own = html.Substring(html.IndexOf("<input id=\"re-area\"", StringComparison.Ordinal), 100);
-        Assert.Contains("readonly", own);
-        Assert.Contains("value=\"t\"", own);
+        // The room's own area is plain read-only text (an output element, not an input), with its prefix and name.
+        Assert.DoesNotContain("<input id=\"re-area\"", html);
+        Assert.Contains("<output id=\"re-area\" class=\"mud-static\">t - Test land</output>", html);
     }
 
     [Fact]
