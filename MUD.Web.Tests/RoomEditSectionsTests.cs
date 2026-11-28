@@ -289,9 +289,9 @@ public class RoomEditSectionsTests
         var html = await page.Html();
         var save = html.IndexOf("Save room</button>", StringComparison.Ordinal);
         Assert.True(save > html.IndexOf("Delete this room", StringComparison.Ordinal));
-        // No other button follows it: Save is the last <button> on the page.
-        Assert.Equal(save, html.LastIndexOf("<button", StringComparison.Ordinal) + html.Substring(html.LastIndexOf("<button", StringComparison.Ordinal)).IndexOf("Save room</button>", StringComparison.Ordinal));
+        // The pinned bar is the last thing on the page: no other button follows it, and there is exactly one bar.
         Assert.DoesNotContain("<button", html.Substring(save));
+        Assert.Single(Regex.Matches(html, "class=\"mud-pinbar\""));
         Assert.DoesNotContain("mud-sticky-actions", html);
         Assert.Contains("<form id=\"re-form\"", html);
         Assert.Matches("<button type=\"submit\" form=\"re-form\" class=\"mud-btn mud-btn-primary mud-btn-block mud-save\"", html);
@@ -299,8 +299,10 @@ public class RoomEditSectionsTests
         var formEnd = html.IndexOf("</form>", StringComparison.Ordinal);
         Assert.True(save > formEnd);
         Assert.Single(Regex.Matches(html, "<form"));
-        // Back follows Save directly.
-        Assert.True(html.IndexOf("id=\"re-back\"", StringComparison.Ordinal) > save);
+        // Back is in the page flow, before the bar (not pinned).
+        var back = html.IndexOf("id=\"re-back\"", StringComparison.Ordinal);
+        Assert.True(back > html.IndexOf("Delete this room", StringComparison.Ordinal));
+        Assert.True(back < html.IndexOf("class=\"mud-pinbar\"", StringComparison.Ordinal));
     }
 
     [Fact]

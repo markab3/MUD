@@ -88,10 +88,10 @@ public class TerrainPresenterTests
     {
         var core = Core();
         var forest = await List(core, "a", "a.forest");
-        Assert.Equal(new[] { "orphan" }, forest.Rows.Select(r => r.Id));
+        Assert.Equal(new[] { "t1", "orphan" }, forest.Rows.Select(r => r.Id));   // ordered by kind (feature, fragment, phrase), then id
         Assert.Equal((1, 1, 0), (forest.Fragments.Count, forest.Features.Count, forest.Phrases.Count));
         var grass = await List(core, "a", "a.grass");
-        Assert.Equal(new[] { "g1" }, grass.Rows.Select(r => r.Id));
+        Assert.Equal(new[] { "g1", "p1" }, grass.Rows.Select(r => r.Id));
         Assert.Equal((1, 0, 1), (grass.Fragments.Count, grass.Features.Count, grass.Phrases.Count));
         Assert.Empty((await List(core, "a", "a.river")).Rows);
     }
@@ -111,7 +111,7 @@ public class TerrainPresenterTests
         page.ApplyFilters(null, "wild");
         Assert.Empty(page.Rows);
         page.ApplyFilters(" ", "");
-        Assert.Equal(new[] { "g1" }, page.Rows.Select(r => r.Id));
+        Assert.Equal(new[] { "g1", "p1" }, page.Rows.Select(r => r.Id));
         Assert.Empty(core.LibraryCalls);
         // The filter never reaches entries of another terrain: "Nothing." is the orphan fragment of a.forest.
         page.ApplyFilters("Nothing", null);
@@ -119,24 +119,41 @@ public class TerrainPresenterTests
     }
 
     [Fact]
-    public async Task List_FeatureAndPhraseTabs_ShowTheirKind()
+    public async Task List_RowsOfAKind_ShowOnlyThatKind()
     {
         var features = await List(Core(), "a", "a.forest", "feature");
-        Assert.Equal(new[] { "t1" }, features.Rows.Select(r => r.Id));
-        Assert.Contains("version 3", features.Rows[0].Details);
+        Assert.Equal(new[] { "t1" }, features.RowsOf(TerrainLibrary.Feature).Select(r => r.Id));
+        Assert.Equal(new[] { "orphan" }, features.RowsOf(TerrainLibrary.Fragment).Select(r => r.Id));
+        Assert.Empty(features.RowsOf(TerrainLibrary.Phrase));
+        Assert.Contains("version 3", features.RowsOf(TerrainLibrary.Feature).Single().Details);
         var phrases = await List(Core(), "a", "a.grass", "phrase");
-        Assert.Equal(new[] { "p1" }, phrases.Rows.Select(r => r.Id));
-        Assert.Contains("A river flows north of here.", phrases.Rows[0].Details);
+        Assert.Equal(new[] { "p1" }, phrases.RowsOf(TerrainLibrary.Phrase).Select(r => r.Id));
+        Assert.Contains("A river flows north of here.", phrases.RowsOf(TerrainLibrary.Phrase).Single().Details);
     }
 
     [Fact]
-    public async Task List_UnknownTab_IsFragments_AndBlankFiltersAreNone()
+    public async Task List_TabIsTheSectionToOpen_UnknownIsNone_AndBlankFiltersAreNone()
     {
         var page = await List(Core(), "a", null, "bogus", "  ", "");
-        Assert.Equal(TerrainLibrary.Fragment, page.Tab);
+        Assert.Null(page.Tab);
         Assert.Null(page.TextFilter);
         Assert.Null(page.TagFilter);
-        Assert.Equal("Description fragments", page.TabLabel);
+        Assert.Equal(TerrainLibrary.Feature, (await List(Core(), "a", null, "feature")).Tab);
+    }
+
+    [Fact]
+    public async Task List_CountLabel_IsTheTotal_AndShownOfTotalWhileAFilterIsActive()
+    {
+        var core = Core();
+        core.Fragments["g3"] = new FragmentRecord { Id = "g3", Slot = "opening", Text = "More grass.", Weight = 1, Terrain = "a.grass" };
+        var page = await List(core, "a", "a.grass");
+        Assert.Equal(("2", "0", "1"), (page.CountLabel(TerrainLibrary.Fragment), page.CountLabel(TerrainLibrary.Feature), page.CountLabel(TerrainLibrary.Phrase)));
+        page.ApplyFilters("more", null);
+        Assert.Equal(("1 of 2", "0 of 0", "0 of 1"), (page.CountLabel(TerrainLibrary.Fragment), page.CountLabel(TerrainLibrary.Feature), page.CountLabel(TerrainLibrary.Phrase)));
+        page.ApplyFilters(null, "calm");
+        Assert.Equal("1 of 2", page.CountLabel(TerrainLibrary.Fragment));
+        page.ApplyFilters(null, null);
+        Assert.Equal("2", page.CountLabel(TerrainLibrary.Fragment));
     }
 
     [Fact]
@@ -161,9 +178,10 @@ public class TerrainPresenterTests
     [Fact]
     public void ListUrl_RoundTrips_TheAreaTerrainTabAndFilters_InTheQueryString()
     {
-        Assert.Equal(WebRoutes.Terrain + "?tab=fragment", TerrainListPresenter.ListUrl(null, null, null));
+        Assert.Equal(WebRoutes.Terrain, TerrainListPresenter.ListUrl(null, null, null));
+        Assert.Equal(WebRoutes.Terrain + "?area=a&terrain=a.grass", TerrainListPresenter.ListUrl("a", "a.grass", null));
         Assert.Equal(WebRoutes.Terrain + "?area=a&terrain=a.grass&tab=feature&q=a%20b&tag=calm", TerrainListPresenter.ListUrl("a", "a.grass", "feature", " a b ", "calm"));
-        Assert.Equal(WebRoutes.Terrain + "?tab=fragment", TerrainListPresenter.ListUrl(null, null, "evil&x=1"));
+        Assert.Equal(WebRoutes.Terrain, TerrainListPresenter.ListUrl(null, null, "evil&x=1"));
         // Choosing another area drops the terrain.
         Assert.Equal(WebRoutes.Terrain + "?area=b&tab=phrase", TerrainListPresenter.AreaUrl("b", "phrase"));
         // The address a presenter stands for gives the same presenter back.
@@ -189,12 +207,11 @@ public class TerrainPresenterTests
     {
         var core = Core();
         var page = await List(core, "a");
-        page.BeginNewType();
         page.FormLocal = " rock "; page.FormName = "Rock"; page.FormDescription = "Bare rock.";
         Assert.Equal(TerrainListOutcome.Ok, await page.SaveTypeAsync());
         Assert.Equal("Terrain type created.", page.Notice);
         Assert.Equal("a.rock", page.CreatedId);
-        Assert.False(page.TypeFormOpen);
+        Assert.Null(page.FormLocal);    // the form is emptied
         var stored = core.TerrainTypes["a.rock"];
         Assert.Equal(("a", "Rock", "Bare rock."), (stored.Area, stored.Name, stored.Description));
         Assert.Contains("CreateTerrainType", core.TerrainTypeCalls);
@@ -207,10 +224,8 @@ public class TerrainPresenterTests
         core.TerrainTypeResult = AdminResult.Invalid;
         core.TerrainTypeErrors.Add(new FieldError { Field = "Name", Message = "Name is required." });
         var page = await List(core, "a");
-        page.BeginNewType();
         page.FormLocal = "x";
         Assert.Equal(TerrainListOutcome.Failed, await page.SaveTypeAsync());
-        Assert.True(page.TypeFormOpen);
         Assert.Equal(new[] { "Name: Name is required." }, page.Problems);
         Assert.Equal("x", page.FormLocal);
     }
@@ -221,24 +236,64 @@ public class TerrainPresenterTests
         var core = Core();
         core.TerrainTypeResult = AdminResult.AlreadyExists;
         var page = await List(core, "a");
-        page.BeginNewType(); page.FormLocal = "grass"; page.FormName = "Grass";
+        page.FormLocal = "grass"; page.FormName = "Grass";
         Assert.Equal(TerrainListOutcome.Failed, await page.SaveTypeAsync());
         Assert.Contains("already exists", page.Error);
     }
 
     [Fact]
-    public async Task TypeEdit_WritesTheChosenId_NotTheFormsLocalPart_AndChangesNameAndDescription()
+    public async Task TypeEdit_WritesTheCurrentId_AndChangesNameAndDescription_StartingFromTheStoredValues()
+    {
+        var core = Core();
+        core.TerrainTypes["a.grass"].Description = "Green.";
+        var page = await List(core, "a", "a.grass");
+        Assert.Equal(("a.grass", "Green."), (page.TypeName, page.TypeDescription));   // the form starts from the stored values (the fake names a type by its id)
+        page.FormLocal = "other";    // the new-type form never touches the current type
+        page.TypeName = "Meadow"; page.TypeDescription = "Soft.";
+        Assert.Equal(TerrainListOutcome.Ok, await page.SaveCurrentTypeAsync());
+        Assert.Equal("Terrain type saved.", page.Notice);
+        Assert.Contains("UpdateTerrainType", core.TerrainTypeCalls);
+        Assert.Equal(("Meadow", "Soft."), (core.TerrainTypes["a.grass"].Name, core.TerrainTypes["a.grass"].Description));
+        Assert.False(core.TerrainTypes.ContainsKey("a.other"));
+    }
+
+    [Fact]
+    public async Task TypeEdit_EveryResultBranch()
     {
         var core = Core();
         var page = await List(core, "a", "a.grass");
-        Assert.True(page.BeginEditType("a.grass"));
-        Assert.Equal("grass", page.FormLocal);
-        page.FormLocal = "other"; page.FormName = "Meadow"; page.FormDescription = "Soft.";
-        Assert.Equal(TerrainListOutcome.Ok, await page.SaveTypeAsync());
-        Assert.Equal("Terrain type saved.", page.Notice);
-        Assert.Equal("Meadow", core.TerrainTypes["a.grass"].Name);
-        Assert.False(core.TerrainTypes.ContainsKey("a.other"));
-        Assert.False(page.BeginEditType("a.nope"));
+        core.TerrainTypeResult = AdminResult.NoChange; core.TerrainTypeMessage = "Same.";
+        Assert.Equal(TerrainListOutcome.Ok, await page.SaveCurrentTypeAsync());
+        Assert.Equal("Same.", page.Notice);
+        core.TerrainTypeResult = AdminResult.Invalid; core.TerrainTypeMessage = string.Empty;
+        core.TerrainTypeErrors.Add(new FieldError { Field = "Name", Message = "Name is required." });
+        Assert.Equal(TerrainListOutcome.Failed, await page.SaveCurrentTypeAsync());
+        Assert.Equal(new[] { "Name: Name is required." }, page.TypeProblems);
+        core.TerrainTypeErrors.Clear();
+        core.TerrainTypeResult = AdminResult.NotFound; core.TerrainTypeMessage = "Gone.";
+        Assert.Equal(TerrainListOutcome.Failed, await page.SaveCurrentTypeAsync());
+        Assert.Equal("Gone.", page.Error);
+        core.TerrainTypeResult = AdminResult.Refused; core.TerrainTypeMessage = "No.";
+        await page.SaveCurrentTypeAsync();
+        Assert.Equal("No.", page.Error);
+        core.TerrainTypeResult = AdminResult.Forbidden; core.TerrainTypeMessage = string.Empty;
+        await page.SaveCurrentTypeAsync();
+        Assert.Equal(TerrainLibrary.ForbiddenError, page.Error);
+        core.TerrainTypeResult = AdminResult.AuditFailed;
+        await page.SaveCurrentTypeAsync();
+        Assert.Equal(TerrainLibrary.AuditFailedError, page.Error);
+        core.Unavailable = true;
+        Assert.Equal(TerrainListOutcome.Failed, await page.SaveCurrentTypeAsync());
+        Assert.Equal(TerrainLibrary.UnavailableError, page.Error);
+    }
+
+    [Fact]
+    public async Task TypeEdit_WithNoCurrentTerrain_SendsNothing()
+    {
+        var core = Core();
+        var page = await List(core, "c");
+        Assert.Equal(TerrainListOutcome.Failed, await page.SaveCurrentTypeAsync());
+        Assert.DoesNotContain("UpdateTerrainType", core.TerrainTypeCalls);
     }
 
     [Fact]
@@ -769,12 +824,13 @@ public class TerrainPresenterTests
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(src, @"\.DeleteAsync\("));
         Assert.Contains("mud-table-wrap", src);
         Assert.Contains("mud-cards", src);
-        // Tabs: links wide, one select on a phone.
-        Assert.Contains("mud-tabs", src);
-        Assert.Contains("mud-tabselect", src);
+        // The tabs are gone: collapsible sections instead.
+        Assert.DoesNotContain("mud-tabs", src);
+        Assert.DoesNotContain("mud-tabselect", src);
+        Assert.DoesNotContain("tl-tab", src);
         var css = Read("MUD.Web/wwwroot/css/mobile.css");
-        Assert.Matches(@"\.mud-tabs \{ display: none;", css);
-        Assert.Matches(@"@media \(min-width: 600px\)\s*\{\s*\.mud-tabs \{ display: flex; \}\s*\.mud-tabselect \{ display: none; \}", css);
+        Assert.DoesNotContain(".mud-tabs", css);
+        Assert.DoesNotContain(".mud-tabselect", css);
     }
 
     [Fact]
@@ -787,7 +843,8 @@ public class TerrainPresenterTests
         Assert.DoesNotContain("ExtraTerrains", src);
         Assert.Contains("id=\"te-terrain\"", src);        // one terrain-type dropdown fed from ListTerrainTypes
         Assert.Contains("inputmode=\"numeric\"", src);
-        Assert.Contains("mud-sticky-actions", src);
+        Assert.Contains("<PinnedSave FormId=\"te-form\"", src);
+        Assert.DoesNotContain("mud-sticky-actions", src);
     }
 
     [Fact]

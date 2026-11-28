@@ -45,59 +45,8 @@ else
         <p class="mud-empty">Choose an area to see its terrain types.</p>
     }
 
-    @if (p.Area != null)
-    {
-        <section class="mud-section" aria-labelledby="tl-types-h">
-            <h2 id="tl-types-h">Terrain types of @p.Area (@p.Types.Count)</h2>
-            @if (p.Types.Count == 0) { <p class="mud-empty">No terrain types yet.</p> }
-            @if (!p.TypeFormOpen)
-            {
-                <div class="mud-actions">
-                    <button type="button" class="mud-btn" id="tl-newtype" data-mutating disabled="@_busy" @onclick="p.BeginNewType">New terrain type</button>
-                    @if (p.CurrentType != null)
-                    {
-                        <button type="button" class="mud-btn" id="tl-edittype" data-mutating disabled="@_busy" @onclick="() => p.BeginEditType(p.CurrentType.Id)">Edit @p.CurrentType.Id</button>
-                        <button type="button" class="mud-btn mud-btn-danger" id="tl-deltype" data-mutating disabled="@_busy" @onclick="AskType">Delete @p.CurrentType.Id</button>
-                    }
-                </div>
-            }
-            else
-            {
-                <TerrainTypeForm Presenter="p" Busy="_busy" OnSave="SaveTypeAsync" />
-            }
-            @if (_confirmType != null)
-            {
-                <ConfirmDialog Label="Confirm delete" Text="@("Delete this terrain type? (" + _confirmType + ")")" ConfirmText="Delete"
-                               Busy="_busy" OnConfirm="ConfirmDeleteTypeAsync" OnCancel="CancelDeleteType" />
-            }
-        </section>
-    }
-
     @if (p.Terrain != null)
     {
-        var shown = p.CurrentType;
-        @if (shown != null && (!string.IsNullOrWhiteSpace(shown.Name) || !string.IsNullOrWhiteSpace(shown.Description)))
-        {
-            <p class="mud-hint">@shown.Name@(string.IsNullOrWhiteSpace(shown.Description) ? null : " - " + shown.Description)</p>
-        }
-        @* Wide screens: links. Under 600px: one select with the same entries (CSS shows one of them; no round trip). *@
-        <nav aria-label="Library tabs" class="mud-tabs">
-            <a class="mud-btn@(p.Tab == TerrainLibrary.Fragment ? " mud-btn-primary" : null)" aria-current="@(p.Tab == TerrainLibrary.Fragment ? "page" : null)" href="@TabUrl(TerrainLibrary.Fragment)">Fragments (@p.Fragments.Count)</a>
-            <a class="mud-btn@(p.Tab == TerrainLibrary.Feature ? " mud-btn-primary" : null)" aria-current="@(p.Tab == TerrainLibrary.Feature ? "page" : null)" href="@TabUrl(TerrainLibrary.Feature)">Feature templates (@p.Features.Count)</a>
-            <a class="mud-btn@(p.Tab == TerrainLibrary.Phrase ? " mud-btn-primary" : null)" aria-current="@(p.Tab == TerrainLibrary.Phrase ? "page" : null)" href="@TabUrl(TerrainLibrary.Phrase)">Neighbour phrases (@p.Phrases.Count)</a>
-        </nav>
-        <div class="mud-field mud-tabselect">
-            <label for="tl-tab">Show</label>
-            <select id="tl-tab" value="@p.Tab" @onchange="e => ChooseTab(e.Value?.ToString())">
-                <option value="@TerrainLibrary.Fragment" selected="@(p.Tab == TerrainLibrary.Fragment)">Fragments (@p.Fragments.Count)</option>
-                <option value="@TerrainLibrary.Feature" selected="@(p.Tab == TerrainLibrary.Feature)">Feature templates (@p.Features.Count)</option>
-                <option value="@TerrainLibrary.Phrase" selected="@(p.Tab == TerrainLibrary.Phrase)">Neighbour phrases (@p.Phrases.Count)</option>
-            </select>
-        </div>
-        <p>Showing: <strong>@p.TabLabel</strong> of <strong>@p.Terrain</strong>.</p>
-        <div class="mud-actions">
-            <a class="mud-btn mud-btn-primary" id="tl-new" href="@WebRoutes.TerrainEdit(p.Tab, null, p.Area, p.Terrain)">@NewLabel(p.Tab)</a>
-        </div>
         <div class="mud-filter">
             <LiveFilter Id="tl-text" Label="Text" Value="@p.TextFilter" MaxLength="100" Apply="ApplyTextAsync" />
             <LiveFilter Id="tl-tag" Label="Tag" Value="@p.TagFilter" MaxLength="100" Apply="ApplyTagAsync"
@@ -110,61 +59,84 @@ else
                        Busy="_busy" OnConfirm="ConfirmDeleteAsync" OnCancel="CancelDelete" />
     }
 
-    @if (p.Terrain != null)
+    @if (p.Area != null)
     {
-        @* Wide screens: a table. Under 600px: the same rows as stacked cards (mobile.css switches them; no round trip). *@
-        <div class="mud-table-wrap">
-            <table class="mud-table">
-                <thead><tr><th>Id</th><th>Weight</th><th>Details</th><th>Actions</th></tr></thead>
-                <tbody>
-                @foreach (var r in p.Rows)
+        @if (p.Types.Count == 0) { <p class="mud-empty">No terrain types yet.</p> }
+
+        @* The sections of the chosen terrain type, in order: the type itself (open), then one per kind of entry (closed unless ?tab= names it). *@
+        @if (p.CurrentType != null)
+        {
+            <details class="mud-section mud-collapse" id="tl-type" open>
+                <summary><h2 id="tl-type-h">Terrain type</h2></summary>
+                <section class="mud-section-body" aria-labelledby="tl-type-h">
+                    @if (p.TypeProblems.Count > 0)
+                    {
+                        <ul role="alert" class="mud-error">
+                            @foreach (var m in p.TypeProblems) { <li>@m</li> }
+                        </ul>
+                    }
+                    @* Not-yet-saved edits stay in the page state; leaving the page drops them (there is no Cancel button). *@
+                    <form id="tl-type-form" @onsubmit="SaveCurrentTypeAsync" @onsubmit:preventDefault novalidate>
+                        <div class="mud-field"><label for="tt-id">Id</label>
+                            <input id="tt-id" value="@p.CurrentType.Id" readonly="readonly" />
+                            <span class="mud-hint">(fixed once created)</span></div>
+                        <div class="mud-field"><label for="tt-name">Name</label>
+                            <input id="tt-name" value="@p.TypeName" @onchange="e => p.TypeName = e.Value?.ToString()" maxlength="100" required autocomplete="off" /></div>
+                        <div class="mud-field"><label for="tt-desc">Description</label>
+                            <input id="tt-desc" value="@p.TypeDescription" @onchange="e => p.TypeDescription = e.Value?.ToString()" maxlength="200" autocomplete="off" />
+                            <span class="mud-hint">(optional)</span></div>
+                    </form>
+                    <button type="button" class="mud-btn mud-btn-danger mud-btn-block" id="tl-deltype" data-mutating disabled="@_busy" @onclick="AskType">Delete @p.CurrentType.Id</button>
+                    @if (_confirmType != null)
+                    {
+                        <ConfirmDialog Label="Confirm delete" Text="@("Delete this terrain type? (" + _confirmType + ")")" ConfirmText="Delete"
+                                       Busy="_busy" OnConfirm="ConfirmDeleteTypeAsync" OnCancel="CancelDeleteType" />
+                    }
+                </section>
+            </details>
+            @Entries(TerrainLibrary.Fragment, "Fragments", "New fragment", "fragments", "tl-fragments")
+            @Entries(TerrainLibrary.Feature, "Feature templates", "New feature template", "feature templates", "tl-features")
+            @Entries(TerrainLibrary.Phrase, "Neighbour phrases", "New neighbour phrase", "neighbour phrases", "tl-phrases")
+        }
+
+        <details class="mud-section mud-collapse" id="tl-newtype" open="@(p.Types.Count == 0)">
+            <summary><h2 id="tl-newtype-h">New terrain type</h2></summary>
+            <section class="mud-section-body" aria-labelledby="tl-newtype-h">
+                @if (p.Problems.Count > 0)
                 {
-                    <tr>
-                        <td>@r.Id</td>
-                        <td>@r.Weight</td>
-                        <td>@r.Details</td>
-                        <td>
-                            <div class="mud-actions">
-                                <a class="mud-btn" href="@TerrainListPresenter.EditUrl(r.Kind, r.Id)">Edit</a>
-                                <button type="button" class="mud-btn mud-btn-danger" data-mutating disabled="@_busy" @onclick="() => Ask(r)">Delete</button>
-                            </div>
-                        </td>
-                    </tr>
+                    <ul role="alert" class="mud-error">
+                        @foreach (var m in p.Problems) { <li>@m</li> }
+                    </ul>
                 }
-                @if (p.Rows.Count == 0)
-                {
-                    <tr><td colspan="4">@EmptyText(p)</td></tr>
-                }
-                </tbody>
-            </table>
-        </div>
-        <ul class="mud-cardlist mud-cards">
-            @foreach (var r in p.Rows)
-            {
-                <li>
-                    <strong class="mud-card-title">@r.Id</strong>
-                    <dl class="mud-facts">
-                        <dt>Weight</dt><dd>@r.Weight</dd>
-                        <dt>Details</dt><dd>@r.Details</dd>
-                    </dl>
-                    <div class="mud-actions">
-                        <a class="mud-btn" href="@TerrainListPresenter.EditUrl(r.Kind, r.Id)">Edit</a>
-                        <button type="button" class="mud-btn mud-btn-danger" data-mutating disabled="@_busy" @onclick="() => Ask(r)">Delete</button>
-                    </div>
-                </li>
-            }
-            @if (p.Rows.Count == 0)
-            {
-                <li>@EmptyText(p)</li>
-            }
-        </ul>
+                @* The pinned Save bar always belongs to the Terrain type form; this form keeps its own Save in the section. *@
+                <form id="tl-newtype-form" @onsubmit="SaveNewTypeAsync" @onsubmit:preventDefault novalidate>
+                    <div class="mud-field"><label for="tn-local">Id (after "@(p.Area + ".")")</label>
+                        <input id="tn-local" value="@p.FormLocal" @onchange="e => p.FormLocal = e.Value?.ToString()" maxlength="100" required list="tn-suggest" autocomplete="off" autocapitalize="none" />
+                        <span class="mud-hint">(lowercase letters, digits and '_'; the name of a template in the area's map legend; fixed once created)</span></div>
+                    <datalist id="tn-suggest">
+                        @foreach (var s in p.Suggestions) { <option value="@s"></option> }
+                    </datalist>
+                    <div class="mud-field"><label for="tn-name">Name</label>
+                        <input id="tn-name" value="@p.FormName" @onchange="e => p.FormName = e.Value?.ToString()" maxlength="100" required autocomplete="off" /></div>
+                    <div class="mud-field"><label for="tn-desc">Description</label>
+                        <input id="tn-desc" value="@p.FormDescription" @onchange="e => p.FormDescription = e.Value?.ToString()" maxlength="200" autocomplete="off" />
+                        <span class="mud-hint">(optional)</span></div>
+                    <button type="submit" class="mud-btn mud-btn-primary mud-btn-block mud-save" id="tl-newtype-save" disabled="@_busy">Save</button>
+                </form>
+            </section>
+        </details>
+    }
+
+    @if (p.CurrentType != null)
+    {
+        <PinnedSave FormId="tl-type-form" Id="tl-type-save" Busy="_busy" />
     }
 }
 
 @code {
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
 
-    // The query string is the only state of the page.
+    // The query string is the only state of the page. `tab` names the entry section to open on load.
     [SupplyParameterFromQuery(Name = "area")] public string? Area { get; set; }
     [SupplyParameterFromQuery(Name = "terrain")] public string? Terrain { get; set; }
     [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
@@ -178,6 +150,62 @@ else
     private string? _currentKey;
     private string _token = string.Empty;
     private bool _busy;
+
+    // One collapsible section of one kind of entry: a full-width New button, then the rows of that kind only (a table wide, stacked cards under
+    // 600px; CSS shows one of them). The count shows "shown of total" while a filter is active, so matches in a closed section are visible.
+    private RenderFragment Entries(string kind, string title, string newLabel, string plural, string id) => @<details class="mud-section mud-collapse" id="@id" open="@(_presenter?.Tab == kind)">
+        <summary><h2 id="@(id + "-h")">@title (@_presenter!.CountLabel(kind))</h2></summary>
+        <section class="mud-section-body" aria-labelledby="@(id + "-h")">
+            <a class="mud-btn mud-btn-primary mud-btn-block" id="@(id + "-new")" href="@WebRoutes.TerrainEdit(kind, null, _presenter.Area, _presenter.Terrain)">@newLabel</a>
+            @{ var rows = _presenter.RowsOf(kind).ToList(); }
+            @* Wide screens: a table. Under 600px: the same rows as stacked cards (mobile.css switches them; no round trip). *@
+            <div class="mud-table-wrap">
+                <table class="mud-table">
+                    <thead><tr><th>Id</th><th>Weight</th><th>Details</th><th>Actions</th></tr></thead>
+                    <tbody>
+                    @foreach (var r in rows)
+                    {
+                        <tr>
+                            <td>@r.Id</td>
+                            <td>@r.Weight</td>
+                            <td>@r.Details</td>
+                            <td>
+                                <div class="mud-actions">
+                                    <a class="mud-btn" href="@TerrainListPresenter.EditUrl(r.Kind, r.Id)">Edit</a>
+                                    <button type="button" class="mud-btn mud-btn-danger" data-mutating disabled="@_busy" @onclick="() => Ask(r)">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    @if (rows.Count == 0)
+                    {
+                        <tr><td colspan="4">@EmptyText(plural)</td></tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <ul class="mud-cardlist mud-cards">
+                @foreach (var r in rows)
+                {
+                    <li>
+                        <strong class="mud-card-title">@r.Id</strong>
+                        <dl class="mud-facts">
+                            <dt>Weight</dt><dd>@r.Weight</dd>
+                            <dt>Details</dt><dd>@r.Details</dd>
+                        </dl>
+                        <div class="mud-actions">
+                            <a class="mud-btn" href="@TerrainListPresenter.EditUrl(r.Kind, r.Id)">Edit</a>
+                            <button type="button" class="mud-btn mud-btn-danger" data-mutating disabled="@_busy" @onclick="() => Ask(r)">Delete</button>
+                        </div>
+                    </li>
+                }
+                @if (rows.Count == 0)
+                {
+                    <li>@EmptyText(plural)</li>
+                }
+            </ul>
+        </section>
+    </details>;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -200,21 +228,8 @@ else
     private static string TypeLabel(Contracts.TerrainTypeRecord t) =>
         string.IsNullOrWhiteSpace(t.Name) || t.Name == t.Id ? t.Id : t.Id + " - " + t.Name;
 
-    private static string NewLabel(string tab) => tab switch
-    {
-        TerrainLibrary.Feature => "New feature template",
-        TerrainLibrary.Phrase => "New neighbour phrase",
-        _ => "New fragment",
-    };
-
-    private static string EmptyText(TerrainListPresenter p) => p.Tab switch
-    {
-        TerrainLibrary.Feature => "No feature templates for this terrain type.",
-        TerrainLibrary.Phrase => "No neighbour phrases for this terrain type.",
-        _ => "No fragments for this terrain type.",
-    } + (p.TextFilter != null || p.TagFilter != null ? " Nothing matches the filters." : string.Empty);
-
-    private string TabUrl(string tab) => TerrainListPresenter.ListUrl(_presenter?.Area, _presenter?.Terrain, tab, _presenter?.TextFilter, _presenter?.TagFilter);
+    private string EmptyText(string plural) =>
+        "No " + plural + " for this terrain type." + (_presenter?.FilterActive == true ? " Nothing matches the filters." : string.Empty);
 
     // Choosing an area drops the terrain: the page then picks the first terrain type of that area (or none).
     private void ChooseArea(string? area) =>
@@ -222,8 +237,6 @@ else
 
     private void ChooseTerrain(string? terrain) =>
         Navigation.NavigateTo(TerrainListPresenter.ListUrl(_presenter?.Area, terrain, _presenter?.Tab));
-
-    private void ChooseTab(string? tab) => Navigation.NavigateTo(TabUrl(tab ?? TerrainLibrary.Fragment));
 
     // Client-side: the three lists are already loaded, so each settled value only narrows them (no call to core) and rewrites the address in place.
     private Task<Action?> ApplyTextAsync(string text, CancellationToken cancellation) =>
@@ -250,8 +263,25 @@ else
 
     private void CancelDeleteType() => _confirmType = null;
 
-    // One write at a time: a double tap cannot send two requests.
-    private async Task SaveTypeAsync()
+    // One write at a time: a double tap cannot send two requests. Saving the current terrain type reloads the page's data (the selects show its new name).
+    private async Task SaveCurrentTypeAsync()
+    {
+        if (_busy || _presenter == null) { return; }
+        _busy = true;
+        try
+        {
+            var p = _presenter;
+            if (await p.SaveCurrentTypeAsync() == TerrainListOutcome.Ok)
+            {
+                var notice = p.Notice;
+                await p.LoadAsync(p.Area, p.Terrain, p.Tab, p.TextFilter, p.TagFilter);
+                p.Notice = notice;
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task SaveNewTypeAsync()
     {
         if (_busy || _presenter == null) { return; }
         _busy = true;

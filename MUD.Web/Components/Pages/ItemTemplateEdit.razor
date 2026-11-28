@@ -13,13 +13,12 @@ else if (_presenter.IsMissing)
 {
     <h1>Item template</h1>
     <p role="alert" class="mud-error">@_presenter.Error</p>
-    <p><a class="mud-btn" href="@WebRoutes.ItemTemplates">Back to the item templates</a></p>
+    <p><a class="mud-btn mud-btn-block" href="@WebRoutes.ItemTemplates">Back to the item templates</a></p>
 }
 else
 {
     var p = _presenter;
     <h1>@(p.IsNew ? "New item template" : "Edit item template")</h1>
-    <p><a class="mud-btn" href="@WebRoutes.ItemTemplates">Back to the item templates</a></p>
     @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
     @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
     @if (p.Problems.Count > 0)
@@ -28,7 +27,7 @@ else
             @foreach (var m in p.Problems) { <li>@m</li> }
         </ul>
     }
-    <form @onsubmit="SaveAsync" @onsubmit:preventDefault novalidate>
+    <form id="it-form" @onsubmit="SaveAsync" @onsubmit:preventDefault novalidate>
         @if (p.IsNew)
         {
             <div class="mud-field"><label for="it-area">Area</label>
@@ -100,9 +99,6 @@ else
             </div>
         </details>
 
-        <div class="mud-sticky-actions">
-            <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Save</button>
-        </div>
     </form>
 
     @if (!p.IsNew)
@@ -144,6 +140,10 @@ else
             <p id="it-preview-match">A player can type: @string.Join(", ", p.MatchPhrases.Select(m => "\"" + m + "\""))@(p.MatchPhrasesTruncated ? ", ..." : string.Empty)</p>
         }
     </section>
+    <div class="mud-bottom-actions">
+        <a class="mud-btn mud-btn-block" id="it-back" href="@WebRoutes.ItemTemplates">Back to the item templates</a>
+    </div>
+    <PinnedSave FormId="it-form" Id="it-save" Busy="_busy" />
 }
 
 @code {
