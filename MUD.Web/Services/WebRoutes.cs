@@ -16,6 +16,24 @@ public static class WebRoutes
 
     public const string Creator = Prefix + "/creator";
     public const string Map = Prefix + "/creator/map";
+    public const string MapExport = Map + "/export";
+
+    // The download endpoint, for the button. The area is a validated prefix, escaped anyway.
+    public static string MapExportFor(string area) => MapExport + "?area=" + Uri.EscapeDataString(area);
+
+    // Back to the map after a failed export: ?export=<kind> and at most MapExportEndpoint.MaxErrors core error lines (e=, each cut to MaxErrorLength);
+    // the page shows fixed text for the kind and lists the lines.
+    public static string MapExportNotice(string? area, string kind, IEnumerable<string>? errors = null)
+    {
+        var url = Map + "?area=" + Uri.EscapeDataString(area ?? string.Empty) + "&export=" + Uri.EscapeDataString(kind);
+        var list = (errors ?? Array.Empty<string>()).ToList();
+        if (list.Count > 0) { url += "&errors=" + list.Count; }
+        foreach (var e in list.Take(MapExportEndpoint.MaxErrors))
+        {
+            url += "&e=" + Uri.EscapeDataString(e.Length > MapExportEndpoint.MaxErrorLength ? e.Substring(0, MapExportEndpoint.MaxErrorLength) : e);
+        }
+        return url;
+    }
 
     // gx/gy: the X,Y a level switch started from (the map shows a dashed "No room here" square there if that level has no room at it).
     // center: a room key to centre the map on; created: the page then also says "Created <key>" (after Create room).

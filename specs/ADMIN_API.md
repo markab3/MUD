@@ -38,7 +38,7 @@ Messages are fixed sentences. No token, password or stored value is put in a sta
 |---|---|
 | `WebAuthenticate`, `Logout` | none |
 | `GetSession`, `GetOwnPlayer`, `ChangePassword` | any signed-in player |
-| `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListModules`, `ListAreas`, `GetArea`, `CreateArea`, `UpdateArea`, `DeleteArea`, `ListItemTemplates`, `GetItemTemplate`, `CreateItemTemplate`, `UpdateItemTemplate`, `DeleteItemTemplate`, `ListItemTemplateReferences`, `ListNpcTemplates`, `GetNpcTemplate`, `CreateNpcTemplate`, `UpdateNpcTemplate`, `DeleteNpcTemplate` | creator or admin |
+| `ExportArea`, `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListModules`, `ListAreas`, `GetArea`, `CreateArea`, `UpdateArea`, `DeleteArea`, `ListItemTemplates`, `GetItemTemplate`, `CreateItemTemplate`, `UpdateItemTemplate`, `DeleteItemTemplate`, `ListItemTemplateReferences`, `ListNpcTemplates`, `GetNpcTemplate`, `CreateNpcTemplate`, `UpdateNpcTemplate`, `DeleteNpcTemplate` | creator or admin |
 | `ListPlayers`, `GetPlayer`, `UpdatePlayer`, `ListAudit`, `StartModule`, `StopModule`, `RestartModule` | admin only |
 
 Not in this card: `GetRoomMap` (the map is laid out by the web from `ListRooms`, as `RoomMapLayout` does today), `GetStats` and `Flush` (sketched in
@@ -346,6 +346,28 @@ an in-memory fake in tests) in `MUD.Core/NpcTemplates/NpcTemplateStore.cs`; rule
 - **Web.** `IAdminClient` has `ListNpcTemplatesAsync(token, area?)`, `GetNpcTemplateAsync` (null for unknown), `CreateNpcTemplateAsync`, `UpdateNpcTemplateAsync`,
   `DeleteNpcTemplateAsync`; `FakeAdminClient` implements them (`AddNpcTemplate`, `NpcTemplateResult`).
 - Tests: `MUD.Tests/NpcTemplateTests.cs` (rules, documents, every rpc branch and role, validation, version bump, area delete refusal), `MUD.Web.Tests/NpcTemplateWebTests.cs` (gRPC client over a socket, fake client).
+
+## Area export (`ExportArea`)
+
+Logic: `MUD.Core/Administration/AdminApi.Export.cs` over `MUD.Core/Import/AreaExporter.cs` (the exporter behind the creator command `export area`).
+Rules for the file: specs/ROOM_FILES.md section 4.1 "What an area export contains".
+
+- **`ExportArea(ExportAreaRequest{token, area}) -> ExportAreaReply{found, yaml, room_count, errors[], notes[]}`**. Creator or admin; the token is
+  re-checked on the game thread inside the call (same hop as the other room reads, so cached live rooms and the database agree: a room whose live
+  copy is cached is read from the live room, the others from their stored document). **Read-only**: no audit row, nothing written, no file on the
+  server (the in-game command is the one that writes `<content>/<prefix>.yaml`).
+- `found=false` for an empty area, one that does not match the prefix grammar, or one with no rooms. `found=true` with `errors` and an empty `yaml`
+  when the exporter refuses (for example a room with no long description): the messages are the ones the command prints. Success: `yaml`,
+  `room_count`, no `errors`. The header name and description come from the area record (ROOM_FILES.md 4.1).
+- **Size limit: 3 MB** (UTF-8 bytes of the YAML), below gRPC's default 4 MB message limit. A larger file is not returned; `errors` holds one line
+  telling the owner to export by room range with the in-game `export` command, and `yaml` is empty.
+- `notes` holds warnings that do not stop the export. When the area has generated rooms (stored provenance): `N rooms are generated. The file keeps
+  their text as ordinary rooms without generator provenance; re-importing does not regenerate them.` (the exporter writes no room `x-gen`, so a
+  re-import neither regenerates nor wipes them).
+- Failures are the usual codes: bad or ended session `UNAUTHENTICATED`, a plain player `PERMISSION_DENIED`, the game thread not running the call
+  or the store not readable `UNAVAILABLE` (a generic message; no stored values or exception text).
+- Tests: `MUD.Tests/AreaExportRpcTests.cs` (header with and without a record, scope, no runtime state, round trip, every rpc branch and role).
+- Not verified against a real MongoDB (none in the authoring sandbox); the tests use in-memory stores.
 
 ## Not verified here
 

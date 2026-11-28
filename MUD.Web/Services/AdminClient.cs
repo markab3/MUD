@@ -62,6 +62,9 @@ public interface IAdminClient
     // Legend colours by map and terrain, for the map view only. Empty when there are none.
     Task<IReadOnlyList<TerrainColor>> ListTerrainColorsAsync(string token, CancellationToken cancellation = default);
 
+    // One area as an area file (read-only, creator or admin). Found is false for an unknown or empty area; Errors holds the exporter's refusal (Yaml is then empty).
+    Task<ExportAreaReply> ExportAreaAsync(string token, string area, CancellationToken cancellation = default);
+
     Task<ModuleActionReply> StartModuleAsync(string token, string name, CancellationToken cancellation = default);
 
     Task<ModuleActionReply> StopModuleAsync(string token, string name, CancellationToken cancellation = default);
@@ -343,6 +346,9 @@ public sealed class GrpcAdminClient : IAdminClient
 
     public Task<GenerationReply> UpdateRoomsAsync(string token, string key, CancellationToken cancellation = default) =>
         Call(() => _client.UpdateRoomsAsync(new UpdateRoomsRequest { Token = token ?? string.Empty, Keys = { key ?? string.Empty } }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<ExportAreaReply> ExportAreaAsync(string token, string area, CancellationToken cancellation = default) =>
+        Call(() => _client.ExportAreaAsync(new ExportAreaRequest { Token = token ?? string.Empty, Area = area ?? string.Empty }, deadline: DateTime.UtcNow + CallDeadline, cancellationToken: cancellation));
 
     public async Task<IReadOnlyList<TerrainColor>> ListTerrainColorsAsync(string token, CancellationToken cancellation = default) =>
         (await Call(() => _client.ListTerrainColorsAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Colors.ToList();

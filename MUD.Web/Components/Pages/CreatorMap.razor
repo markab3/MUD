@@ -6,6 +6,17 @@
 <PageTitle>Room map - Planar Realms</PageTitle>
 <h1>Room map</h1>
 @if (_notice != null) { <p role="status" class="mud-ok">@_notice</p> }
+@if (MapExportEndpoint.NoticeFor(Export) is { } exportNotice)
+{
+    <div role="alert" class="mud-error" id="map-export-notice">
+        <p>@exportNotice</p>
+        @if (Errors is > 0 && E is { Length: > 0 })
+        {
+            <p>@(Errors == 1 ? "1 problem" : Errors + " problems")@(Errors > MapExportEndpoint.MaxErrors ? " (the first " + MapExportEndpoint.MaxErrors + " are shown)" : ""):</p>
+            <ul>@foreach (var line in E.Take(MapExportEndpoint.MaxErrors)) { <li>@line</li> }</ul>
+        }
+    </div>
+}
 @if (_presenter?.WireNotice != null) { <p role="status" class="mud-ok">@_presenter.WireNotice</p> }
 @if (_presenter?.WireError != null) { <p role="alert" class="mud-error">@_presenter.WireError</p> }
 @if (Created == 1 && !string.IsNullOrEmpty(Center))
@@ -53,7 +64,19 @@ else
                     <option value="@l" selected="@(l == _presenter.Z)">@l</option>
                 }
             </select></div>
+        @if (_presenter.Area != null && MapExportEndpoint.IsValidPrefix(_presenter.Area))
+        {
+            var roomCount = _presenter.RoomCountOf(_presenter.Area);
+            <div class="mud-field mud-map-export">
+                <a id="map-export" class="mud-btn" href="@WebRoutes.MapExportFor(_presenter.Area)" data-enhance-nav="false"
+                   title="@(roomCount.HasValue ? "Export " + roomCount.Value + " room(s) of " + _presenter.Area + " as " + _presenter.Area + ".yaml" : "Export " + _presenter.Area + " as " + _presenter.Area + ".yaml")">Export YAML</a>
+            </div>
+        }
     </div>
+    @if (_presenter.Area != null && MapExportEndpoint.IsValidPrefix(_presenter.Area))
+    {
+        <p class="mud-hint" id="map-export-help">Exports every room of this area as an area file (rooms, exits, features, searches). Items on the floor and creatures are not included.</p>
+    }
     <p>North is up. Drag to pan and pinch to zoom; tap a room to open it.
         A line between two rooms shows an arrowhead at the end of each exit that exists. Click an arrowhead to remove that exit (no confirmation, no undo);
         click a plain end to add the exit that leads to that room, from the other room. One exit changes per click. Dashed warning lines (direction mismatches)
@@ -111,6 +134,10 @@ else
     // center: room key to centre and outline; created=1: say "Created <key>" (set by Create room).
     [SupplyParameterFromQuery(Name = "center")] public string? Center { get; set; }
     [SupplyParameterFromQuery(Name = "created")] public int? Created { get; set; }
+    // export/errors/e: why the Export YAML download did not happen (set by the export endpoint); shown as fixed text plus the core's lines.
+    [SupplyParameterFromQuery(Name = "export")] public string? Export { get; set; }
+    [SupplyParameterFromQuery(Name = "errors")] public int? Errors { get; set; }
+    [SupplyParameterFromQuery(Name = "e")] public string[]? E { get; set; }
 
     private CreatorMapPresenter? _presenter;
     private string? _notice;

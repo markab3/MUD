@@ -38,7 +38,8 @@ From the repo at `d5ed91a` (`hermes`).
 | `/character` | `Character` (16) | signed in | `Hello (<PlayerName>)!` |
 | `/account/password` | `Password` (85) | signed in | `ChangePassword`; per-IP `LoginThrottle` (5 / 5 min) + 500 ms delay |
 | `/creator` | `Creator` (98) | CreatorOrAdmin | create-room form (Key, Short, Long, Area, X/Y/Z, 4 exits, dangling checkbox); `ListRooms` for area suggestions; `CreateRoom` via `RoomCreationService` |
-| `/creator/map` | `CreatorMap` (79) | CreatorOrAdmin | `ListRooms` (+ `ListTerrainColors` when a generated room is on the level); `RoomMapLayout` SVG; `?area=&z=` |
+| `/creator/map` | `CreatorMap` (79) | CreatorOrAdmin | `ListRooms` (+ `ListTerrainColors` when a generated room is on the level); `RoomMapLayout` SVG; `?area=&z=`; Export YAML link to `/creator/map/export` (below); `?export=&errors=&e=` show why an export did not download |
+| `/creator/map/export` | `MapExportEndpoint` (minimal API GET, not a component) | CreatorOrAdmin | `ExportAreaAsync`; file `<area>.yaml`, `text/yaml; charset=utf-8`, attachment, `Cache-Control: no-store`; anonymous -> challenge, player -> 403, invalid prefix / errors / core down -> redirect to the map with a notice. Mapped beside `LogoutEndpoint` in `Program.cs`; read-only, no antiforgery |
 | `/creator/rooms/{key}` | `RoomEdit` (463) | CreatorOrAdmin | `GetRoom`; Save `UpdateRoom`, Move `MoveRoom`, Delete `DeleteRoom`, Regen `RegenerateRooms`, Update `UpdateRooms`; Add/Remove exit, Add/Remove/MoveUp/MoveDown feature are no-write round trips |
 | `/creator/players` | `PlayerList` (71) | AdminOnly | `ListPlayers` (`q`, `sort`, `page`, 50 per page) |
 | `/creator/players/{nameKey}` | `PlayerEdit` (184) | AdminOnly | `GetPlayer`, `UpdatePlayer`; `PlayerRules` hides controls |

@@ -278,6 +278,17 @@ appears (its map is empty); when core cannot list the records the rooms alone gi
   the target key as a label (red when the room does not exist).
 - Rooms in the area with null X or Y are listed in the Unplaced panel and are still clickable.
 - The nav shows a `/creator/map` link under the same policy as the `/creator` link.
+- **Export YAML.** A button beside the area and level dropdowns (a plain link, so it works without JavaScript; 44px high, palette variables
+  only; under the dropdowns on a phone, beside them from 600px). It downloads `<area>.yaml` for the selected area's WHOLE state (every level,
+  every room including unplaced ones; rooms only, no floor items or creatures). Its tooltip shows the area's room count from the area record.
+  Help line under it: "Exports every room of this area as an area file (rooms, exits, features, searches). Items on the floor and creatures
+  are not included." (A search reward is part of a room's definition and is exported.) The link goes to the plain GET endpoint
+  `/creator/map/export?area=<prefix>`: `CreatorOrAdmin` policy with the session cookie (anonymous -> login redirect, plain player -> 403), calls
+  core's `ExportArea` (read-only, so no antiforgery), answers `text/yaml; charset=utf-8` with `Content-Disposition: attachment` and
+  `Cache-Control: no-store`. The file name is the area prefix and nothing else: anything that does not match the area prefix grammar is refused
+  before core is called. On exporter errors, an unknown or empty area, core unavailable or refused, nothing is downloaded: the endpoint redirects
+  to `/creator/map?area=<prefix>&export=<kind>&errors=<n>&e=<line>...` and the page shows fixed text for the kind plus at most the first 5 error
+  lines and the count. Generated-room notes are not shown after a download (the browser leaves the page as it is); the core note is in the reply.
 - **Generated rooms are coloured by terrain.** A room with provenance (`RoomDetail.gen`: map and terrain) is filled with the `color` of its
   terrain from the legend of its map file (`MapRect` carries `GenMap`/`GenTerrain`; `CreatorMapModel.FillFor` picks the fill). The colours
   come from core's `ListTerrainColors` (creator or admin; reads `<content>/maps/*.map.yaml` legends through `MapGenerator.ReadLegendColors`;

@@ -147,8 +147,19 @@ header like this:
   win over the readable-name fallback); see specs/ADMIN_API.md "Areas".
 - Renaming an area's prefix is not an operation: it means moving the rooms (`MoveRoom`), and the old record is then deleted by hand once
   it has no rooms.
-- The exporter still writes the header from the rooms alone: `name` is the prefix as a placeholder (set it by hand). It does not read
-  the area record (not changed in this card).
+- **Export writes the header from the area record.** `AreaExporter` (the creator command `export area` and the website's Export YAML
+  button) writes `name` and, when it is not empty, `description` from the area record, so an exported file re-imports to the same name.
+  With no record (or when the record store cannot be read) `name` is the prefix and there is no `description`. No other header field is
+  written, and importing a file still never overwrites an existing area record.
+
+**What an area export contains (scope rules).** Every stored room whose `Area` is the prefix: every level and every room, placed or not
+(rooms with no `coords`). Definition fields only (section 5): descriptions, handles, coords, permanent exits, features, search entries
+(including a search reward, which is exported inline as an item DEFINITION, with `x-gen: {templateId, templateVersion}` when it was
+copied from a template, section 4.5) and behaviors. Never exported: items on the floor, occupants (players and creatures), search
+cooldowns (`nextRewardAt`), found-flags, and runtime-only exits such as an open secret exit. A room's own generator provenance (`x-gen`
+on the room) is not exported either: an exported generated room reads back as an ordinary room, so re-importing the file keeps its text as
+it is and never lets the generator replace it (section 12). The website's export adds a note line when the area has generated rooms
+(`ExportAreaReply.notes`, specs/ADMIN_API.md "Area export").
 
 `defaults` rules:
 - Only the listed sub-keys are allowed. A default applies to a room only when

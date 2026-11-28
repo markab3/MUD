@@ -66,6 +66,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 LogoutEndpoint.Map(app);
+MapExportEndpoint.Map(app);
 app.MapRazorComponents<MUD.Web.Components.App>().AddInteractiveServerRenderMode();
 app.Run();
 return 0;
