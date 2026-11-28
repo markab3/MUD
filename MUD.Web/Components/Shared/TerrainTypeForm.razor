@@ -1,0 +1,41 @@
+@* The create / edit form of one terrain type of the chosen area (name and description; the id local part is typed only for a new one).
+   The state and the writes are the presenter's; the page decides when to save. *@
+@using MUD.Web.Pages
+<h3 id="tl-typeform-h">@(Presenter.IsNewType ? "New terrain type" : "Edit terrain type")</h3>
+@if (Presenter.Problems.Count > 0)
+{
+    <ul role="alert" class="mud-error">
+        @foreach (var m in Presenter.Problems) { <li>@m</li> }
+    </ul>
+}
+<form @onsubmit="OnSave" @onsubmit:preventDefault novalidate>
+    <div class="mud-field"><label for="tt-local">Id (after "@(Presenter.Area + ".")")</label>
+        @if (Presenter.IsNewType)
+        {
+            <input id="tt-local" value="@Presenter.FormLocal" @onchange="e => Presenter.FormLocal = e.Value?.ToString()" maxlength="100" required list="tt-suggest" autocomplete="off" autocapitalize="none" />
+            <span class="mud-hint">(lowercase letters, digits and '_'; the name of a template in the area's map legend; fixed once created)</span>
+        }
+        else
+        {
+            <input id="tt-local" value="@Presenter.FormLocal" readonly="readonly" maxlength="100" />
+            <span class="mud-hint">(fixed once created)</span>
+        }</div>
+    <datalist id="tt-suggest">
+        @foreach (var s in Presenter.Suggestions) { <option value="@s"></option> }
+    </datalist>
+    <div class="mud-field"><label for="tt-name">Name</label>
+        <input id="tt-name" value="@Presenter.FormName" @onchange="e => Presenter.FormName = e.Value?.ToString()" maxlength="100" required autocomplete="off" /></div>
+    <div class="mud-field"><label for="tt-desc">Description</label>
+        <input id="tt-desc" value="@Presenter.FormDescription" @onchange="e => Presenter.FormDescription = e.Value?.ToString()" maxlength="200" autocomplete="off" />
+        <span class="mud-hint">(optional)</span></div>
+    <div class="mud-actions">
+        <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@Busy">Save</button>
+        <button type="button" class="mud-btn" @onclick="Presenter.CancelTypeForm">Cancel</button>
+    </div>
+</form>
+
+@code {
+    [Parameter, EditorRequired] public TerrainListPresenter Presenter { get; set; } = default!;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+}

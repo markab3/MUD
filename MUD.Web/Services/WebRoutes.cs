@@ -54,7 +54,17 @@ public static class WebRoutes
     public const string Terrain = Prefix + "/creator/terrain";
     public const string TerrainEditPage = Terrain + "/edit";
 
-    // kind and id travel in the query string only (an empty id means a new entry).
-    public static string TerrainEdit(string kind, string? id = null) =>
-        TerrainEditPage + "?kind=" + Uri.EscapeDataString(kind) + (string.IsNullOrEmpty(id) ? string.Empty : "&id=" + Uri.EscapeDataString(id));
+    // kind and id travel in the query string only (an empty id means a new entry). area and terrain pre-fill the form of a NEW entry
+    // (the list page's choice); an existing entry's area and terrain come from the stored entry.
+    public static string TerrainEdit(string kind, string? id = null, string? area = null, string? terrain = null) =>
+        TerrainEditPage + "?kind=" + Uri.EscapeDataString(kind) + (string.IsNullOrEmpty(id) ? string.Empty : "&id=" + Uri.EscapeDataString(id))
+        + (string.IsNullOrEmpty(area) ? string.Empty : "&area=" + Uri.EscapeDataString(area))
+        + (string.IsNullOrEmpty(terrain) ? string.Empty : "&terrain=" + Uri.EscapeDataString(terrain));
+
+    // The terrain list page for an area (and optionally one terrain type of it).
+    public static string TerrainFor(string area, string? terrain = null) =>
+        Terrain + "?area=" + Uri.EscapeDataString(area) + (string.IsNullOrEmpty(terrain) ? string.Empty : "&terrain=" + Uri.EscapeDataString(terrain));
+
+    // The item template list limited to one area.
+    public static string ItemTemplatesFor(string area) => ItemTemplates + "?area=" + Uri.EscapeDataString(area);
 }

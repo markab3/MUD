@@ -15,8 +15,10 @@ else
     @if (p.Notice != null) { <p role="status" class="mud-ok">@p.Notice</p> }
     @if (p.Error != null) { <p role="alert" class="mud-error">@p.Error</p> }
     <div class="mud-actions">
-        <a class="mud-btn mud-btn-primary" id="it-new" href="@WebRoutes.ItemTemplateEdit()">New item template</a>
+        <a class="mud-btn mud-btn-primary" id="it-new" href="@WebRoutes.ItemTemplateEdit(null, p.AreaFiltering ? p.AreaFilter : null)">New item template</a>
+        @if (p.AreaFiltering) { <a class="mud-btn" id="it-allareas" href="@WebRoutes.ItemTemplates">Show all areas</a> }
     </div>
+    @if (p.AreaFiltering) { <p class="mud-hint">Only the area <strong>@p.AreaFilter</strong> is listed.</p> }
     <div class="mud-filter">
         <LiveFilter Id="it-filter" Label="Filter" Value="@p.Filter" MaxLength="100" Apply="ApplyFilterAsync"
                     Hint="(matches the id, short description, handles and adjectives)" ResultText="@LiveFilterRunner.Count(p.MatchCount, "item template")" />
@@ -74,6 +76,8 @@ else
 @code {
     [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
 
+    [SupplyParameterFromQuery(Name = "area")] public string? Area { get; set; }
+
     private ItemTemplateListPresenter? _presenter;
     private Contracts.ItemTemplateRecord? _confirm;
     private string _token = string.Empty;
@@ -83,6 +87,7 @@ else
     {
         _token = (await AuthState).User.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
         var presenter = new ItemTemplateListPresenter(Core, _token);
+        presenter.AreaFilter = string.IsNullOrWhiteSpace(Area) ? null : Area.Trim();
         await presenter.LoadAsync();
         presenter.Notice = Notices.Take();
         _presenter = presenter;

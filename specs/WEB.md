@@ -41,9 +41,9 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/creator/players` | `AdminOnly` | player list (see "Player pages") |
 | `/creator/players/{nameKey}` | `AdminOnly` | player edit page (see "Player pages") |
 | `/creator/modules` | list: `CreatorOrAdmin`; start/stop/restart buttons: admin only | module list with state (see "Modules page") |
-| `/creator/terrain` | `CreatorOrAdmin` | terrain library list with tabs and Delete (see "Terrain library pages") |
-| `/creator/terrain/edit?kind=&id=` | `CreatorOrAdmin` | create or edit one library entity (see "Terrain library pages") |
-| `/creator/areas` | `CreatorOrAdmin` | list, create, edit and delete areas (see "Areas page") |
+| `/creator/terrain?area=&terrain=&tab=` | `CreatorOrAdmin` | terrain library by area and terrain type: dropdowns, terrain types, tabs, Delete (see "Terrain library pages") |
+| `/creator/terrain/edit?kind=&id=&area=&terrain=` | `CreatorOrAdmin` | create or edit one library entity (see "Terrain library pages") |
+| `/creator/areas` | `CreatorOrAdmin` | the areas hub: list, create, edit, delete, and what each area contains (see "Areas page") |
 | `/creator/items` | `CreatorOrAdmin` | item templates grouped by area, filter, delete (see "Item templates pages") |
 | `/creator/items/edit?id=&area=` | `CreatorOrAdmin` | create or edit one item template (see "Item templates pages") |
 
@@ -325,7 +325,11 @@ Built (`Components/Pages/AreaList.razor`, `AreaListPresenter`). Policy `CreatorO
 through `IAdminClient` (`ListAreas`, `CreateArea`, `UpdateArea`, `DeleteArea`; backend in `specs/ADMIN_API.md` "Areas"). An area is an
 organisational label for the back end that usually lines up with a region of the game: prefix (its id), name, short description.
 
-- **List**: one row per area (prefix, name, description, room count), sorted by prefix, as a table from 600px and the same rows as stacked cards
+- **Hub**: the page lists what an area contains TODAY, as links with counts: rooms (`ListAreas` room count, links to `/creator/map?area=<prefix>`), terrain types
+  (`ListTerrainTypes`, links to `/creator/terrain?area=<prefix>`) and item templates (`ListItemTemplates`, links to `/creator/items?area=<prefix>`, which lists only
+  that area's group and has a "Show all areas" link). No new rpc: the three lists are already available. A count that could not be loaded shows "?" instead of a
+  wrong 0. NPC templates do not exist in the code yet, so there is no NPC entry and no empty NPC section; one is added here when they exist.
+- **List**: one row per area (prefix, name, description, room count, the contents links), sorted by prefix, as a table from 600px and the same rows as stacked cards
   below (CSS shows one of them). Help text under the heading says the prefix is fixed once created and that renaming an area means moving its rooms.
 - **New area / Edit**: one inline form (prefix typed for a new area, `#ar-id`; name `#ar-name`, required, 100 characters; short description
   `#ar-desc`, optional, 200 characters). On edit the prefix is read-only and the presenter writes the original id, so only name and description
@@ -371,13 +375,24 @@ Built (`Components/Pages/TerrainList.razor`, `TerrainEdit.razor`, `TerrainListPr
 `IAdminClient` (the Create/Update/Delete/List/Get calls for fragments, feature templates and neighbour phrases; backend in
 `specs/ADMIN_API.md` and `specs/TERRAIN_GENERATORS.md` sections 6 and 11). Core validates every write and owns the feature version.
 
-- **List**: tabs Fragments / Features / Neighbour phrases with counts, live filters (`#tl-terrain`, `#tl-tag`, no submit) by terrain (a terrain type id) and by tag (fragments and features
-  only; phrases have no tags), a Delete POST form per row (antiforgery, kind and id in hidden fields). Every entity belongs to exactly one terrain
-  type, so there is no "Unassigned" tab and no "Not used by any generator" badge any more (owner decision 2026-11-27,
-  TERRAIN_GENERATORS.md section 18); the next card reworks these pages around areas and terrain types.
+- **List** (`?area=&terrain=&tab=&q=&tag=`, the query string is the only state, so links and the Back button work): at the top an **Area** dropdown (`#tl-area`,
+  native select, from `ListAreas`) and BENEATH it a **Terrain type** dropdown (`#tl-terrain`) that lists only the chosen area's terrain types (`ListTerrainTypes(area)`).
+  Choosing another area drops the terrain, so the page picks the first terrain type of that area (or none); a terrain that is not in the chosen area is ignored.
+  With no area chosen only the area dropdown is shown (the last choice is NOT remembered). Below, tabs Fragments / Feature templates / Neighbour phrases with a count
+  each (links from 600px, one select below) show only the chosen terrain's entries (`ListFragments` etc. with the terrain filter), a table from 600px and stacked cards
+  below, with live filters (`#tl-text` on id and the entry's own words, `#tl-tag` on tags; fragments and features only; no submit; the old free-text terrain filter is gone).
+  "New fragment / feature template / neighbour phrase" links carry the area, terrain and tab to the edit page. Empty states: no areas, no area chosen,
+  "No terrain types yet" (an area without terrain types, with the create form available), "No <kind> for this terrain type." per tab.
+- **Terrain types** (same page, section "Terrain types of <area>"): New terrain type (id local part `#tt-local` typed, the area is the chosen one, so the id sent is `<area>.<local>`;
+  name `#tt-name`; description `#tt-desc`), edit of the chosen terrain type (name and description only; the id is read-only and the presenter writes the chosen id), and Delete
+  with `ConfirmDialog`. Core's refusal message (it names how many entries still use the type) is shown verbatim. The local-part box has a suggestion list of the legend template
+  names of the area's map file that are not terrain types yet (`ListTerrainColors`, map name = area prefix; any failure just means no suggestions).
 - **Edit/create**: `kind` (`fragment`, `feature`, `phrase`) and `id` come from the query string only; no id means create. The form never
-  binds the kind or the stored id, so a form cannot redirect a write to another entity. The terrain is ONE terrain-type dropdown fed from
-  `ListTerrainTypes` across all areas (a phrase's neighbour terrain is a free field that must be a terrain type id of the same area; core checks it).
+  binds the kind or the stored id, so a form cannot redirect a write to another entity. The form shows an **Area** dropdown (`#te-area`) and beneath it the
+  **Terrain type** dropdown (`#te-terrain`, required) of that area; for a new entry both are pre-filled from `?area=&terrain=` (the list page's choice), for an existing entry
+  from the stored terrain. Changing the terrain moves the entry; choosing another area moves to its first terrain type and drops a phrase's neighbour that is not in the area.
+  A phrase's **Neighbour terrain** (`#te-neighbor`) is a dropdown of the SAME area's terrain types. A stored terrain (or neighbour) whose terrain type no longer exists
+  is shown as "(missing: <id>)"; saving is refused (nothing is sent) until a valid one is chosen. There is no multi-select, no empty-list warning and no "empty = unused" text.
   Lists (tags, handles, adjectives) are comma or space separated.
 - Feature templates show the stored version and "saving a change ... raises the version from N to N+1" (core decides; weight, chance,
   terrain and tags edits do not bump it).
@@ -387,7 +402,7 @@ Built (`Components/Pages/TerrainList.razor`, `TerrainEdit.razor`, `TerrainListPr
 - Result handling: `OK` redirects to the edit page with `TempData["Notice"] = "Saved."` (read null-safely); `NO_CHANGE`, `INVALID` (core's
   field errors in the validation summary, form values kept), `ALREADY_EXISTS`, `NOT_FOUND` (404), `REFUSED`, `AUDIT_FAILED`, `FORBIDDEN` and
   other failures show fixed sentences. Core unavailable is a 503 message and a refused session a 403 message.
-- Tests: `MUD.Web.Tests/TerrainPagesTests.cs`, over `FakeAdminClient` (includes the exact bound-property list of `TerrainEditModel`).
+- Tests: `MUD.Web.Tests/BlazorTerrainTests.cs` (presenters) and `TerrainHierarchyPageTests.cs` (rendered pages, the grep that no trace of the retired terrains multi-select remains), over `FakeAdminClient`.
 
 ## Auth model
 
