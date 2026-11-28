@@ -13,13 +13,25 @@
     </div>
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 @N(Map.Width) @N(Map.Height)" data-w="@N(Map.Width)" data-h="@N(Map.Height)" role="img" aria-label="Room map">
         <defs>
-            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke" /></marker>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="@N(RoomMapLayout.ArrowSize / RoomMapLayout.LineStroke)" markerHeight="@N(RoomMapLayout.ArrowSize / RoomMapLayout.LineStroke)" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke" /></marker>
         </defs>
         @foreach (var l in Map.Lines)
         {
-            <polyline points="@Pts(l.Points)" fill="none" stroke="@(l.Warning ? "#d97706" : "#333")" stroke-width="2"
+            <polyline points="@Pts(l.Points)" fill="none" stroke="@(l.Warning ? "#d97706" : "#333")" stroke-width="@RoomMapLayout.LineStroke"
                       stroke-dasharray="@(l.Warning ? "6 4" : null)" marker-end="@(l.ArrowEnd ? "url(#arrow)" : null)"
                       marker-start="@(l.ArrowStart ? "url(#arrow)" : null)"><title>@l.FromKey → @l.ToKey</title></polyline>
+            @* The two halves of the line are separate click zones (split at the midpoint, butt ends so they never overlap): an invisible wide
+               stroke, 44 CSS px across at any zoom (--map-hit). They sit under the rooms and the arrows, so those win any overlap. *@
+            @foreach (var end in l.Ends)
+            {
+                var act = end.Action;
+                <g class="@("mud-lineend" + (Busy ? " mud-busy" : string.Empty))" role="button" tabindex="@(Busy ? -1 : 0)" aria-disabled="@(Busy ? "true" : null)"
+                   aria-label="@act.Label" data-lineend="@(act.Remove ? "remove" : "add")" data-owner="@act.OwnerKey" data-exit="@act.Direction" data-target="@act.TargetKey"
+                   @onclick="() => Act(act)" @onkeydown="e => ActKey(e, act)">
+                    <polyline class="mud-lineend-hit" points="@Pts(end.Zone)" fill="none" stroke="transparent" stroke-width="44" stroke-linecap="butt" />
+                    <title>@act.Label</title>
+                </g>
+            }
         }
         @foreach (var s in Map.Stubs)
         {
@@ -53,29 +65,31 @@
         }
         @foreach (var a in Map.Arrows)
         {
-            // Presentation that must survive a missing or stale stylesheet (mobile.css refines it): the hit circle is transparent and the glyph
-            // takes its colour from the group's inline colour through currentColor. Without these the circle paints SVG's default black.
+            // Presentation that must survive a missing or stale stylesheet (mobile.css refines it): the hit circle is transparent and the
+            // triangle takes its colour from the group's inline colour through currentColor. Without these the circle paints SVG's default black.
+            // The triangle is as big as a line's arrowhead (RoomMapLayout.ArrowSize) and is rotated for its direction.
             var ink = a.Black ? ArrowBlack : ArrowGray;
-            var cls = "mud-arrow " + (a.Black ? "mud-arrow-black" : "mud-arrow-gray") + (a.Kind == MapArrowKind.Level ? " mud-arrow-level" : string.Empty);
-            if (a.Kind == MapArrowKind.Wire)
+            var cls = "mud-arrow " + (a.Black ? "mud-arrow-black" : "mud-arrow-gray") + (a.Kind == MapArrowKind.Level ? " mud-arrow-level" : string.Empty) + (Busy ? " mud-busy" : string.Empty);
+            var place = "translate(" + N(a.X) + " " + N(a.Y) + ")";
+            if (a.Action is { } link)
             {
-                <g class="@(cls + " mud-arrow-wire")" style="color:@ink" role="button" tabindex="0" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey"
-                   @onclick="() => OnWire.InvokeAsync(a)" @onkeydown="e => WireKey(e, a)">
-                    <circle class="mud-arrow-hit" cx="@N(a.X)" cy="@N(a.Y)" r="14" fill="transparent" stroke="none" /><text x="@N(a.X)" y="@N(a.Y + 5)" fill="currentColor" font-weight="700" text-anchor="middle" font-size="16">@a.Glyph</text>
+                <g class="@(cls + " mud-arrow-link")" style="color:@ink" role="button" tabindex="@(Busy ? -1 : 0)" aria-disabled="@(Busy ? "true" : null)" aria-label="@a.Label"
+                   data-arrow="@a.Direction" data-room-of="@a.RoomKey" @onclick="() => Act(link)" @onkeydown="e => ActKey(e, link)">
+                    <circle class="mud-arrow-hit" cx="@N(a.X)" cy="@N(a.Y)" r="22" fill="transparent" stroke="none" /><path d="@RoomMapLayout.ArrowPath" transform="@(place + " rotate(" + N(a.Angle) + ")")" fill="currentColor" />
                     <title>@a.Label</title>
                 </g>
             }
             else if (a.Href != null)
             {
                 <a class="@cls" style="color:@ink" href="@a.Href" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey">
-                    <circle class="mud-arrow-hit" cx="@N(a.X)" cy="@N(a.Y)" r="14" fill="transparent" stroke="none" /><text x="@N(a.X)" y="@N(a.Y + 5)" fill="currentColor" font-weight="700" text-anchor="middle" font-size="@(a.Kind == MapArrowKind.Level ? 14 : 13)">@a.Glyph</text>
+                    <circle class="mud-arrow-hit" cx="@N(a.X)" cy="@N(a.Y)" r="22" fill="transparent" stroke="none" /><path d="@RoomMapLayout.ArrowPath" transform="@(place + " rotate(" + N(a.Angle) + ")")" fill="currentColor" />
                     <title>@a.Label</title>
                 </a>
             }
             else
             {
                 @* A black arrow whose target room no longer exists: shown, not a link. *@
-                <g class="@cls" style="color:@ink" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey"><text x="@N(a.X)" y="@N(a.Y + 5)" fill="currentColor" font-weight="700" text-anchor="middle" font-size="13">@a.Glyph</text><title>@a.Label</title></g>
+                <g class="@cls" style="color:@ink" aria-label="@a.Label" data-arrow="@a.Direction" data-room-of="@a.RoomKey"><path d="@RoomMapLayout.ArrowPath" transform="@(place + " rotate(" + N(a.Angle) + ")")" fill="currentColor" /><title>@a.Label</title></g>
             }
         }
     </svg>
@@ -88,12 +102,16 @@
 @code {
     [Parameter, EditorRequired] public MUD.Web.Services.RoomMap Map { get; set; } = default!;
     [Parameter, EditorRequired] public Func<MUD.Web.Services.MapRect, string> FillFor { get; set; } = default!;
-    // Room key to centre on at first render (and outline until the next touch); a click on a black x is reported through OnWire.
+    // Room key to centre on at first render (and outline until the next touch). A click on a line end or a gray link arrow is reported
+    // through OnAct; Busy (a write is in flight) disables those controls and the arrows, so a double tap cannot send two writes.
     [Parameter] public string? Center { get; set; }
-    [Parameter] public EventCallback<MUD.Web.Services.MapArrow> OnWire { get; set; }
+    [Parameter] public EventCallback<MUD.Web.Services.MapExitAction> OnAct { get; set; }
+    [Parameter] public bool Busy { get; set; }
 
-    private Task WireKey(KeyboardEventArgs e, MUD.Web.Services.MapArrow a) =>
-        e.Key is "Enter" or " " ? OnWire.InvokeAsync(a) : Task.CompletedTask;
+    private Task Act(MUD.Web.Services.MapExitAction a) => Busy ? Task.CompletedTask : OnAct.InvokeAsync(a);
+
+    private Task ActKey(KeyboardEventArgs e, MUD.Web.Services.MapExitAction a) =>
+        e.Key is "Enter" or " " ? Act(a) : Task.CompletedTask;
 
     private readonly string _id = "map-" + Guid.NewGuid().ToString("N").Substring(0, 8);
     private ElementReference _host;

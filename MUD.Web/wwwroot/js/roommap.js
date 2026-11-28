@@ -30,11 +30,15 @@ function create(host, svg, w, h) {
   let pinch = null, dragMoved = false, lastTap = 0;
   const sheet = host.querySelector('.mud-map-sheet');
 
-  // --map-hit: the radius (in SVG units) of an arrow's invisible hit circle, so it is at least 22 CSS px (44px across) at any zoom.
+  // --map-hit: the radius (in SVG units) of an arrow's invisible hit circle, so it is at least 22 CSS px (44px across) at any zoom;
+  // --map-hit-w is the width of a line end's invisible click zone, 44 CSS px across at any zoom.
   const apply = () => {
     svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
     const r = rect();
-    if (r.width > 0) svg.style.setProperty('--map-hit', `${Math.min(Math.max(22 * view.w / r.width, 14), 40)}px`);
+    if (r.width > 0) {
+      svg.style.setProperty('--map-hit', `${Math.min(Math.max(22 * view.w / r.width, 14), 40)}px`);
+      svg.style.setProperty('--map-hit-w', `${Math.max(44 * view.w / r.width, 28)}px`);
+    }
   };
   const rect = () => svg.getBoundingClientRect();
   const clampZoom = (nw) => Math.min(Math.max(nw, w / MAX_ZOOM), w / MIN_ZOOM);
@@ -119,13 +123,14 @@ function create(host, svg, w, h) {
     const had = pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
     if (!had) return;
-    if (dragMoved) { dragMoved = false; return; }
+    // A drag, pan or pinch is never a click, even where the browser still delivers one to the element under the finger (these clicks are writes).
+    if (dragMoved) { dragMoved = false; suppressClickUntil = Date.now() + 400; return; }
     // A tap. Double tap zooms in. A tap on a room that is too small to hit selects the nearest room instead of following the link.
     const now = Date.now();
     if (now - lastTap < 300) { zoomAt(2, e.clientX, e.clientY); lastTap = 0; return; }
     lastTap = now;
     // A tap on an arrow or the ghost link acts on that control; the "nearest room" sheet is only for room squares.
-    if (e.target.closest && e.target.closest('.mud-arrow, .mud-ghost-link')) { hideSheet(); return; }
+    if (e.target.closest && e.target.closest('.mud-arrow, .mud-ghost-link, .mud-lineend')) { hideSheet(); return; }
     if (squarePx() < HIT) {
       const room = nearestRoom(e.clientX, e.clientY);
       if (room) { showSheet(room); suppressClickUntil = Date.now() + 400; } else hideSheet();

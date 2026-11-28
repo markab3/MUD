@@ -54,16 +54,21 @@ else
                 }
             </select></div>
     </div>
-    <p>North is up. Arrowheads show direction; a line with arrowheads at both ends is a two-way exit. Drag to pan and pinch to zoom; tap a room to open it.
-        Around each room: a black arrow follows an exit, a gray arrow opens Create room for the room next to it, and a black &times; adds the missing exit to a room that is already there (one direction only; click the &times; at the other end for the way back).
-        The &#8657; and &#8659; arrows inside a room switch the map to another level.</p>
+    <p>North is up. Drag to pan and pinch to zoom; tap a room to open it.
+        A line between two rooms shows an arrowhead at the end of each exit that exists. Click an arrowhead to remove that exit (no confirmation, no undo);
+        click a plain end to add the exit that leads to that room, from the other room. One exit changes per click. Dashed warning lines (direction mismatches)
+        cannot be changed here.
+        Around each room: a black arrow follows an exit that is not drawn as a line (to another level or area, off the map or to a missing room; remove those on the room's edit page),
+        a gray arrow next to an existing room links to it (one direction only; click the plain end of its line to make it two-way),
+        and a gray arrow with no room there opens Create room for that spot.
+        The up and down arrows inside a room switch the map to another level.</p>
     @if (map.Rects.Count == 0)
     {
         <p>No placed rooms on this level.</p>
     }
     @if (map.ShowMap)
     {
-        <RoomMap Map="map" FillFor="_presenter.FillFor" Center="@Center" OnWire="WireAsync" />
+        <RoomMap Map="map" FillFor="_presenter.FillFor" Center="@Center" OnAct="ApplyAsync" Busy="_busy" />
     }
     @if (map.Mismatches.Count > 0)
     {
@@ -109,6 +114,7 @@ else
 
     private CreatorMapPresenter? _presenter;
     private string? _notice;
+    private bool _busy;
     private string _token = string.Empty;
 
     protected override async Task OnParametersSetAsync()
@@ -131,18 +137,23 @@ else
 
     private Task ReloadAsync() => OnParametersSetAsync();
 
-    // A click on a black x: one real write through the audited UpdateRoom (the page's CreatorOrAdmin policy applies, as on the edit page).
-    // The map is then drawn again from core, whatever the answer.
-    private async Task WireAsync(MapArrow arrow)
+    // A click on a line end or a gray link arrow: one real write through the audited UpdateRoom (the page's CreatorOrAdmin policy applies,
+    // as on the edit page). The map ignores clicks while it runs, and is then drawn again from core, whatever the answer.
+    private async Task ApplyAsync(MapExitAction action)
     {
-        if (_presenter == null || arrow.TargetKey == null) { return; }
-        var wire = new CreatorMapPresenter(Core, _token);
-        var ok = await wire.WireAsync(arrow.RoomKey, arrow.Direction, arrow.TargetKey);
-        var presenter = new CreatorMapPresenter(Core, _token);
-        var outcome = await presenter.LoadAsync(Area, Z, default, Gx, Gy);
-        if (outcome == MapOutcome.Denied) { Navigation.NavigateTo(WebRoutes.AccessDenied); return; }
-        presenter.CarryWire(wire.WireNotice, wire.WireError);
-        _presenter = presenter;
+        if (_presenter == null || _busy) { return; }
+        _busy = true;
+        try
+        {
+            var write = new CreatorMapPresenter(Core, _token);
+            await write.ApplyAsync(action);
+            var presenter = new CreatorMapPresenter(Core, _token);
+            var outcome = await presenter.LoadAsync(Area, Z, default, Gx, Gy);
+            if (outcome == MapOutcome.Denied) { Navigation.NavigateTo(WebRoutes.AccessDenied); return; }
+            presenter.CarryWire(write.WireNotice, write.WireError);
+            _presenter = presenter;
+        }
+        finally { _busy = false; }
     }
 
     private void OnAreaChanged(ChangeEventArgs e) => Navigation.NavigateTo(WebRoutes.MapFor(e.Value?.ToString() ?? string.Empty, null));

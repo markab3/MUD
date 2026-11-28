@@ -96,7 +96,7 @@ public class StaticAssetTests
     [Fact]
     public async Task Map_RendersReadableWithoutAnyStylesheet()
     {
-        var map = new RoomMapLayout().Build(new[] { new RoomRecord("a.o", "a", "origin", 0, 0, 0, new List<RoomExitRecord> { new("north", "a.n") }), new RoomRecord("a.n", "a", "north", 0, 1, 0, new List<RoomExitRecord>()) }, "a", 0);
+        var map = new RoomMapLayout().Build(new[] { new RoomRecord("a.o", "a", "origin", 0, 0, 0, new List<RoomExitRecord> { new("north", "a.n"), new("east", "gone.room") }), new RoomRecord("a.n", "a", "north", 0, 1, 0, new List<RoomExitRecord>()) }, "a", 0);
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(new AssetVersions(new NullFileProvider()));
@@ -117,7 +117,7 @@ public class StaticAssetTests
         Assert.NotEmpty(circles);
         Assert.All(circles, c => { Assert.Contains("fill=\"transparent\"", c); Assert.Contains("stroke=\"none\"", c); });
 
-        var glyphs = Regex.Matches(html, "<text[^>]*font-weight=\"700\"[^>]*>").Select(m => m.Value).ToList();
+        var glyphs = Regex.Matches(html, "<path d=\"" + Regex.Escape(RoomMapLayout.ArrowPath) + "\"[^>]*>").Select(m => m.Value).ToList();
         Assert.Equal(map.Arrows.Count, glyphs.Count);
         Assert.All(glyphs, g => { Assert.Contains("fill=\"currentColor\"", g); });
 

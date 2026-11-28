@@ -34,32 +34,57 @@ public sealed class CreatorMapPresenter
     public RoomMap? Map { get; private set; }
     public string? Error { get; private set; }
 
-    // Clicking a black x: adds ONE exit (direction -> target) to the room core has right now, through the audited UpdateRoom.
-    // The whole form goes back so core diffs and audits only the exit. Never adds the reverse exit. Messages are fixed strings.
+    // Clicking a line end or a gray link arrow: ONE exit is added to or removed from the room core has right now, through the audited
+    // UpdateRoom. The whole form goes back so core diffs and audits only that exit. Never touches any other room. No confirmation, no undo.
+    // Messages are fixed strings.
     public string? WireError { get; private set; }
     public string? WireNotice { get; private set; }
 
     // The page draws the map again with a fresh presenter after a write; this keeps the answer of the write on it.
     public void CarryWire(string? notice, string? error) { WireNotice = notice; WireError = error; }
 
-    public async Task<bool> WireAsync(string roomKey, string direction, string targetKey, CancellationToken cancellation = default)
+    public async Task<bool> ApplyAsync(MapExitAction action, CancellationToken cancellation = default)
     {
         WireError = null;
         WireNotice = null;
-        if (!RoomMapLayout.TryCompass(direction, out var dir) || string.IsNullOrWhiteSpace(targetKey))
+        if (string.IsNullOrWhiteSpace(action.OwnerKey) || string.IsNullOrWhiteSpace(action.TargetKey) || string.IsNullOrWhiteSpace(action.Direction)
+            || (!action.Remove && !RoomMapLayout.TryCompass(action.Direction, out _)))
         {
-            WireError = Messages.MapWireChanged;
+            WireError = Messages.MapExitChanged;
             return false;
         }
-        var name = RoomMapLayout.Directions.First(d => d.Dx == dir.Dx && d.Dy == dir.Dy).Name;
+        var name = action.Direction;
+        if (!action.Remove)
+        {
+            RoomMapLayout.TryCompass(action.Direction, out var v);
+            name = RoomMapLayout.NameOf(v.Dx, v.Dy);
+        }
         try
         {
-            var room = await _core.GetRoomAsync(_token, roomKey, cancellation);
-            // Gone, or the direction got an exit (under any alias) since the map was drawn: refuse, change nothing.
-            if (room == null || room.Exits.Any(e => RoomMapLayout.TryCompass(e.Name, out var v) && v.Dx == dir.Dx && v.Dy == dir.Dy))
+            var room = await _core.GetRoomAsync(_token, action.OwnerKey, cancellation);
+            if (room == null)
             {
-                WireError = Messages.MapWireChanged;
+                WireError = Messages.MapExitChanged;
                 return false;
+            }
+            var exits = room.Exits.Select(e => new MUD.Contracts.RoomExit { Name = e.Name, To = e.To }).ToList();
+            if (action.Remove)
+            {
+                // Exactly this exit: same name AND same target. Gone since the map was drawn: refuse, change nothing.
+                var index = exits.FindIndex(e => string.Equals(e.Name, action.Direction, StringComparison.OrdinalIgnoreCase) && e.To == action.TargetKey);
+                if (index < 0) { WireError = Messages.MapExitChanged; return false; }
+                exits.RemoveAt(index);
+            }
+            else
+            {
+                // The direction got an exit (under any alias) since the map was drawn: never overwrite it.
+                RoomMapLayout.TryCompass(name, out var want);
+                if (exits.Any(e => RoomMapLayout.TryCompass(e.Name, out var v) && v.Dx == want.Dx && v.Dy == want.Dy))
+                {
+                    WireError = Messages.MapDirectionTaken;
+                    return false;
+                }
+                exits.Add(new MUD.Contracts.RoomExit { Name = name, To = action.TargetKey });
             }
             var request = new MUD.Contracts.RoomEditRequest
             {
@@ -71,23 +96,22 @@ public sealed class CreatorMapPresenter
             if (room.HasX) { request.X = room.X; }
             if (room.HasY) { request.Y = room.Y; }
             if (room.HasZ) { request.Z = room.Z; }
-            request.Exits.AddRange(room.Exits.Select(e => new MUD.Contracts.RoomExit { Name = e.Name, To = e.To }));
-            request.Exits.Add(new MUD.Contracts.RoomExit { Name = name, To = targetKey });
+            request.Exits.AddRange(exits);
             request.FeaturesPresent = true;
             request.Features.AddRange(room.Features);
             var reply = await _core.UpdateRoomAsync(_token, request, cancellation);
             switch (reply.Result)
             {
                 case MUD.Contracts.AdminResult.Ok:
-                    WireNotice = Messages.MapWired;
+                    WireNotice = (action.Remove ? "Removed exit " : "Added exit ") + name + " from " + action.OwnerKey + " to " + action.TargetKey;
                     return true;
                 case MUD.Contracts.AdminResult.Invalid:
-                    WireError = Messages.MapWireInvalid;
+                    WireError = Messages.MapExitInvalid;
                     return false;
                 case MUD.Contracts.AdminResult.NotFound:
                 case MUD.Contracts.AdminResult.Refused:
                 case MUD.Contracts.AdminResult.NoChange:
-                    WireError = Messages.MapWireChanged;
+                    WireError = Messages.MapExitChanged;
                     return false;
                 case MUD.Contracts.AdminResult.Forbidden:
                     WireError = Messages.RoomForbidden;

@@ -196,27 +196,58 @@ in-memory fakes (`MUD.Tests/AdminApiTests.cs`).
 Map of the rooms, protected by `CreatorOrAdmin` (anonymous -> `/login`, plain
 player -> `/access-denied`). Rooms come from `ListRooms` on the Admin service (via `IAdminClient`, with the session token),
 mapped to `RoomRecord`; only definition fields are used (short description, area, `X`, `Y`, `Z`, exits). A coordinate
-absent in the message is unplaced, never 0. The page does not reference MUD.Core. **The page is no longer purely read-only:** the black
-x marker (below) writes one exit through the audited `UpdateRoom`, so it needs the same authorisation as editing a room
-(`CreatorOrAdmin`) and runs on the interactive circuit like the other edit pages (antiforgery and circuit rules unchanged). Every other
-control on the map only navigates.
+absent in the message is unplaced, never 0. The page does not reference MUD.Core. **The page is no longer purely read-only:** the line
+end clicks and the gray link arrow (below) write one exit through the audited `UpdateRoom`, so they need the same authorisation as editing
+a room (`CreatorOrAdmin`) and run on the interactive circuit like the other edit pages (antiforgery and circuit rules unchanged). Every
+other control on the map only navigates.
+
+**Line ends** (`MapLine.Ends`, revised by the map-lines card; the black x of the earlier arrows card is retired). Each line between two
+placed rooms has two ends, one at each room, and each end acts on the exit that leads TO the room at that end:
+- End with an arrowhead (that exit exists): a click REMOVES it. Example: study (top) and hall (bottom) joined by a two-way line: clicking
+  the arrowhead at the study end removes hall -> study and keeps study -> hall; the line then has an arrowhead only at the hall end.
+- End without an arrowhead (that exit does not exist): a click ADDS it, from the other room, named by the direction from the other room to
+  this one (the full-word opposite of the existing exit's direction). Clicking the plain end at the study restores hall -> study.
+- Both removed: the line disappears and the gray arrows appear in that direction on both rooms.
+- The two halves are separate click zones split at the midpoint (butt ends, so they never overlap); they sit under the arrows and room
+  squares, which win any overlap. The zone is an invisible stroke at least 44 CSS px wide across the line at any zoom (`--map-hit-w`, set
+  by `roommap.js`); along the line it is short when zoomed out, which is accepted. Each zone is `role="button"`, focusable, with
+  `aria-label` "Remove exit <dir> from <short> to <short>" or "Add exit ...", a visible focus ring, Enter/Space. A drag, pan or pinch that
+  starts on a zone never fires its click (`roommap.js`: 6px threshold, `dragMoved`, a click right after a drag is swallowed).
+- Dashed warning (mismatch) lines have no zones: removing or adding there is ambiguous (use the edit page). Stubs are not removable
+  from the map either (use the edit page).
+- **Removal just removes**: no confirm dialog, no undo, and whatever other properties an exit may have in future go with it. The page shows
+  the fixed notice "Removed exit <name> from <room> to <room>" (adds: "Added exit ..."). The audit rows core writes through `UpdateRoom`
+  are the record; nothing else is added.
+- Write path (`CreatorMapPresenter.ApplyAsync`, one path for add and remove, line ends and gray link arrows): `GetRoom` the room that OWNS
+  the exit just before writing; remove exactly one exit (match on name AND target) or add exactly one; send the whole form through
+  `UpdateRoom` so core diffs and audits only that exit. One exit per click; the room at the other end is never touched. Fixed messages: exit
+  gone or room gone, or core `Refused`/`NotFound`/`NoChange` -> "The exit or the room changed in the meantime..."; add where the direction
+  (under any alias) now has an exit -> "That direction is no longer free..." and nothing is overwritten; `Invalid` -> fixed text (core's text
+  is not echoed); `Forbidden` or a refused session -> "You are not allowed to edit rooms."; `AuditFailed`; core unavailable. The map is then
+  redrawn from core. While a write is in flight the page passes `Busy` to the map: zones and arrows are disabled (`aria-disabled`,
+  `pointer-events: none`, dimmed), so a double tap cannot send two writes.
 
 **Expansion arrows** (`MapArrow`, built by `RoomMapLayout`; palette variables only: black = `--mud-text`, gray = `--mud-muted`):
 - Every room gets eight compass arrows (north, northeast, east, southeast, south, southwest, west, northwest) in the gap just outside its
-  side or corner, shifted along the edge so the line or stub stays visible. Each has an `aria-label` and a visible focus ring; the hit
-  area is an invisible circle kept at least 44 CSS px across by `roommap.js` at any zoom.
-- **Black arrow**: the room has an exit that way (any alias). It goes to the target's edit page when the target is on this level, else to the
-  map of the target's area and level (`&center=<key>`); a target room that does not exist leaves the arrow unlinked.
-- **Gray arrow**: no exit and no room. It links to `/creator?area=&x=&y=&z=` with the origin's area, X/Y plus the direction offset (north = +Y,
-  east = +X) and the same Z. No exit is prefilled and nothing is linked back; nothing is created until the form is saved.
-- **Black x**: no exit, but a room is there: (a) a placed room of the same area and level at the adjacent coordinates, or (b) a room with a
-  compass exit into this room (the direction is the opposite of that exit). Clicking it adds ONE exit (full-word direction name -> target
-  key) from this room only, never the reverse: `GetRoom` fresh, add the exit, send the whole form through `UpdateRoom` so core diffs and
-  audits only the exit. No new rpc. Fixed messages: success `Exit added.`; room gone, direction taken meanwhile, or core `Refused`/`NotFound`/
-  `NoChange` -> "The room changed in the meantime..."; `Invalid` (key validation) -> fixed text, core's text is not echoed; `Forbidden` or a
-  refused session -> "You are not allowed to edit rooms."; `AuditFailed`; core unavailable. The map is then redrawn from core.
-- **Up and down** arrows sit inside the box (up top-left, down bottom-right; black when the room has such an exit). They only switch the
-  map level, never create or wire: black = level (and area) of the target room, gray = Z+1 / Z-1 of the same area. The link carries
+  side or corner, shifted along the edge so the line or stub stays visible. They are SVG triangles (`RoomMapLayout.ArrowPath`, rotated per
+  direction), as big as a line's arrowhead (`ArrowSize` = 16 SVG units across; the `#arrow` marker is derived from the same constant), not
+  font glyphs. Each has an `aria-label` and a visible focus ring; the hit area is an invisible circle kept at least 44 CSS px across by
+  `roommap.js` at any zoom.
+- **No duplicate arrows**: a compass exit that is drawn as a line between two placed rooms gets NO arrow; the line's arrowheads are the
+  only arrows for linked rooms (mismatch lines too).
+- **Black arrow**: only for a stub exit (target off the grid, on another level or area, unplaced, or missing): the way to navigate there.
+  It goes to the target's edit page when the target is on this level (or unplaced), else to the map of the target's area and level
+  (`&center=<key>`); a target room that does not exist leaves the arrow unlinked.
+- **Gray arrow, room there (link)**: no exit that way, and a placed room of the same area and level at the adjacent coordinates. A click
+  ADDS one exit from this room to that room (direction name = the arrow's direction, same write path as the line ends); the other end is
+  then a plain line end that makes it two-way. `aria-label` "Link <dir> to <short>"; still gray (only the label/tooltip differ).
+- **Gray arrow, no room there**: links to `/creator?area=&x=&y=&z=` with the origin's area, X/Y plus the direction offset (north = +Y,
+  east = +X) and the same Z. No exit is prefilled and nothing is linked back; nothing is created until the form is saved. `aria-label`
+  "Add room <dir> of <short>".
+- A room elsewhere (off the grid, other level or area) with a one-way exit into this room is a stub on its own map; nothing is offered on
+  this side. (The old black x rule (b) is gone.)
+- **Up and down** arrows sit inside the box (up top-left, down bottom-right; black when the room has such an exit), the same 16-unit triangles (up points up, down points down); the top edge of the up triangle may touch the first title line by about 2 units, nothing else is covered. They only switch the
+  map level, never create or write an exit: black = level (and area) of the target room, gray = Z+1 / Z-1 of the same area. The link carries
   `gx`/`gy` (the origin X,Y); if the destination level has no room there, a dashed ghost square "No room here" with a "Create room here"
   link (prefilled area, X, Y, Z) is drawn; the ghost is display only. The Level dropdown includes a level reached this way even with no
   rooms. These replace the old up/down badges; named non-compass exits keep their badge.
