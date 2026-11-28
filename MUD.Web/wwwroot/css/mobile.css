@@ -134,6 +134,9 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-link { display: inline-flex; align-items: center; min-height: var(--mud-hit); min-width: var(--mud-hit); }
 .mud-cardlist { list-style: none; padding: 0; margin: 0; }
 .mud-cardlist li { border: 1px solid var(--mud-border); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+.mud-bottom-actions { display: flex; flex-direction: column; gap: 8px; margin: 16px 0 8px; }
+.mud-btn-block { display: flex; width: 100%; min-height: var(--mud-hit); }
+.mud-static { display: block; padding: 8px 0; min-height: var(--mud-hit); box-sizing: border-box; }
 .mud-sticky-actions { position: sticky; bottom: 0; z-index: 10; background: var(--mud-page); padding: 8px 0; border-top: 1px solid var(--mud-border); display: flex; gap: 8px; }
 .mud-sticky-actions .mud-btn { flex: 1 1 auto; }
 @media (min-width: 600px) { .mud-sticky-actions .mud-btn { flex: 0 0 auto; } }

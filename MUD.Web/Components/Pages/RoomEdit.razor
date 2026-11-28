@@ -38,7 +38,7 @@ else
             </div>
         </div>
     }
-    <form @onsubmit="SaveAsync" @onsubmit:preventDefault novalidate>
+    <form id="re-form" @onsubmit="SaveAsync" @onsubmit:preventDefault novalidate>
         <details class="mud-section mud-collapse" open="@IsOpen(SecBasics)" @key="KeyOf(SecBasics)">
             <summary><h2 id="re-basics-h">Basics</h2></summary>
             <section class="mud-section-body" aria-labelledby="re-basics-h">
@@ -46,8 +46,8 @@ else
                 <input id="re-short" value="@p.Short" @onchange="e => Edit(() => p.Short = e.Value?.ToString())" maxlength="100" required /></div>
             <div class="mud-field"><label for="re-long">Long description</label>
                 <textarea id="re-long" value="@p.Long" @onchange="e => Edit(() => p.Long = e.Value?.ToString())" maxlength="4000" rows="8" required></textarea></div>
-            <div class="mud-field"><label for="re-area">Area prefix</label>
-                <input id="re-area" value="@p.Area" maxlength="128" readonly />
+            <div class="mud-field"><label for="re-area">Area</label>
+                <output id="re-area" class="mud-static">@AreaText(p.Area)</output>
                 <span class="mud-hint">(fixed by the room key; rooms cannot be renamed)</span></div>
             <div class="mud-coords">
                 <div class="mud-field"><label for="re-x">X</label>
@@ -116,9 +116,6 @@ else
             </section>
         </details>
 
-        <div class="mud-sticky-actions">
-            <button type="submit" class="mud-btn mud-btn-primary mud-save" disabled="@_busy">Save room</button>
-        </div>
     </form>
 
     <details class="mud-section mud-collapse" open="@IsOpen(SecBehaviors)" @key="KeyOf(SecBehaviors)">
@@ -184,7 +181,11 @@ else
         <p class="mud-hint">Everything inside is moved to a neighbouring room, or to the default room. The default room cannot be deleted.</p>
         </section>
     </details>
-    <p><a class="mud-btn" href="@WebRoutes.Map">Back to the map</a></p>
+    @* The Save button sits outside the form (the sections above are not form fields) and belongs to it through the form attribute. *@
+    <div class="mud-bottom-actions">
+        <button type="submit" form="re-form" class="mud-btn mud-btn-primary mud-btn-block mud-save" id="re-save" disabled="@_busy">Save room</button>
+        <a class="mud-btn mud-btn-block" id="re-back" href="@_backUrl">Back to the map</a>
+    </div>
 }
 
 @code {
@@ -196,6 +197,19 @@ else
 
     // "prefix - Name": the prefix is what the key starts with, the name says which region it is.
     private static string AreaLabel(Contracts.AreaRecord a) => string.IsNullOrWhiteSpace(a.Name) ? a.Id : a.Id + " - " + a.Name;
+    private string AreaText(string? area) =>
+        string.IsNullOrEmpty(area) ? "(none)" : _areas.FirstOrDefault(a => a.Id == area) is { } a ? AreaLabel(a) : area;
+
+    // Back to the map: the area and level the room is stored on (not unsaved form edits), centred on the room. No area: the bare map.
+    private string _backUrl = WebRoutes.Map;
+
+    private void RememberStored()
+    {
+        _stored = Snapshot();
+        var area = (_presenter?.Area ?? string.Empty).Trim();
+        _backUrl = area.Length == 0 ? WebRoutes.Map : WebRoutes.MapFor(area, _presenter!.Z ?? 0, null, null, Key);
+    }
+
     private string _draftKey = string.Empty;
     private bool _busy;
     private bool _confirmRegen;
@@ -244,7 +258,7 @@ else
             presenter.Notice = Notices.Take();
         }
         _presenter = presenter;
-        _stored = Snapshot();
+        RememberStored();
     }
 
     private RoomEditDraft? _stored;
@@ -332,7 +346,7 @@ else
     }
 
     // Runs one write at a time (a double tap cannot send two) and applies the outcome.
-    private async Task RunAsync(Func<Task<RoomEditOutcome>> action, string origin)
+    private async Task RunAsync(Func<Task<RoomEditOutcome>> action, string origin, bool mapAfterOk = false)
     {
         if (_busy || _presenter == null) { return; }
         _busy = true;
@@ -346,8 +360,14 @@ else
                     break;
                 case RoomEditOutcome.Ok:
                     _newExits.Clear();
-                    _stored = Snapshot();
+                    RememberStored();
                     await Drafts.RemoveAsync(_draftKey);
+                    if (mapAfterOk)
+                    {
+                        // Save: on to the map of the level the room is on now, centred on it, with the saved notice (shown once there).
+                        Notices.Set(_presenter.Notice ?? Messages.RoomSaved);
+                        Navigation.NavigateTo(_backUrl);
+                    }
                     break;
                 case RoomEditOutcome.Moved:
                     await Drafts.RemoveAsync(_draftKey);
@@ -400,7 +420,7 @@ else
         foreach (var field in _presenter.ProblemFields) { ForceOpen(SectionOfField(field)); }
     }
 
-    private Task SaveAsync() => RunAsync(() => _presenter!.SaveAsync(), SecBasics);
+    private Task SaveAsync() => RunAsync(() => _presenter!.SaveAsync(), SecBasics, mapAfterOk: true);
 
     private Task MoveAsync() => RunAsync(() => _presenter!.MoveAsync(), SecMove);
 

@@ -266,10 +266,10 @@ entirely in the browser; **no event goes to the server during a gesture**. Toolb
 |---|---|---|
 | Login | centred card, stacked, full-width button | card max 420px |
 | Character | greeting card | same |
-| Password | stacked + sticky Save | same |
-| Creator | stacked; exits as cards; sticky Save | X/Y/Z one row; exits 2-up |
+| Password | stacked + Save and Back at the bottom | same |
+| Creator | stacked; exits as cards; Save and Back at the bottom | X/Y/Z one row; exits 2-up |
 | Map | full-bleed, collapsible toolbar | toolbar on top, unplaced/mismatch side panels |
-| Room edit | accordion: Basics, Exits, Features, Generated (if any), Move, Delete; sticky Save | two columns: form + summary |
+| Room edit | accordion: Basics, Exits, Features, Generated (if any), Move, Delete; Save and Back at the bottom | two columns: form + summary |
 | Players | filter row + cards | grid |
 | Player edit | stacked; role/retire only if allowed | two columns |
 | Modules | cards, full-width action buttons (admin) | grid with Actions column |
@@ -431,6 +431,14 @@ Problems) stay above the form, outside any section. Moving to another room key r
 page load) starts from the defaults again; the open state is not persisted. Tests: `RoomEditSectionsTests` (default state, heading in summary,
 error opens its section, payload with collapsed sections, rendering twice).
 
+**Room edit Save and Back (card t_ef8d6895).** `RoomEdit.razor` ends with `<div class="mud-bottom-actions">`: Save (`#re-save`, `type=submit`,
+`form="re-form"`, `disabled="@_busy"`) and the full-width Back link (`#re-back`, `.mud-btn-block`). The `<form id="re-form">` keeps only Basics, Exits
+and Features; the other sections stay outside it. `_backUrl` is set by `RememberStored()` (on load and after every Ok) from the stored area and Z
+(`MapFor(area, Z ?? 0, center: Key)`; no area: `WebRoutes.Map`). `RunAsync(..., mapAfterOk: true)` is used only by Save: on Ok it clears the draft, sets
+`Notices` to the presenter's notice (`RoomSaved` or `RoomNoChange`) and navigates to `_backUrl`, which `CreatorMap` reads (area, z, center) and whose
+`NoticeService.Take()` shows the notice once. `#re-area` is an `<output>`. Tests: `RoomEditSectionsTests` (button order, form attribute, back
+target, Ok/NoChange/Problem/Delete navigation, no editable area text input in any component). Not verified: real touch, Mongo.
+
 **Room behaviors (card t_031d5843).** `RoomEdit.razor` shows `Shared/RoomBehaviors.razor` in a section after the form (outside it, so nothing is saved
 from it). `RoomEditPresenter` exposes `Behaviors` (`BehaviorRow`: hook, module, type, priority, config pretty-printed by `PrettyJson`; text that is not
 JSON is shown as it came) and `Searches` (`SearchRow`), both read-only, refilled on every load and empty when core sends none. Layout: one card per entry
@@ -549,7 +557,7 @@ Not verified: a real phone and touch gestures, throttled networks, HTTPS or a re
 
 Components: `/creator/areas` (`AreaList.razor`, `AreaListPresenter`), a new page with no Razor Pages original. Policy `CreatorOrAdmin`; the shell's Creator section gets an Areas link after Terrain. Backend and rules: `specs/ADMIN_API.md` "Areas"; page behaviour: `specs/WEB.md` "Areas page".
 The list renders a table and a card list from the same rows (CSS, 600px, as the terrain list). New and Edit share one inline form (`#ar-id`, `#ar-name`, `#ar-desc`); the edit form's id is read-only and the presenter writes the original id. Delete asks first in `ConfirmDialog`; core's refusal (rooms still use the area, with the count) is shown as the error and the row stays. Buttons carry `data-mutating` like the other list pages, so the reconnect guard disables them.
-Every area text box is now a real `<select>` fed by `ListAreas`: Create room `#cr-area` (placed before the local key `#cr-key`), Move room `#re-newarea` (preselected to the room's current area), and the map's `#map-area` (area records plus any room area without a record, so empty areas appear). Option text is "prefix - Name". Choosing an area shows its prefix as fixed text before the local key input (`#cr-prefix`, `#re-newprefix`; `aria-hidden` on the text, the input points at it with `aria-describedby`), so "key prefix = area" holds by construction; it is empty until an area is chosen or when the room's own area has no record (placeholder option "(choose an area)"). `#re-area` stays read-only text. `.mud-keyrow` / `.mud-keyprefix` in `mobile.css` lay the prefix and input out in one row (palette variables only; the prefix wraps rather than scrolling at 360px).
+Every area text box is now a real `<select>` fed by `ListAreas`: Create room `#cr-area` (placed before the local key `#cr-key`), Move room `#re-newarea` (preselected to the room's current area), and the map's `#map-area` (area records plus any room area without a record, so empty areas appear). Option text is "prefix - Name". Choosing an area shows its prefix as fixed text before the local key input (`#cr-prefix`, `#re-newprefix`; `aria-hidden` on the text, the input points at it with `aria-describedby`), so "key prefix = area" holds by construction; it is empty until an area is chosen or when the room's own area has no record (placeholder option "(choose an area)"). `#re-area` is read-only plain text (an `<output>`). `.mud-keyrow` / `.mud-keyprefix` in `mobile.css` lay the prefix and input out in one row (palette variables only; the prefix wraps rather than scrolling at 360px).
 `IRoomCreationService.ListAreasAsync` and `RoomEditPresenter.GetAreasAsync` now return `AreaRecord`s (they returned prefixes derived from `ListRooms`); they answer empty when core cannot, so the dropdown is then just the placeholder.
 Not verified here: layout at 360px and touch targets in a real browser, and the screen-reader reading order of the prefix and input (no browser in the run); the rendered HTML is asserted in `AreaWebTests`.
 
