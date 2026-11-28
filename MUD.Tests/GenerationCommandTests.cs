@@ -56,7 +56,7 @@ namespace MUD.Tests
             lib.PhraseList.AddRange(data.Phrases);
             lib.FeatureList.Add(new FeatureTemplate
             {
-                Id = "rock", Terrains = new List<string> { "grass" }, Short = "a grey rock", Long = "A grey rock.",
+                Id = "rock", Terrain = "sample_land.grass", Short = "a grey rock", Long = "A grey rock.",
                 Handles = new List<string> { "rock" }, Weight = 1, Chance = 1.0, Version = 1,
             });
             return lib;

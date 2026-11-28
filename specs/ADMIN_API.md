@@ -150,7 +150,8 @@ rpcs `List<X>s`, `Get<X>`, `Create<X>`, `Update<X>`, `Delete<X>` (15 rpcs). `Res
 
 - **Roles.** All fifteen calls: creator or admin (token checked per call, the role re-read; status codes as in the table above). Writes run on the game thread together with the token check, like every other mutation.
 - **Reads** answer from the stored documents (`ListFragments` etc. also return `library_version`, ordered by id; `Get*` answers `found = false` for an unknown id). If the library store is not available they answer empty/not found; if the database throws, the call answers gRPC `Unavailable` (not an empty list).
-- **`terrains` is a list of terrain ids. An empty list means the entity is used by no generator, never "any terrain"** (OD5). The API accepts and stores empty lists; the library snapshot generators read never returns such an entity (`InMemoryLibrary` filter, plus a second filter in `Terrain`).
+- **Scope: `terrain` is exactly one terrain type id (owner decision 2026-11-27, TERRAIN_GENERATORS.md section 18).** It is required and must name an existing terrain type (`INVALID`, field `terrain`: "There is no terrain type with that id. Create the terrain type first."). A phrase's `terrain` is the ROOM terrain; its `neighbor_terrain` must exist and be in the SAME area (`INVALID`, field `neighborTerrain`). The retired `repeated string terrains = 2` is `reserved` (number and name) in `FragmentRecord`, `FeatureTemplateRecord` and `NeighborPhraseRecord`; the new fields are `terrain` (fragment 7, feature 13, phrase 7) and the read-only `area` (fragment 8, feature 14, phrase 8; core fills it from the terrain on every read and reply, ignored on input). An update may change `terrain` (a move; audited as a `terrain` change); a moved phrase must still have its neighbour in the new terrain's area. Entry ids are globally unique and never renamed. There is no empty-list rule any more and no unscoped entity; weight 0 means never picked.
+- **List filters.** `ListFragments`, `ListFeatureTemplates` and `ListNeighborPhrases` take `ListLibraryRequest { token = 1, terrain = 2, area = 3 }` (wire compatible with the former `TokenRequest`); both filters are optional and combine (`terrain` = one terrain type id, `area` = every terrain type of that area). The web client passes them as optional trailing parameters.
 - **Results** (in `LibraryEditReply.result`; nothing is audited for a refusal or a no-change):
 
   | result | when |
@@ -164,13 +165,13 @@ rpcs `List<X>s`, `Get<X>`, `Create<X>`, `Update<X>`, `Delete<X>` (15 rpcs). `Res
   | `AUDIT_FAILED` | the audit rows could not be written; nothing was changed |
   | `FAILED` | the database write failed after the audit; the audit rows are marked rejected |
 
-- **Field rules** (`LibraryValidation`): `id` required, letters/digits/`-`/`_`/`.`, at most 100; `weight >= 0`; `text` required (neighbour phrase: `{dir}` exactly once, `neighbor_terrain` required); fragment `slot` required; feature `short` and `long` required, `chance` in [0,1]; every terrain/handle/adjective/tag entry a non-empty string; no duplicate terrain id in one entity.
-- **Feature template version.** Server-owned; the client value is ignored. Create sets 1. Update sets `stored + 1` when any of `short`, `long`, `room_line`, `detail`, `handles` or `adjectives` changed; edits to `weight`, `chance`, `terrains` and `tags` leave it. (This is the number `templateVersion` of generated features is compared with.)
+- **Field rules** (`LibraryValidation`): `id` required, letters/digits/`-`/`_`/`.`, at most 100; `weight >= 0`; `text` required (neighbour phrase: `{dir}` exactly once, `neighbor_terrain` required); fragment `slot` required; feature `short` and `long` required, `chance` in [0,1]; `terrain` required and shaped like a terrain type id (`<area>.<local>`), and `neighbor_terrain` likewise; every handle/adjective/tag entry a non-empty string.
+- **Feature template version.** Server-owned; the client value is ignored. Create sets 1. Update sets `stored + 1` when any of `short`, `long`, `room_line`, `detail`, `handles` or `adjectives` changed; edits to `weight`, `chance`, `terrain` and `tags` leave it. (This is the number `templateVersion` of generated features is compared with.)
 - **Library version.** `terrain_meta.library.version` is incremented (`$inc`) once per successful create/update/delete. After a write the cached snapshot (`StoreLibrary`) is refreshed so the next generator run sees the edit.
-- **Audit first.** One audit row per changed field for an update (`entity` `terrain_fragment`, `terrain_feature` or `terrain_neighbor_phrase`; `entity_id` the id; field = the document field name such as `text` or `terrains`; old and new values). Create writes one row, field `*create*`, new = the whole document; delete one row, field `*delete*`, old = the whole document. Rows are inserted before the write and marked applied (or rejected) after. No row, no write.
-- **Collections** (Mongo, written by core only): `terrain_fragments`, `terrain_features`, `terrain_neighbor_phrases` (`_id` = entity id, plus `updatedAt`, `updatedBy`; multikey index on `terrains`) and `terrain_meta` (`_id: "library"`, `version`, `seededAt`).
-- **Seeding.** On core start, if `terrain_meta` has no `library` document, the embedded `terrain-library.yaml` (source: `MUD.Core/Generation/Library/terrain-library.yaml`) is validated and loaded; the meta document is written last. If the meta document exists the file is not read again, so admin edits survive restarts. A file that fails validation seeds nothing and is logged; the Admin service still starts (library calls then see an empty library). An unreachable database at start leaves the service without a library (calls answer `REFUSED`).
-- **Web.** `IAdminClient` has the same fifteen calls (`ListFragmentsAsync`, `GetFragmentAsync`, `CreateFragmentAsync`, ...); `Get*` returns null for an unknown id; the reply result carries every branch above; exceptions as for rooms (`CoreRefusedException`, `CoreUnavailableException`). `FakeAdminClient` (MUD.Web.Tests) implements them with in-memory dictionaries and the same version rule.
+- **Audit first.** One audit row per changed field for an update (`entity` `terrain_fragment`, `terrain_feature` or `terrain_neighbor_phrase`; `entity_id` the id; field = the document field name such as `text` or `terrain`; old and new values). Create writes one row, field `*create*`, new = the whole document; delete one row, field `*delete*`, old = the whole document. Rows are inserted before the write and marked applied (or rejected) after. No row, no write.
+- **Collections** (Mongo, written by core only): `terrain_fragments`, `terrain_features`, `terrain_neighbor_phrases` (`_id` = entity id, plus `updatedAt`, `updatedBy`; index on `terrain`; a migrated document also keeps its retired `terrains` array, ignored) and `terrain_meta` (`_id: "library"`, `version`, `seededAt`).
+- **Seeding.** On core start, if `terrain_meta` has no `library` document, the embedded `terrain-library.yaml` (source: `MUD.Core/Generation/Library/terrain-library.yaml`, `schema_version: 2`) is validated and loaded: first the area `sample_land` and its terrain types (inserts that never overwrite an existing record), then the entries scoped to them; the meta document is written last. After the seed, `LibraryMigration` moves legacy documents (a `terrains` list, no `terrain`) onto terrain types of the areas whose map files use those names (TERRAIN_GENERATORS.md section 18); it logs what it did and is idempotent. If the meta document exists the file is not read again, so admin edits survive restarts. A file that fails validation seeds nothing and is logged; the Admin service still starts (library calls then see an empty library). An unreachable database at start leaves the service without a library (calls answer `REFUSED`).
+- **Web.** `IAdminClient` has the same fifteen calls (`ListFragmentsAsync(token, terrain?, area?)`, `GetFragmentAsync`, `CreateFragmentAsync`, ...); `Get*` returns null for an unknown id; the reply result carries every branch above; exceptions as for rooms (`CoreRefusedException`, `CoreUnavailableException`). `FakeAdminClient` (MUD.Web.Tests) implements them with in-memory dictionaries and the same version rule.
 
 ## Areas (`ListAreas`, `GetArea`, `CreateArea`, `UpdateArea`, `DeleteArea`)
 
@@ -198,14 +199,14 @@ Backend of the website Areas page and of every area dropdown. Logic: `MUD.Core/A
   | `INVALID` | field rules broken; `errors` lists `Id`, `Name`, `Description` with fixed sentences (nothing echoed) |
   | `NOT_FOUND` | update or delete of an unknown id (also when the record vanished between the check and the write) |
   | `ALREADY_EXISTS` | create with a taken id (also when another writer created it between the check and the write) |
-  | `REFUSED` | delete while rooms still use the area (the message names the count: "3 rooms still use this area. ..."); or no area store is available |
+  | `REFUSED` | delete while rooms or terrain types still use the area (the message names the counts: "3 rooms still use this area. ...", "1 room and 4 terrain types still use this area. ..."); or no area store is available |
   | `AUDIT_FAILED` | the audit rows could not be written; nothing was changed |
   | `FAILED` | the database read or write failed (the audit rows are marked rejected for a failed write) |
 
 - **Update changes name and description only.** The id is the key: an update of an id that has no record is `NOT_FOUND`, never a rename. Renaming
   an area means moving its rooms (`MoveRoom`), which is out of scope here and said so on the page.
-- **Delete is refused while any room uses the area.** The count is the number of rooms with `Area` equal to the id. Item templates are NOT
-  counted yet (a one-line addition to `RemoveArea` using `IItemTemplateStore.CountInArea`, which exists; left out because the card did not ask for it,
+- **Delete is refused while any room or terrain type uses the area.** The counts are the number of rooms with `Area` equal to the id and the number of terrain types of the area (`terrain_type`). Item templates are NOT
+  counted yet (a one-line addition to `RemoveArea` using `IItemTemplateStore.CountInArea`, which exists; left out because no card asked for it,
   so an area that still has item templates can be deleted and leaves them with an area that has no record: open question in specs/ITEM_TEMPLATES.md).
 - **Audit first**, entity `area`, `entity_id` = the prefix. Update: one row per changed field (`name`, `description`, old and new text). Create:
   one `*create*` row, new = the whole document. Delete: one `*delete*` row, old = the whole document. Rows are inserted before the write and
@@ -220,6 +221,38 @@ Backend of the website Areas page and of every area dropdown. Logic: `MUD.Core/A
   it never overwrites one either.
 - **Web.** `IAdminClient` has `ListAreasAsync`, `GetAreaAsync` (null for an unknown id), `CreateAreaAsync`, `UpdateAreaAsync`, `DeleteAreaAsync`; the reply
   result carries every branch above; exceptions as for rooms. `FakeAdminClient` (MUD.Web.Tests) implements them with an in-memory dictionary.
+
+## Terrain types (`ListTerrainTypes`, `GetTerrainType`, `CreateTerrainType`, `UpdateTerrainType`, `DeleteTerrainType`)
+
+Backend of the terrain type editor (specs/TERRAIN_GENERATORS.md section 18). A terrain type belongs to an area and owns fragments, feature templates and
+neighbour phrases. Logic: `MUD.Core/Administration/AdminApi.TerrainTypes.cs`; storage seam `ILibraryStore.TerrainTypes` (`MongoLibraryStore` in
+production, an in-memory fake in tests); entity and id rules `MUD.Core/Generation/Terrains/TerrainType.cs`. Built by copying the Areas pattern (the five
+touch points: `admin.proto`, `AdminApi.*.cs`, `AdminService.cs`, the `AdminApi` constructor / `World.CreateAdminApi`, and the web client `IAdminClient` /
+`GrpcAdminClient` / `FakeAdminClient`).
+
+- **Entity.** Mongo collection `terrain_type`: `_id` = `<area>.<local>` (the area is the part before the last `.`, a valid area prefix that has a record; `local`
+  matches `^[a-z0-9_]+$` and equals the map legend template name; at most 128 characters), `area`, `name` (required, one line, at most 100), `description`
+  (optional, one line, at most 200), plus `updatedAt` and `updatedBy`. The id and so the area never change; update changes name and description only.
+- **Roles.** All five calls: creator or admin (token checked per call). Writes run on the game thread via `Mutate`.
+- **Contract.** `TerrainTypeRecord { id, area, name, description }` (`area` read-only: filled by core, ignored on input). `ListTerrainTypes(ListTerrainTypesRequest { token, area })`
+  (ordered by id; empty `area` = all) `-> ListTerrainTypesReply`, `GetTerrainType(TerrainTypeIdRequest) -> GetTerrainTypeReply { found, terrain_type }`,
+  `CreateTerrainType` / `UpdateTerrainType(SaveTerrainTypeRequest) -> TerrainTypeEditReply`, `DeleteTerrainType(TerrainTypeIdRequest) -> TerrainTypeEditReply`.
+- **Reads** answer from the stored records; with no library store the list is empty and `GetTerrainType` says not found; if the database throws, the call answers gRPC `Unavailable`.
+- **Results** (`TerrainTypeEditReply.result`; nothing is audited for a refusal or a no-change; messages are fixed sentences):
+
+  | result | when |
+  |---|---|
+  | `OK` | written; `terrain_type` is the record as stored |
+  | `NO_CHANGE` | update where name and description equal the stored ones |
+  | `INVALID` | field rules broken (`Id`, `Name`, `Description`); also create in an area that has no record (field `Id`) |
+  | `NOT_FOUND` | update or delete of an unknown id (also when it vanished between the check and the write) |
+  | `ALREADY_EXISTS` | create with a taken id (also when another writer created it between the check and the write) |
+  | `REFUSED` | delete while fragments, feature templates or phrases are scoped to it, or phrases name it as neighbour terrain (the message names the counts: "This terrain type is still in use by 2 description fragments, 1 feature template and 1 neighbour phrase (as neighbour terrain). ..."); or no library / area store is available |
+  | `AUDIT_FAILED` | the audit rows could not be written; nothing was changed |
+  | `FAILED` | the database read or write failed (the audit rows are marked rejected for a failed write) |
+
+- **Audit first**, entity `terrain_type`, `entity_id` = the id. Update: one row per changed field (`name`, `description`). Create: one `*create*` row, new = the whole document. Delete: one `*delete*` row, old = the whole document. Rows are inserted before the write and marked applied or rejected after; no row, no write. (Terrain type writes do not bump the library version: they do not change generated text; the entries do.)
+- **Web.** `IAdminClient` has `ListTerrainTypesAsync(token, area?)`, `GetTerrainTypeAsync` (null for an unknown id), `CreateTerrainTypeAsync`, `UpdateTerrainTypeAsync`, `DeleteTerrainTypeAsync`; the reply result carries every branch above; exceptions as for rooms. `FakeAdminClient` (MUD.Web.Tests) implements them with an in-memory dictionary (`AddTerrainType`).
 
 ## Item templates (`ListItemTemplates`, `GetItemTemplate`, `CreateItemTemplate`, `UpdateItemTemplate`, `DeleteItemTemplate`, `ListItemTemplateReferences`)
 

@@ -26,6 +26,8 @@ namespace MUD.Core.Generation.Terrains
         ILibraryCollection<DescriptionFragment> Fragments { get; }
         ILibraryCollection<FeatureTemplate> Features { get; }
         ILibraryCollection<NeighborPhrase> Phrases { get; }
+        // Terrain types (collection terrain_type): the owners of the three entity kinds above. Same persistence rules.
+        ILibraryCollection<TerrainType> TerrainTypes { get; }
 
         // The library version counter (terrain_meta "library"); null when the meta document does not exist (fresh install).
         int? GetVersion();
@@ -46,38 +48,45 @@ namespace MUD.Core.Generation.Terrains
 
         public static BsonDocument ToDocument(DescriptionFragment f)
         {
-            return new BsonDocument
+            return Legacy(new BsonDocument
             {
-                { "_id", f.Id }, { "terrains", Array(f.Terrains) }, { "slot", f.Slot ?? string.Empty }, { "text", f.Text ?? string.Empty },
+                { "_id", f.Id }, { "terrain", f.Terrain ?? string.Empty }, { "slot", f.Slot ?? string.Empty }, { "text", f.Text ?? string.Empty },
                 { "weight", f.Weight }, { "tags", Array(f.Tags) },
-            };
+            }, f);
         }
 
         public static BsonDocument ToDocument(FeatureTemplate f)
         {
-            return new BsonDocument
+            return Legacy(new BsonDocument
             {
-                { "_id", f.Id }, { "terrains", Array(f.Terrains) }, { "short", f.Short ?? string.Empty }, { "long", f.Long ?? string.Empty },
+                { "_id", f.Id }, { "terrain", f.Terrain ?? string.Empty }, { "short", f.Short ?? string.Empty }, { "long", f.Long ?? string.Empty },
                 { "handles", Array(f.Handles) }, { "adjectives", Array(f.Adjectives) },
                 { "roomLine", f.RoomLine ?? string.Empty }, { "detail", f.Detail ?? string.Empty },
                 { "weight", f.Weight }, { "chance", f.Chance }, { "version", f.Version }, { "tags", Array(f.Tags) },
-            };
+            }, f);
         }
 
         public static BsonDocument ToDocument(NeighborPhrase p)
         {
-            return new BsonDocument
+            return Legacy(new BsonDocument
             {
-                { "_id", p.Id }, { "terrains", Array(p.Terrains) }, { "neighborTerrain", p.NeighborTerrain ?? string.Empty },
+                { "_id", p.Id }, { "terrain", p.Terrain ?? string.Empty }, { "neighborTerrain", p.NeighborTerrain ?? string.Empty },
                 { "text", p.Text ?? string.Empty }, { "weight", p.Weight }, { "merge", p.Merge },
-            };
+            }, p);
+        }
+
+        // The retired `terrains` array is written back only when the document had one (migrated documents keep it; it is ignored from now on).
+        private static BsonDocument Legacy(BsonDocument d, ITerrainScoped entity)
+        {
+            if (entity.LegacyTerrains != null && entity.LegacyTerrains.Count > 0) { d["terrains"] = Array(entity.LegacyTerrains); }
+            return d;
         }
 
         public static DescriptionFragment FragmentFrom(BsonDocument d)
         {
             return new DescriptionFragment
             {
-                Id = Text(d, "_id"), Terrains = List(d, "terrains"), Slot = Text(d, "slot"), Text = Text(d, "text"),
+                Id = Text(d, "_id"), Terrain = Empty(Text(d, "terrain")), LegacyTerrains = List(d, "terrains"), Slot = Text(d, "slot"), Text = Text(d, "text"),
                 Weight = Int(d, "weight", 1), Tags = List(d, "tags"),
             };
         }
@@ -86,7 +95,7 @@ namespace MUD.Core.Generation.Terrains
         {
             return new FeatureTemplate
             {
-                Id = Text(d, "_id"), Terrains = List(d, "terrains"), Short = Text(d, "short"), Long = Text(d, "long"),
+                Id = Text(d, "_id"), Terrain = Empty(Text(d, "terrain")), LegacyTerrains = List(d, "terrains"), Short = Text(d, "short"), Long = Text(d, "long"),
                 Handles = List(d, "handles"), Adjectives = List(d, "adjectives"),
                 RoomLine = Empty(Text(d, "roomLine")), Detail = Empty(Text(d, "detail")),
                 Weight = Int(d, "weight", 1), Chance = d.TryGetValue("chance", out var c) && c.IsNumeric ? c.ToDouble() : 1.0,
@@ -98,7 +107,7 @@ namespace MUD.Core.Generation.Terrains
         {
             return new NeighborPhrase
             {
-                Id = Text(d, "_id"), Terrains = List(d, "terrains"), NeighborTerrain = Text(d, "neighborTerrain"), Text = Text(d, "text"),
+                Id = Text(d, "_id"), Terrain = Empty(Text(d, "terrain")), LegacyTerrains = List(d, "terrains"), NeighborTerrain = Text(d, "neighborTerrain"), Text = Text(d, "text"),
                 Weight = Int(d, "weight", 1), Merge = !d.TryGetValue("merge", out var m) || !m.IsBoolean || m.AsBoolean,
             };
         }
@@ -177,14 +186,16 @@ namespace MUD.Core.Generation.Terrains
             Fragments = new Collection<DescriptionFragment>(fragments, LibraryDocuments.ToDocument, LibraryDocuments.FragmentFrom);
             Features = new Collection<FeatureTemplate>(features, LibraryDocuments.ToDocument, LibraryDocuments.FeatureFrom);
             Phrases = new Collection<NeighborPhrase>(phrases, LibraryDocuments.ToDocument, LibraryDocuments.PhraseFrom);
-            // Multikey index on terrains for each entity collection (section 6.3). Index creation is idempotent.
-            var keys = Builders<BsonDocument>.IndexKeys.Ascending("terrains");
+            TerrainTypes = new Collection<TerrainType>(database.GetCollection<BsonDocument>(TerrainTypeDocuments.Collection), TerrainTypeDocuments.ToDocument, TerrainTypeDocuments.From);
+            // Index on terrain for each entity collection (section 6.3). Index creation is idempotent.
+            var keys = Builders<BsonDocument>.IndexKeys.Ascending("terrain");
             foreach (var c in new[] { fragments, features, phrases }) { c.Indexes.CreateOne(new CreateIndexModel<BsonDocument>(keys)); }
         }
 
         public ILibraryCollection<DescriptionFragment> Fragments { get; private set; }
         public ILibraryCollection<FeatureTemplate> Features { get; private set; }
         public ILibraryCollection<NeighborPhrase> Phrases { get; private set; }
+        public ILibraryCollection<TerrainType> TerrainTypes { get; private set; }
 
         public int? GetVersion()
         {
@@ -225,6 +236,7 @@ namespace MUD.Core.Generation.Terrains
         public ILibrary Refresh()
         {
             var fresh = new InMemoryLibrary { Version = _store.GetVersion() ?? 0 };
+            // A legacy document without a terrain (not migrated) is never returned: the InMemoryLibrary queries match on Terrain.
             fresh.FragmentList.AddRange(_store.Fragments.List());
             fresh.FeatureList.AddRange(_store.Features.List());
             fresh.PhraseList.AddRange(_store.Phrases.List());

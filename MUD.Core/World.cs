@@ -464,24 +464,6 @@ namespace MUD.Core
         /// </summary>
         public MUD.Core.Administration.AdminApi CreateAdminApi(IMongoDatabase database)
         {
-            // The terrain library (specs/TERRAIN_GENERATORS.md section 6): seeded from the embedded YAML on a fresh install only.
-            // If the database or the seed fails, the Admin service still starts without a library (library calls answer REFUSED).
-            MUD.Core.Generation.Terrains.MongoLibraryStore libraryStore = null;
-            MUD.Core.Generation.Terrains.StoreLibrary libraryCache = null;
-            try
-            {
-                libraryStore = new MUD.Core.Generation.Terrains.MongoLibraryStore(database);
-                var seeded = MUD.Core.Generation.Terrains.LibrarySeed.SeedIfFresh(libraryStore, MUD.Core.Generation.Terrains.LibrarySeed.ReadEmbedded());
-                foreach (string error in seeded.Errors) { Console.WriteLine("Terrain library seed: " + error); }
-                if (seeded.Seeded) { Console.WriteLine(string.Format("Terrain library seeded: {0} fragments, {1} features, {2} neighbour phrases.", seeded.Fragments, seeded.Features, seeded.Phrases)); }
-                libraryCache = new MUD.Core.Generation.Terrains.StoreLibrary(libraryStore);
-            }
-            catch (Exception ex) when (!(ex is OutOfMemoryException))
-            {
-                Console.WriteLine("The terrain library is not available (" + ex.GetType().Name + ").");
-                libraryStore = null;
-                libraryCache = null;
-            }
             // Area records (specs/ADMIN_API.md "Areas"): every distinct Room.Area gets a record when it has none. Idempotent; never overwrites.
             // The importer ran before this (ImportContent), so an area file's own name and description win over the readable-name fallback.
             MUD.Core.Areas.MongoAreaStore areaStore = null;
@@ -497,6 +479,26 @@ namespace MUD.Core
             {
                 Console.WriteLine("The area records are not available (" + ex.GetType().Name + ").");
                 areaStore = null;
+            }
+            // The terrain library (specs/TERRAIN_GENERATORS.md section 6): seeded from the embedded YAML on a fresh install only.
+            // If the database or the seed fails, the Admin service still starts without a library (library calls answer REFUSED).
+            MUD.Core.Generation.Terrains.MongoLibraryStore libraryStore = null;
+            MUD.Core.Generation.Terrains.StoreLibrary libraryCache = null;
+            try
+            {
+                libraryStore = new MUD.Core.Generation.Terrains.MongoLibraryStore(database);
+                var seeded = MUD.Core.Generation.Terrains.LibrarySeed.SeedIfFresh(libraryStore, areaStore, MUD.Core.Generation.Terrains.LibrarySeed.ReadEmbedded());
+                foreach (string error in seeded.Errors) { Console.WriteLine("Terrain library seed: " + error); }
+                if (seeded.Seeded) { Console.WriteLine(string.Format("Terrain library seeded: {0} terrain types, {1} fragments, {2} features, {3} neighbour phrases.", seeded.TerrainTypes, seeded.Fragments, seeded.Features, seeded.Phrases)); }
+                // Existing databases: move legacy entries (a `terrains` list, no `terrain`) onto terrain types of the areas whose map files use them. Idempotent.
+                MUD.Core.Generation.Terrains.LibraryMigration.Run(libraryStore, areaStore, MUD.Core.Generation.Terrains.MapAreaReader.ReadDirectory(_settings.ContentDirectory), Console.WriteLine);
+                libraryCache = new MUD.Core.Generation.Terrains.StoreLibrary(libraryStore);
+            }
+            catch (Exception ex) when (!(ex is OutOfMemoryException))
+            {
+                Console.WriteLine("The terrain library is not available (" + ex.GetType().Name + ").");
+                libraryStore = null;
+                libraryCache = null;
             }
             MUD.Core.ItemTemplates.IItemTemplateStore itemTemplateStore = new MUD.Core.ItemTemplates.MongoItemTemplateStore(database);
             return new MUD.Core.Administration.AdminApi(

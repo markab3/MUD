@@ -444,7 +444,7 @@ New text (not moved from Razor): `RetirePlayerConfirm`, `StopModuleConfirm`, `Re
 
 Components: `/creator/terrain` (`TerrainList.razor`, `?tab=&terrain=&tag=`) and `/creator/terrain/edit?kind=&id=` (`TerrainEdit.razor`). Both use `CreatorOrAdmin`; the shell Terrain link now points at them.
 Logic is in `TerrainListPresenter` and `TerrainEditPresenter`; `TerrainLibrary.cs` (helpers and the error sentences) is shared with the Razor pages until cutover. Kind and id come from the query string only; the presenter has no setter for either, and an edit writes the original id, never the form's.
-Lists render a table and a card list from the same rows (CSS, 600px). The four tabs are links from 600px and one `<select>` below. The terrain tick list is a scrollable box (max 40vh) on a phone and a three-column grid from 600px. The empty-terrains warning (`[!] Not used by any generator`) shows on the editor and in list rows exactly as before.
+Lists render a table and a card list from the same rows (CSS, 600px). The three tabs are links from 600px and one `<select>` below. The terrain is one terrain-type dropdown (all areas); the earlier tick list, the "Unassigned" tab and the empty-terrains warning are gone (TERRAIN_GENERATORS.md section 18).
 Decisions: Delete asks first in `ConfirmDialog` (new text `TerrainDeleteConfirm`); the editor keeps a local draft like the room and player editors (`TerrainDraftFound`); a saved new entry navigates to its edit address with the "Saved." notice via `NoticeService`; a saved edit reloads from core. HTTP 403/404/503 become in-page views (7.3).
 Not verified here: layout at 360px, touch targets, reconnect behaviour and a signed-in circuit (no core, Mongo or browser in the sandbox).
 

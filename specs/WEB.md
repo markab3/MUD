@@ -371,16 +371,16 @@ Built (`Components/Pages/TerrainList.razor`, `TerrainEdit.razor`, `TerrainListPr
 `IAdminClient` (the Create/Update/Delete/List/Get calls for fragments, feature templates and neighbour phrases; backend in
 `specs/ADMIN_API.md` and `specs/TERRAIN_GENERATORS.md` sections 6 and 11). Core validates every write and owns the feature version.
 
-- **List**: tabs Fragments / Features / Neighbour phrases / Unassigned with counts, filter by terrain and by tag (fragments and features
-  only; phrases have no tags), a Delete POST form per row (antiforgery, kind and id in hidden fields). **Unassigned** lists every entity whose
-  `terrains` is empty. Such rows, and the tab, carry the badge `[!] Not used by any generator` (words, not colour alone): an empty list means
-  no generator uses the entry, never "any terrain".
+- **List**: tabs Fragments / Features / Neighbour phrases with counts, filter by terrain (a terrain type id) and by tag (fragments and features
+  only; phrases have no tags), a Delete POST form per row (antiforgery, kind and id in hidden fields). Every entity belongs to exactly one terrain
+  type, so there is no "Unassigned" tab and no "Not used by any generator" badge any more (owner decision 2026-11-27,
+  TERRAIN_GENERATORS.md section 18); the next card reworks these pages around areas and terrain types.
 - **Edit/create**: `kind` (`fragment`, `feature`, `phrase`) and `id` come from the query string only; no id means create. The form never
-  binds the kind or the stored id, so a form cannot redirect a write to another entity. Terrains are a checkbox multi-select of the known ids
-  (every terrain id already used in the library, including phrase neighbour terrains) plus a free-text box for a new id. With nothing ticked
-  or typed the page shows the same warning badge. Lists (tags, handles, adjectives) are comma or space separated.
+  binds the kind or the stored id, so a form cannot redirect a write to another entity. The terrain is ONE terrain-type dropdown fed from
+  `ListTerrainTypes` across all areas (a phrase's neighbour terrain is a free field that must be a terrain type id of the same area; core checks it).
+  Lists (tags, handles, adjectives) are comma or space separated.
 - Feature templates show the stored version and "saving a change ... raises the version from N to N+1" (core decides; weight, chance,
-  terrains and tags edits do not bump it).
+  terrain and tags edits do not bump it).
 - **Preview**: a phrase is previewed with `{dir}` filled in ("north"); a feature shows its room line (or short). This is a text preview of the
   entered values only. **No sample-room render for a chosen terrain**: the admin API has no such call (a dry-run generate of one cell would need a
   new rpc), so it is not built.

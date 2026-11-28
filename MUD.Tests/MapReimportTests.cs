@@ -204,7 +204,7 @@ rooms:
 
             var lib = SeedLibrary();
             lib.Version = 2;
-            foreach (var f in lib.FragmentList.Where(f => f.Terrains.Contains("grass") && f.Slot == "ground")) { f.Text = "Edited ground text."; }
+            foreach (var f in lib.FragmentList.Where(f => f.Terrain == "sample_land.grass" && f.Slot == "ground")) { f.Text = "Edited ground text."; }
             var result = importer.Import(GenerateSample(lib).Yaml, Replace);
             Assert.True(result.Success);
             Assert.NotEmpty(result.Replaced);

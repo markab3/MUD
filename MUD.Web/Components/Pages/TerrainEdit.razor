@@ -29,10 +29,6 @@ else
             @foreach (var m in p.Problems) { <li>@m</li> }
         </ul>
     }
-    @if (p.Unused)
-    {
-        <p role="note"><strong>[!] @TerrainLibrary.UnusedWarning.</strong> With no terrain ticked, no generator will ever pick this entry. It is not "any terrain".</p>
-    }
     @if (_draftOffer != null)
     {
         <div class="mud-draft" role="status">
@@ -54,18 +50,15 @@ else
                 <input id="te-id" value="@p.OriginalId" readonly="readonly" maxlength="100" />
             }
             <span class="mud-hint">(letters, digits, '-', '_' and '.'; fixed once created)</span></div>
-        <fieldset class="mud-fieldset mud-terrains">
-            <legend>Terrains (empty = not used by any generator)</legend>
-            <div class="mud-terrain-list">
+        <div class="mud-field"><label for="te-terrain">Terrain type</label>
+            <select id="te-terrain" value="@p.Terrain" @onchange="e => Edit(() => p.Terrain = e.Value?.ToString())" required>
+                <option value="" selected="@string.IsNullOrEmpty(p.Terrain)">(choose a terrain type)</option>
                 @foreach (var t in p.TerrainChoices)
                 {
-                    var terrain = t;
-                    <div class="mud-check"><label><input type="checkbox" checked="@p.Terrains.Contains(terrain)" @onchange="e => Edit(() => p.SetTerrain(terrain, (bool)(e.Value ?? false)))" /> @terrain</label></div>
+                    <option value="@t" selected="@(p.Terrain == t)">@t</option>
                 }
-            </div>
-            <div class="mud-field"><label for="te-extra">Other terrain ids (comma or space separated)</label>
-                <input id="te-extra" value="@p.ExtraTerrains" @oninput="e => Edit(() => p.ExtraTerrains = e.Value?.ToString())" maxlength="400" autocomplete="off" /></div>
-        </fieldset>
+            </select>
+            <span class="mud-hint">(every entry belongs to exactly one terrain type)</span></div>
         @if (p.Kind == TerrainLibrary.Fragment)
         {
             <div class="mud-field"><label for="te-slot">Slot</label>
@@ -152,8 +145,7 @@ else
     public sealed class TerrainDraft
     {
         public string? NewId { get; set; }
-        public List<string> Terrains { get; set; } = new();
-        public string? ExtraTerrains { get; set; }
+        public string? Terrain { get; set; }
         public string? Slot { get; set; }
         public string? Text { get; set; }
         public int Weight { get; set; }
@@ -213,7 +205,7 @@ else
 
     private TerrainDraft? Snapshot() => _presenter == null || _presenter.IsMissing ? null : new TerrainDraft
     {
-        NewId = _presenter.NewId, Terrains = _presenter.Terrains.OrderBy(t => t, StringComparer.Ordinal).ToList(), ExtraTerrains = _presenter.ExtraTerrains,
+        NewId = _presenter.NewId, Terrain = _presenter.Terrain,
         Slot = _presenter.Slot, Text = _presenter.Text, Weight = _presenter.Weight, Tags = _presenter.Tags, Short = _presenter.Short,
         Long = _presenter.Long, RoomLine = _presenter.RoomLine, Detail = _presenter.Detail, Handles = _presenter.Handles,
         Adjectives = _presenter.Adjectives, Chance = _presenter.Chance, NeighborTerrain = _presenter.NeighborTerrain, Merge = _presenter.Merge,
@@ -246,7 +238,7 @@ else
         var p = _presenter;
         if (d == null || p == null) { return; }
         if (p.IsNew) { p.NewId = d.NewId; }
-        p.Terrains = d.Terrains.ToList(); p.ExtraTerrains = d.ExtraTerrains;
+        p.Terrain = d.Terrain;
         p.Slot = d.Slot; p.Text = d.Text; p.Weight = d.Weight; p.Tags = d.Tags; p.Short = d.Short; p.Long = d.Long; p.RoomLine = d.RoomLine;
         p.Detail = d.Detail; p.Handles = d.Handles; p.Adjectives = d.Adjectives; p.Chance = d.Chance; p.NeighborTerrain = d.NeighborTerrain; p.Merge = d.Merge;
     }

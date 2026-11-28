@@ -4,6 +4,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using MUD.Core.Areas;
+using MUD.Data;
 using YamlDotNet.Core;
 using YamlDotNet.RepresentationModel;
 
@@ -12,6 +14,9 @@ namespace MUD.Core.Generation.Terrains
     public sealed class LibrarySeedData
     {
         public int LibraryVersion = 1;
+        // The area the content belongs to and its terrain types (ids already scoped: "<area>.<local>").
+        public AreaEntry Area;
+        public List<TerrainType> TerrainTypes = new List<TerrainType>();
         public List<DescriptionFragment> Fragments = new List<DescriptionFragment>();
         public List<FeatureTemplate> Features = new List<FeatureTemplate>();
         public List<NeighborPhrase> Phrases = new List<NeighborPhrase>();
@@ -23,14 +28,15 @@ namespace MUD.Core.Generation.Terrains
         public bool AlreadySeeded;
         public List<string> Errors = new List<string>();
         public List<string> Warnings = new List<string>();
-        public int Fragments, Features, Phrases;
+        public int TerrainTypes, Fragments, Features, Phrases;
+        public bool AreaCreated;
     }
 
     // Seed file (section 6.2): parse, validate, and load only on a fresh install.
     public static class LibrarySeed
     {
         public const string ResourceName = "terrain-library.yaml";
-        public const int SchemaVersion = 1;
+        public const int SchemaVersion = 2;
 
         // The seed file shipped inside MUD.Core (embedded resource, Q3 default), or null if the resource is missing.
         public static string ReadEmbedded()
@@ -45,8 +51,10 @@ namespace MUD.Core.Generation.Terrains
         }
 
         // Seeds only when the meta document does not exist (so admin edits survive restarts, and a library emptied on purpose is not refilled).
-        // On a validation failure nothing is written. A store exception propagates (the caller logs it and carries on without a library).
-        public static LibrarySeedResult SeedIfFresh(ILibraryStore store, string yaml)
+        // Creates the seed's area (never overwriting an existing record; skipped when there is no area store), its terrain types (never
+        // overwriting) and then the entries scoped to them. On a validation failure nothing is written. A store exception propagates
+        // (the caller logs it and carries on without a library).
+        public static LibrarySeedResult SeedIfFresh(ILibraryStore store, IAreaStore areas, string yaml)
         {
             var result = new LibrarySeedResult();
             if (store.GetVersion().HasValue) { result.AlreadySeeded = true; return result; }
@@ -55,6 +63,8 @@ namespace MUD.Core.Generation.Terrains
             LibrarySeedData data = Parse(yaml, result.Errors, result.Warnings);
             if (data == null || result.Errors.Count > 0) { return result; }
 
+            if (areas != null) { result.AreaCreated = areas.Insert(data.Area, "seed"); }
+            foreach (var t in data.TerrainTypes) { store.TerrainTypes.Insert(t, "seed"); }
             foreach (var f in data.Fragments) { store.Fragments.Insert(f, "seed"); }
             foreach (var f in data.Features) { store.Features.Insert(f, "seed"); }
             foreach (var p in data.Phrases) { store.Phrases.Insert(p, "seed"); }
@@ -62,6 +72,7 @@ namespace MUD.Core.Generation.Terrains
             // the duplicate-id inserts are refused (Insert returns false) so the load is idempotent.
             store.InitMeta(data.LibraryVersion);
             result.Seeded = true;
+            result.TerrainTypes = data.TerrainTypes.Count;
             result.Fragments = data.Fragments.Count;
             result.Features = data.Features.Count;
             result.Phrases = data.Phrases.Count;
@@ -86,7 +97,7 @@ namespace MUD.Core.Generation.Terrains
             if (root == null) { errors.Add("The seed file must be a mapping."); return null; }
 
             var data = new LibrarySeedData();
-            var known = new HashSet<string> { "schema_version", "library_version", "fragments", "features", "neighborPhrases" };
+            var known = new HashSet<string> { "schema_version", "library_version", "area", "terrainTypes", "fragments", "features", "neighborPhrases" };
             foreach (var pair in root.Children)
             {
                 string key = Scalar(pair.Key);
@@ -100,14 +111,46 @@ namespace MUD.Core.Generation.Terrains
                 if (!Int(root, "library_version", out lv) || lv < 1) { errors.Add("library_version must be an integer of 1 or more."); } else { data.LibraryVersion = lv; }
             }
 
-            var fragmentKeys = new[] { "id", "terrains", "slot", "text", "weight", "tags" };
-            var featureKeys = new[] { "id", "terrains", "short", "long", "handles", "adjectives", "roomLine", "detail", "weight", "chance", "version", "tags" };
-            var phraseKeys = new[] { "id", "terrains", "neighborTerrain", "text", "weight", "merge" };
+            // The area and its terrain types.
+            var areaNode = Get(root, "area") as YamlMappingNode;
+            string areaId = null;
+            if (areaNode == null) { errors.Add("'area' is required and must be a mapping."); }
+            else
+            {
+                areaId = Str(areaNode, "id");
+                string problem = RoomRules.CheckAreaPrefix(areaId);
+                if (problem != null) { errors.Add("area: " + problem); }
+                string name = RoomRules.NormalizeText(Str(areaNode, "name") ?? string.Empty);
+                string description = RoomRules.NormalizeText(Str(areaNode, "description") ?? string.Empty);
+                problem = AreaRules.CheckName(name);
+                if (problem != null) { errors.Add("area: " + problem); }
+                problem = AreaRules.CheckDescription(description);
+                if (problem != null) { errors.Add("area: " + problem); }
+                data.Area = new AreaEntry { Id = areaId, Name = name, Description = description };
+            }
+            var locals = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var n in Items(root, "terrainTypes", errors))
+            {
+                var m = Entry(n, "terrain type", new[] { "id", "name", "description" }, errors); if (m == null) { continue; }
+                string local = Str(m, "id");
+                if (local == null || !TerrainTypeRules.LocalPattern.IsMatch(local)) { errors.Add("terrain type '" + local + "': the id may only contain lowercase letters, digits and '_'."); continue; }
+                if (!locals.Add(local)) { errors.Add("Duplicate terrain type id '" + local + "'."); continue; }
+                string name = RoomRules.NormalizeText(Str(m, "name") ?? string.Empty);
+                string description = RoomRules.NormalizeText(Str(m, "description") ?? string.Empty);
+                string problem = AreaRules.CheckName(name) ?? AreaRules.CheckDescription(description);
+                if (problem != null) { errors.Add("terrain type '" + local + "': " + problem); }
+                data.TerrainTypes.Add(new TerrainType { Id = TerrainTypeRules.IdFor(areaId, local), Name = name, Description = description });
+            }
+            if (locals.Count == 0) { errors.Add("'terrainTypes' must list at least one terrain type."); }
+
+            var fragmentKeys = new[] { "id", "terrain", "slot", "text", "weight", "tags" };
+            var featureKeys = new[] { "id", "terrain", "short", "long", "handles", "adjectives", "roomLine", "detail", "weight", "chance", "version", "tags" };
+            var phraseKeys = new[] { "id", "terrain", "neighborTerrain", "text", "weight", "merge" };
 
             foreach (var n in Items(root, "fragments", errors))
             {
                 var m = Entry(n, "fragment", fragmentKeys, errors); if (m == null) { continue; }
-                var f = new DescriptionFragment { Id = Str(m, "id"), Terrains = List(m, "terrains"), Slot = Str(m, "slot"), Text = Str(m, "text"), Tags = List(m, "tags") };
+                var f = new DescriptionFragment { Id = Str(m, "id"), Terrain = Scope(m, "terrain", areaId, locals, "fragment", errors), Slot = Str(m, "slot"), Text = Str(m, "text"), Tags = List(m, "tags") };
                 Weight(m, errors, w => f.Weight = w);
                 Collect(errors, "fragment", f.Id, LibraryValidation.Validate(f));
                 data.Fragments.Add(f);
@@ -117,7 +160,7 @@ namespace MUD.Core.Generation.Terrains
                 var m = Entry(n, "feature", featureKeys, errors); if (m == null) { continue; }
                 var f = new FeatureTemplate
                 {
-                    Id = Str(m, "id"), Terrains = List(m, "terrains"), Short = Str(m, "short"), Long = Str(m, "long"), Handles = List(m, "handles"),
+                    Id = Str(m, "id"), Terrain = Scope(m, "terrain", areaId, locals, "feature", errors), Short = Str(m, "short"), Long = Str(m, "long"), Handles = List(m, "handles"),
                     Adjectives = List(m, "adjectives"), RoomLine = Str(m, "roomLine"), Detail = Str(m, "detail"), Tags = List(m, "tags"),
                 };
                 Weight(m, errors, w => f.Weight = w);
@@ -137,7 +180,11 @@ namespace MUD.Core.Generation.Terrains
             foreach (var n in Items(root, "neighborPhrases", errors))
             {
                 var m = Entry(n, "neighbour phrase", phraseKeys, errors); if (m == null) { continue; }
-                var p = new NeighborPhrase { Id = Str(m, "id"), Terrains = List(m, "terrains"), NeighborTerrain = Str(m, "neighborTerrain"), Text = Str(m, "text") };
+                var p = new NeighborPhrase
+                {
+                    Id = Str(m, "id"), Terrain = Scope(m, "terrain", areaId, locals, "neighbour phrase", errors),
+                    NeighborTerrain = Scope(m, "neighborTerrain", areaId, locals, "neighbour phrase", errors), Text = Str(m, "text"),
+                };
                 Weight(m, errors, w => p.Weight = w);
                 if (Has(m, "merge"))
                 {
@@ -152,6 +199,21 @@ namespace MUD.Core.Generation.Terrains
             Unique(errors, "feature", data.Features.Select(f => f.Id));
             Unique(errors, "neighbour phrase", data.Phrases.Select(f => f.Id));
             return data;
+        }
+
+        // The entry's local terrain name -> the scoped terrain type id. A name that is not a declared terrain type of the seed is an error.
+        private static string Scope(YamlMappingNode m, string key, string areaId, HashSet<string> locals, string what, List<string> errors)
+        {
+            string local = Str(m, key);
+            if (string.IsNullOrWhiteSpace(local)) { return null; }
+            if (!locals.Contains(local)) { errors.Add(what + " '" + Str(m, "id") + "': " + key + " '" + local + "' is not one of the seed's terrain types."); return null; }
+            return TerrainTypeRules.IdFor(areaId, local);
+        }
+
+        private static YamlNode Get(YamlMappingNode m, string key)
+        {
+            YamlNode n;
+            return m.Children.TryGetValue(new YamlScalarNode(key), out n) ? n : null;
         }
 
         private static void Unique(List<string> errors, string what, IEnumerable<string> ids)

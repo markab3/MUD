@@ -50,22 +50,29 @@ service Admin {
   // Terrain library (specs/TERRAIN_GENERATORS.md section 6). Creator or admin. Reads answer from the stored documents; writes are
   // audited first (entity terrain_fragment, terrain_feature or terrain_neighbor_phrase), then written, then the library version is
   // incremented. Create answers ALREADY_EXISTS for a taken id; update and delete answer NOT_FOUND for an unknown id. REFUSED means the
-  // library is not available (no store). An empty `terrains` list means the entity is used by no generator (it is not "any terrain").
-  rpc ListFragments(TokenRequest) returns (ListFragmentsReply);
+  // library is not available (no store). Every entity is scoped to EXACTLY ONE terrain type (`terrain`, required; there is no unscoped entity).
+  rpc ListFragments(ListLibraryRequest) returns (ListFragmentsReply);
   rpc GetFragment(LibraryIdRequest) returns (GetFragmentReply);
   rpc CreateFragment(SaveFragmentRequest) returns (LibraryEditReply);
   rpc UpdateFragment(SaveFragmentRequest) returns (LibraryEditReply);
   rpc DeleteFragment(LibraryIdRequest) returns (LibraryEditReply);
-  rpc ListFeatureTemplates(TokenRequest) returns (ListFeatureTemplatesReply);
+  rpc ListFeatureTemplates(ListLibraryRequest) returns (ListFeatureTemplatesReply);
   rpc GetFeatureTemplate(LibraryIdRequest) returns (GetFeatureTemplateReply);
   rpc CreateFeatureTemplate(SaveFeatureTemplateRequest) returns (LibraryEditReply);
   rpc UpdateFeatureTemplate(SaveFeatureTemplateRequest) returns (LibraryEditReply);
   rpc DeleteFeatureTemplate(LibraryIdRequest) returns (LibraryEditReply);
-  rpc ListNeighborPhrases(TokenRequest) returns (ListNeighborPhrasesReply);
+  rpc ListNeighborPhrases(ListLibraryRequest) returns (ListNeighborPhrasesReply);
   rpc GetNeighborPhrase(LibraryIdRequest) returns (GetNeighborPhraseReply);
   rpc CreateNeighborPhrase(SaveNeighborPhraseRequest) returns (LibraryEditReply);
   rpc UpdateNeighborPhrase(SaveNeighborPhraseRequest) returns (LibraryEditReply);
   rpc DeleteNeighborPhrase(LibraryIdRequest) returns (LibraryEditReply);
+
+  // Terrain types (creator or admin; specs/ADMIN_API.md "Terrain types"): owned by an area; own the fragments, feature templates and phrases.
+  rpc ListTerrainTypes(ListTerrainTypesRequest) returns (ListTerrainTypesReply);
+  rpc GetTerrainType(TerrainTypeIdRequest) returns (GetTerrainTypeReply);
+  rpc CreateTerrainType(SaveTerrainTypeRequest) returns (TerrainTypeEditReply);
+  rpc UpdateTerrainType(SaveTerrainTypeRequest) returns (TerrainTypeEditReply);
+  rpc DeleteTerrainType(TerrainTypeIdRequest) returns (TerrainTypeEditReply);
 
   // Areas (creator or admin; specs/ADMIN_API.md "Areas").
   rpc ListAreas(TokenRequest) returns (ListAreasReply);
@@ -440,19 +447,27 @@ message ModuleActionReply {
 // ---------------------------------------------------------------------------------------------------------------------
 // Terrain library (specs/TERRAIN_GENERATORS.md section 6.1)
 
+// Every entity is scoped to EXACTLY ONE terrain type (owner decision 2026-11-27). The old `repeated string terrains = 2` (an empty list
+// meant "used by no generator", several entries meant "shared") is retired: field 2 and the name `terrains` are reserved, never reused.
+// `terrain` is a terrain type id ("<area>.<local>") that must exist. `area` is read-only: core fills it (= the area of `terrain`) on every read
+// and reply and ignores it on input.
 message FragmentRecord {
+  reserved 2;
+  reserved "terrains";
   string id = 1;
-  // Terrain ids that use the entity. EMPTY = used by no generator (disabled/unassigned), never "any terrain".
-  repeated string terrains = 2;
   string slot = 3;
   string text = 4;
+  // Weight 0 = never picked.
   int32 weight = 5;
   repeated string tags = 6;
+  string terrain = 7;
+  string area = 8;
 }
 
 message FeatureTemplateRecord {
+  reserved 2;
+  reserved "terrains";
   string id = 1;
-  repeated string terrains = 2;
   string short = 3;
   string long = 4;
   repeated string handles = 5;
@@ -462,20 +477,34 @@ message FeatureTemplateRecord {
   int32 weight = 9;
   double chance = 10;
   // Server-owned: the client-sent value is ignored. Create sets 1; update sets stored + 1 when any of short, long, handles,
-  // adjectives, room_line or detail changed (weight, chance, terrains and tags edits do not bump it).
+  // adjectives, room_line or detail changed (weight, chance, terrain and tags edits do not bump it).
   int32 version = 11;
   repeated string tags = 12;
+  string terrain = 13;
+  string area = 14;
 }
 
 message NeighborPhraseRecord {
+  reserved 2;
+  reserved "terrains";
   string id = 1;
-  // The ROOM terrains the phrase may appear in. EMPTY = unused.
-  repeated string terrains = 2;
+  // The terrain type id of the neighbouring cell. Must exist and be in the SAME area as `terrain`.
   string neighbor_terrain = 3;
   // Contains {dir} exactly once.
   string text = 4;
   int32 weight = 5;
   bool merge = 6;
+  // The ROOM terrain (terrain type id) the phrase appears in.
+  string terrain = 7;
+  string area = 8;
+}
+
+// The list rpcs of the three entity kinds. Wire compatible with the former TokenRequest (token = 1). Both filters are optional (empty = all):
+// `terrain` = one terrain type id, `area` = every terrain type of that area.
+message ListLibraryRequest {
+  string token = 1;
+  string terrain = 2;
+  string area = 3;
 }
 
 message LibraryIdRequest {
@@ -545,6 +574,36 @@ message AreaEditReply {
   // A fixed sentence. Never contains stored values (a count is the only number it may carry).
   string message = 3;
   AreaRecord area = 4;
+}
+
+// ---- Terrain types (specs/ADMIN_API.md "Terrain types") ----
+
+// id is "<area>.<local>" and never changes (the area is the part before the last '.'; local matches ^[a-z0-9_]+$ and equals the map legend
+// template name). area is read-only: core fills it from the id and ignores it on input. name is required, description optional (up to 200).
+message TerrainTypeRecord {
+  string id = 1;
+  string area = 2;
+  string name = 3;
+  string description = 4;
+}
+
+message TerrainTypeIdRequest { string token = 1; string id = 2; }
+message SaveTerrainTypeRequest { string token = 1; TerrainTypeRecord terrain_type = 2; }
+// area is an optional filter (empty = all areas).
+message ListTerrainTypesRequest { string token = 1; string area = 2; }
+message ListTerrainTypesReply { repeated TerrainTypeRecord terrain_types = 1; }
+message GetTerrainTypeReply { bool found = 1; TerrainTypeRecord terrain_type = 2; }
+
+// result: OK; NO_CHANGE (update with nothing changed); INVALID (errors lists the fields: Id, Name, Description; create: an unknown area is an
+// error on Id); NOT_FOUND (update/delete: unknown id); ALREADY_EXISTS (create: the id is taken); REFUSED (delete: fragments, feature templates
+// or phrases are still scoped to it, or phrases name it as neighbour terrain; the message names the counts; or no library is available);
+// AUDIT_FAILED; FAILED (the database write failed). terrain_type is the record as stored after a create or update.
+message TerrainTypeEditReply {
+  AdminResult result = 1;
+  repeated FieldError errors = 2;
+  // A fixed sentence. Never contains stored values (counts are the only numbers it may carry).
+  string message = 3;
+  TerrainTypeRecord terrain_type = 4;
 }
 
 // ---- Item templates (specs/ITEM_TEMPLATES.md) ----
