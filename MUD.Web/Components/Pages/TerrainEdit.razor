@@ -90,13 +90,11 @@ else
             <p>Version: @p.Version. @p.VersionHint</p>
             <div class="mud-field"><label for="te-short">Short</label>
                 <input id="te-short" value="@p.Short" @onchange="e => Edit(() => p.Short = e.Value?.ToString())" maxlength="100" required /></div>
-            <div class="mud-field"><label for="te-long">Long</label>
-                <textarea id="te-long" value="@p.Long" @onchange="e => Edit(() => p.Long = e.Value?.ToString())" maxlength="2000" rows="4" required></textarea></div>
+            <div class="mud-field"><label for="te-long">Look text (shown when a player looks at it)</label>
+                <textarea id="te-long" value="@p.Long" @onchange="e => Edit(() => p.Long = e.Value?.ToString())" maxlength="2000" rows="4" required aria-describedby="te-long-hint"></textarea>
+                <span class="mud-hint" id="te-long-hint">The one text players see for "look" at this feature. The room line is the separate sentence added to the room description.</span></div>
             <div class="mud-field"><label for="te-roomline">Room line</label>
                 <input id="te-roomline" value="@p.RoomLine" @onchange="e => Edit(() => p.RoomLine = e.Value?.ToString())" maxlength="2000" />
-                <span class="mud-hint">(optional)</span></div>
-            <div class="mud-field"><label for="te-detail">Detail</label>
-                <textarea id="te-detail" value="@p.Detail" @onchange="e => Edit(() => p.Detail = e.Value?.ToString())" maxlength="2000" rows="3"></textarea>
                 <span class="mud-hint">(optional)</span></div>
             <div class="mud-field"><label for="te-handles">Handles</label>
                 <input id="te-handles" value="@p.Handles" @onchange="e => Edit(() => p.Handles = e.Value?.ToString())" />
@@ -179,7 +177,6 @@ else
         public string? Short { get; set; }
         public string? Long { get; set; }
         public string? RoomLine { get; set; }
-        public string? Detail { get; set; }
         public string? Handles { get; set; }
         public string? Adjectives { get; set; }
         public double Chance { get; set; }
@@ -233,7 +230,7 @@ else
     {
         NewId = _presenter.NewId, Area = _presenter.Area, Terrain = _presenter.Terrain,
         Slot = _presenter.Slot, Text = _presenter.Text, Weight = _presenter.Weight, Tags = _presenter.Tags, Short = _presenter.Short,
-        Long = _presenter.Long, RoomLine = _presenter.RoomLine, Detail = _presenter.Detail, Handles = _presenter.Handles,
+        Long = _presenter.Long, RoomLine = _presenter.RoomLine, Handles = _presenter.Handles,
         Adjectives = _presenter.Adjectives, Chance = _presenter.Chance, NeighborTerrain = _presenter.NeighborTerrain, Merge = _presenter.Merge,
     };
 
@@ -267,7 +264,7 @@ else
         if (!string.IsNullOrEmpty(d.Area)) { p.ChooseArea(d.Area); }
         p.Terrain = d.Terrain;
         p.Slot = d.Slot; p.Text = d.Text; p.Weight = d.Weight; p.Tags = d.Tags; p.Short = d.Short; p.Long = d.Long; p.RoomLine = d.RoomLine;
-        p.Detail = d.Detail; p.Handles = d.Handles; p.Adjectives = d.Adjectives; p.Chance = d.Chance; p.NeighborTerrain = d.NeighborTerrain; p.Merge = d.Merge;
+        p.Handles = d.Handles; p.Adjectives = d.Adjectives; p.Chance = d.Chance; p.NeighborTerrain = d.NeighborTerrain; p.Merge = d.Merge;
     }
 
     private async Task DiscardDraft()

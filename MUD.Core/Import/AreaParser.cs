@@ -20,6 +20,7 @@ namespace MUD.Core.Import
         public static readonly Regex PrefixPattern = MUD.Data.RoomRules.PrefixPattern;
 
         private readonly List<string> _errors = new List<string>();
+        private readonly List<string> _warnings = new List<string>();
 
         public static AreaParseResult Parse(string yaml)
         {
@@ -63,7 +64,7 @@ namespace MUD.Core.Import
                 if (room != null) { area.Rooms.Add(room); }
             }
 
-            return new AreaParseResult { Area = _errors.Count == 0 ? area : null, Errors = _errors };
+            return new AreaParseResult { Area = _errors.Count == 0 ? area : null, Errors = _errors, Warnings = _warnings };
         }
 
         private AreaParseResult Fail(string message)
@@ -200,12 +201,20 @@ namespace MUD.Core.Import
                 if (featureMap == null) { _errors.Add(ctx + ": each feature must be a mapping."); continue; }
                 CheckKeys(featureMap, new[] { "short", "long", "room_line", "detail", "handles", "adjectives", "plurals" }, ctx + ".features");
                 var fctx = ctx + ".features";
+                // `detail` is a deprecated alias of `long` (one look text per feature): a non-empty detail wins, and long is then optional.
+                var detail = NullIfEmpty(Text(featureMap, "detail", fctx, false));
+                var longText = Text(featureMap, "long", fctx, detail == null);
+                var shortText = Text(featureMap, "short", fctx, true);
+                if (detail != null)
+                {
+                    if (!string.IsNullOrEmpty(longText)) { _warnings.Add("feature " + shortText + ": detail merged into long; remove detail"); }
+                    longText = detail;
+                }
                 var feature = new FeatureDefinition
                 {
-                    Short = Text(featureMap, "short", fctx, true),
-                    Long = Text(featureMap, "long", fctx, true),
+                    Short = shortText,
+                    Long = longText,
                     RoomLine = NullIfEmpty(Text(featureMap, "room_line", fctx, false)),
-                    Detail = NullIfEmpty(Text(featureMap, "detail", fctx, false)),
                     Handles = StringList(featureMap, "handles", fctx),
                     Adjectives = StringList(featureMap, "adjectives", fctx),
                     Plurals = StringList(featureMap, "plurals", fctx)
@@ -532,5 +541,7 @@ namespace MUD.Core.Import
         public AreaDefinition Area { get; set; }
 
         public List<string> Errors { get; set; } = new List<string>();
+
+        public List<string> Warnings { get; set; } = new List<string>();
     }
 }

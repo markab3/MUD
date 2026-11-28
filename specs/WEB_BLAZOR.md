@@ -248,6 +248,10 @@ Three labelled sections, in this order; a section with no visible items is not r
 
 **Form** (login, password, create room, player edit, terrain edit, room sections): labels above inputs, single column on phone, two columns from 600px only for short fields (X/Y/Z, race/class/gender). Field errors under the field and a `FluentMessageBar` summary at the top, focused and `role="alert"` after a failed save. `inputmode="numeric"` for numbers. Password inputs carry `autocomplete` hints and no value.
 
+**Look text.** A feature has one look text: the `Long` textarea of a room feature row and of a feature template is labelled "Look text (shown when
+a player looks at it)" with a helper line; there is no Detail field. `RoomEditDraft`, `TerrainDraft` and `FeatureInput` no longer carry `Detail`; a draft
+saved in the browser before the merge is read with System.Text.Json, which ignores the unknown `Detail` property (covered by a test).
+
 **Repeating rows** (exits, features): each row is a card with labelled fields; Move up / Move down / Remove are 44px buttons in the card footer; Add buttons after the list; "3 of 32 exits" counters; the "separated by commas or spaces" help text stays.
 
 **List / table** (players, modules, terrain library, unplaced rooms, map mismatches): `FluentDataGrid` from 600px; below that `ResponsiveList<T>` renders one card per row (title, label/value pairs, actions in a footer) from the same view model. Sort and filter collapse into one filter row; paging is Previous / Next with "Page N" (50 per page, unchanged). Terrain tabs become a `FluentSelect` plus count on phone. Status keeps words with the `[+]`/`[-]`/`[!]` prefixes (never colour alone).

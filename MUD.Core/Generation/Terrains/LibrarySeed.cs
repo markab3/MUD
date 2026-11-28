@@ -161,7 +161,7 @@ namespace MUD.Core.Generation.Terrains
                 var f = new FeatureTemplate
                 {
                     Id = Str(m, "id"), Terrain = Scope(m, "terrain", areaId, locals, "feature", errors), Short = Str(m, "short"), Long = Str(m, "long"), Handles = List(m, "handles"),
-                    Adjectives = List(m, "adjectives"), RoomLine = Str(m, "roomLine"), Detail = Str(m, "detail"), Tags = List(m, "tags"),
+                    Adjectives = List(m, "adjectives"), RoomLine = Str(m, "roomLine"), Tags = List(m, "tags"),
                 };
                 Weight(m, errors, w => f.Weight = w);
                 if (Has(m, "chance"))

@@ -25,9 +25,8 @@ rooms:
         reverse: down
     features:
       - short: "a heavy oak table"
-        long: "A heavy oak table, scarred by years of use. Something might be hidden on it."
+        long: "The table is scarred by years of use. Something might be hidden on it."
         room_line: "A heavy oak table stands against the far wall."
-        detail: "The table is scarred by years of use. Something might be hidden on it."
         handles: [table]
         adjectives: [heavy, oak]
         plurals: [tables]

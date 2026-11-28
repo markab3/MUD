@@ -392,7 +392,6 @@ public sealed class RoomEditPresenter
             Short = (f.Short ?? string.Empty).Trim(),
             Long = (f.Long ?? string.Empty).Trim(),
             RoomLine = (f.RoomLine ?? string.Empty).Trim(),
-            Detail = (f.Detail ?? string.Empty).Trim(),
         };
         feature.Handles.AddRange(SplitWords(f.Handles));
         feature.Adjectives.AddRange(SplitWords(f.Adjectives));
@@ -461,7 +460,7 @@ public sealed class RoomEditPresenter
         Exits = room.Exits.Select(e => new ExitInput { Dir = e.Name, To = e.To }).ToList();
         Features = room.Features.Select(f => new FeatureInput
         {
-            Short = f.Short, Long = f.Long, RoomLine = f.RoomLine, Detail = f.Detail,
+            Short = f.Short, Long = f.Long, RoomLine = f.RoomLine,
             Handles = string.Join(", ", f.Handles), Adjectives = string.Join(", ", f.Adjectives), Plurals = string.Join(", ", f.Plurals),
         }).ToList();
     }
@@ -533,7 +532,6 @@ public class FeatureInput
     public string? Short { get; set; }
     public string? Long { get; set; }
     public string? RoomLine { get; set; }
-    public string? Detail { get; set; }
     public string? Handles { get; set; }
     public string? Adjectives { get; set; }
     public string? Plurals { get; set; }

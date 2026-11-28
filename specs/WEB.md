@@ -94,8 +94,9 @@ Implements `specs/WEB_EDITING.md` for rooms. Policy `CreatorOrAdmin`; reached by
   `MoveRoom` call. Core inserts the room under the new key, deletes the old one, repoints exits in other rooms and players'
   stored locations, keeps occupants inside, and audits a `Key` change. Refused for the default room and for a key that
   already exists.
-- Features: a Features fieldset below Exits (card "Website: features editor"). Per feature: short, long (textarea), room line, detail
-  (textarea), handles, adjectives, plurals (each one text field, words separated by commas or spaces, stated on the page), and Move up,
+- Features: a Features fieldset below Exits (card "Website: features editor"). Per feature: short, look text (the `long` field,
+  textarea, labelled "Look text (shown when a player looks at it)" with a helper line saying the room line is the separate sentence added to
+  the room description; there is no Detail field any more, and an old saved draft that still has one is ignored), room line, handles, adjectives, plurals (each one text field, words separated by commas or spaces, stated on the page), and Move up,
   Move down and Remove buttons; Add feature adds an empty row. These are form round trips (handlers `AddFeature`, `RemoveFeature`,
   `MoveFeatureUp`, `MoveFeatureDown`, no write, no JavaScript); at most 64 rows. The same Save sends the whole list in the same `UpdateRoom`
   call with `features_present` true (an empty list removes all Features). Core's field errors (`Features[i].*`, duplicate short) are shown
@@ -411,7 +412,8 @@ Built (`Components/Pages/TerrainList.razor`, `TerrainEdit.razor`, `TerrainListPr
   is shown as "(missing: <id>)"; saving is refused (nothing is sent) until a valid one is chosen. There is no multi-select, no empty-list warning and no "empty = unused" text.
   Lists (tags, handles, adjectives) are comma or space separated.
 - Feature templates show the stored version and "saving a change ... raises the version from N to N+1" (core decides; weight, chance,
-  terrain and tags edits do not bump it).
+  terrain and tags edits do not bump it). The template form has one look-text field, `Long` (`#te-long`, labelled "Look text (shown when a player
+  looks at it)"); the former Detail field is gone.
 - **Preview**: a phrase is previewed with `{dir}` filled in ("north"); a feature shows its room line (or short). This is a text preview of the
   entered values only. **No sample-room render for a chosen terrain**: the admin API has no such call (a dry-run generate of one cell would need a
   new rpc), so it is not built.

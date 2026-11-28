@@ -65,6 +65,10 @@ CORE_API 7.2, not needed by any page). Each is a later addition if a page turns 
 
 ## Room features
 
+`detail` is retired (one look text per feature, `long`). `RoomFeature.detail` (field 4) and `FeatureTemplateRecord.detail` (field 8) are
+`reserved` by number and by name in `admin.proto`, never reused (the additive rule). A client that still sends them is ignored by the wire
+format, so nothing breaks; core compares and audits on `long` only. See ROOM_FILES.md 4.4 for the stored-data migration.
+
 Owner decision (supersedes `specs/WEB_EDITING.md` Q3): a creator can add, edit, remove and reorder a room's Features. Rules are
 `specs/ROOM_FILES.md` section 4.4 and are enforced by `MUD.Data/RoomRules.cs` (`CheckFeature*`, `DuplicateFeatureShorts`) through
 `AdminFeatureValidator`, the importer's rules.
@@ -76,17 +80,17 @@ Owner decision (supersedes `specs/WEB_EDITING.md` Q3): a creator can add, edit, 
   with an empty list removes all Features. The web always sets it true.
 - Identity is `short`, case-insensitive. Order of the list is the stored order, so reordering is sending the list in the new order. `CreateRoom`
   ignores the fields (a new room has no Features).
-- Validation (field names in `FieldError`: `Features[i].Short|Long|RoomLine|Detail|Handles|Adjectives|Plurals`, `Features`): text is normalised per
-  ROOM_FILES.md section 11 (trailing whitespace trimmed, LF); short required, one line, 100 characters; long required, 4000; room_line and detail
+- Validation (field names in `FieldError`: `Features[i].Short|Long|RoomLine|Handles|Adjectives|Plurals`, `Features`): text is normalised per
+  ROOM_FILES.md section 11 (trailing whitespace trimmed, LF); short required, one line, 100 characters; long required, 4000 (it is the one look text a player sees); room_line
   optional, 4000, empty stored as null; two Features with the same short (any case) are refused. The importer has no handle requirement and no
   pattern for handles, adjectives and plurals, so neither does the web: a Feature may have no handles, and each word only has to be non-empty, at most
   64 characters and free of control characters. Guards the importer lacks: at most 64 Features per room and 32 words per list.
-- Audit: one `Features` row per edit (entity `room`), old and new value both the whole list as an array of `{Short, Long, RoomLine, Detail,
+- Audit: one `Features` row per edit (entity `room`), old and new value both the whole list as an array of `{Short, Long, RoomLine,
   Handles, Adjectives, Plurals}`. Audit first, then persist, then the live room, as for other room fields. An identical list is `NO_CHANGE`.
 - Revision check: there is none (D30, last write wins), so features follow the same rule and there is no Rev conflict result. The audit row
   holds the previous list.
 - Behavior and component config: a Feature can carry `components` (for example a module's storm Feature) that the web cannot represent. A requested
-  Feature that matches a stored one by short keeps that Feature object and stored document: only short, long, room_line, detail, handles,
+  Feature that matches a stored one by short keeps that Feature object and stored document: only short, long, room_line, handles,
   adjectives and plurals are overwritten, so its id, components and any other field survive. A Feature absent from the list is removed with
   everything on it; a new short creates a new Feature with id `<room key>#<short lowercased>`, as the importer does. The audit shows only the
   web-representable fields.
@@ -166,7 +170,7 @@ rpcs `List<X>s`, `Get<X>`, `Create<X>`, `Update<X>`, `Delete<X>` (15 rpcs). `Res
   | `FAILED` | the database write failed after the audit; the audit rows are marked rejected |
 
 - **Field rules** (`LibraryValidation`): `id` required, letters/digits/`-`/`_`/`.`, at most 100; `weight >= 0`; `text` required (neighbour phrase: `{dir}` exactly once, `neighbor_terrain` required); fragment `slot` required; feature `short` and `long` required, `chance` in [0,1]; `terrain` required and shaped like a terrain type id (`<area>.<local>`), and `neighbor_terrain` likewise; every handle/adjective/tag entry a non-empty string.
-- **Feature template version.** Server-owned; the client value is ignored. Create sets 1. Update sets `stored + 1` when any of `short`, `long`, `room_line`, `detail`, `handles` or `adjectives` changed; edits to `weight`, `chance`, `terrain` and `tags` leave it. (This is the number `templateVersion` of generated features is compared with.)
+- **Feature template version.** Server-owned; the client value is ignored. Create sets 1. Update sets `stored + 1` when any of `short`, `long`, `room_line`, `handles` or `adjectives` changed; edits to `weight`, `chance`, `terrain` and `tags` leave it. (This is the number `templateVersion` of generated features is compared with.)
 - **Library version.** `terrain_meta.library.version` is incremented (`$inc`) once per successful create/update/delete. After a write the cached snapshot (`StoreLibrary`) is refreshed so the next generator run sees the edit.
 - **Audit first.** One audit row per changed field for an update (`entity` `terrain_fragment`, `terrain_feature` or `terrain_neighbor_phrase`; `entity_id` the id; field = the document field name such as `text` or `terrain`; old and new values). Create writes one row, field `*create*`, new = the whole document; delete one row, field `*delete*`, old = the whole document. Rows are inserted before the write and marked applied (or rejected) after. No row, no write.
 - **Collections** (Mongo, written by core only): `terrain_fragments`, `terrain_features`, `terrain_neighbor_phrases` (`_id` = entity id, plus `updatedAt`, `updatedBy`; index on `terrain`; a migrated document also keeps its retired `terrains` array, ignored) and `terrain_meta` (`_id: "library"`, `version`, `seededAt`).

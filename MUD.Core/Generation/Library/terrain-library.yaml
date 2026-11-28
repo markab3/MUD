@@ -93,22 +93,20 @@ features:
   - id: boulder-grey
     terrain: grass
     short: "a grey boulder"
-    long: "A lichen-spotted boulder sits half buried in the earth."
+    long: "The boulder is cold and rough, and dotted with pale lichen."
     handles: [boulder, rock]
     adjectives: [grey, lichen-spotted]
     roomLine: "A grey boulder squats nearby."
-    detail: "The boulder is cold and rough, and dotted with pale lichen."
     weight: 2
     chance: 0.15
     version: 1
   - id: boulder-grey-forest
     terrain: forest
     short: "a grey boulder"
-    long: "A lichen-spotted boulder sits half buried in the earth."
+    long: "The boulder is cold and rough, and dotted with pale lichen."
     handles: [boulder, rock]
     adjectives: [grey, lichen-spotted]
     roomLine: "A grey boulder squats nearby."
-    detail: "The boulder is cold and rough, and dotted with pale lichen."
     weight: 2
     chance: 0.15
     version: 1

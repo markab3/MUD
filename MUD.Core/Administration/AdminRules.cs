@@ -132,13 +132,11 @@ namespace MUD.Core.Administration
                 {
                     Short = RoomRules.NormalizeText(raw.Short ?? string.Empty),
                     Long = RoomRules.NormalizeText(raw.Long ?? string.Empty),
-                    RoomLine = RoomRules.NormalizeText(raw.RoomLine ?? string.Empty),
-                    Detail = RoomRules.NormalizeText(raw.Detail ?? string.Empty)
+                    RoomLine = RoomRules.NormalizeText(raw.RoomLine ?? string.Empty)
                 };
                 Report(result, prefix + "Short", RoomRules.CheckFeatureShort(feature.Short));
                 Report(result, prefix + "Long", RoomRules.CheckFeatureLong(feature.Long));
                 Report(result, prefix + "RoomLine", RoomRules.CheckFeatureOptionalText("Room line", feature.RoomLine));
-                Report(result, prefix + "Detail", RoomRules.CheckFeatureOptionalText("Detail", feature.Detail));
                 Words(result, prefix + "Handles", "Handle", raw.Handles, feature.Handles);
                 Words(result, prefix + "Adjectives", "Adjective", raw.Adjectives, feature.Adjectives);
                 Words(result, prefix + "Plurals", "Plural", raw.Plurals, feature.Plurals);

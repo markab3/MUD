@@ -21,7 +21,7 @@ namespace MUD.Core.Modules
     ///   component.set     target: one entity. payload: component ("&lt;module&gt;.&lt;name&gt;", the emitting module's own prefix, D50), data (map).
     ///   component.remove  target: one entity. payload: component.
     ///   message.send      targets: livings or rooms. payload: text (markup, D28), channel (say, tell, room, combat, system, chat; default system, D44).
-    ///   feature.add       target: a room. payload: short, long, roomLine, detail (text), handles (list of text). D72.
+    ///   feature.add       target: a room. payload: short, long (the one look text), roomLine, handles (list of text). D72.
     ///   feature.remove    target: a room. payload: short (the Feature is identified by its short text, any module may remove any Feature). D72.
     ///   behavior.add      target: a room, item, player or NPC. payload: hook, module, type, priority, config, schemaVersion. No capability beyond emit:behavior.add (D55).
     ///   behavior.remove   target: as above. payload: hook, module, type.
@@ -138,7 +138,6 @@ namespace MUD.Core.Modules
                 ShortDescription = shortText,
                 LongDescription = Text(request.Payload, "long"),
                 RoomLine = Text(request.Payload, "roomLine"),
-                DetailDescription = Text(request.Payload, "detail"),
                 Handles = TextList(request.Payload, "handles")
             };
             room.Features.Add(feature);

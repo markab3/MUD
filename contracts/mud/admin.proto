@@ -201,12 +201,15 @@ message RoomExit {
 }
 
 // A room Feature as the web can represent it (specs/ROOM_FILES.md 4.4). Identity within a room is `short`, case-insensitive.
-// room_line and detail are optional: empty means unset. Behavior or component data a Feature carries is not part of this message.
+// `long` is the one look text (what a player sees when looking at the feature); room_line is optional: empty means unset.
+// The retired `detail` field (4) is reserved, never reused: a client that still sends it is ignored. Behavior or component data a
+// Feature carries is not part of this message.
 message RoomFeature {
+  reserved 4;
+  reserved "detail";
   string short = 1;
   string long = 2;
   string room_line = 3;
-  string detail = 4;
   repeated string handles = 5;
   repeated string adjectives = 6;
   repeated string plurals = 7;
@@ -470,19 +473,18 @@ message FragmentRecord {
 }
 
 message FeatureTemplateRecord {
-  reserved 2;
-  reserved "terrains";
+  reserved 2, 8;
+  reserved "terrains", "detail";
   string id = 1;
   string short = 3;
   string long = 4;
   repeated string handles = 5;
   repeated string adjectives = 6;
   string room_line = 7;
-  string detail = 8;
   int32 weight = 9;
   double chance = 10;
   // Server-owned: the client-sent value is ignored. Create sets 1; update sets stored + 1 when any of short, long, handles,
-  // adjectives, room_line or detail changed (weight, chance, terrain and tags edits do not bump it).
+  // adjectives or room_line changed (weight, chance, terrain and tags edits do not bump it).
   int32 version = 11;
   repeated string tags = 12;
   string terrain = 13;

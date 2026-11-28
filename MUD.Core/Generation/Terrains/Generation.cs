@@ -53,7 +53,6 @@ namespace MUD.Core.Generation.Terrains
         public string Short;
         public string Long;
         public string RoomLine;
-        public string Detail;
         public List<string> Handles = new List<string>();
         public List<string> Adjectives = new List<string>();
         public string TemplateId;

@@ -18,7 +18,7 @@ namespace MUD.Tests
                 Handles = new List<string> { "rock" },
                 Plurals = new List<string> { "rocks" },
                 RoomLine = roomLine,
-                DetailDescription = "Grey, jagged rocks."
+                LongDescription = "Grey, jagged rocks."
             };
         }
 
@@ -30,7 +30,7 @@ namespace MUD.Tests
                 Handles = new List<string> { "table" },
                 Plurals = new List<string> { "tables" },
                 RoomLine = "An oak table stands here.",
-                DetailDescription = "A scarred oak table."
+                LongDescription = "A scarred oak table."
             };
         }
 
@@ -86,17 +86,19 @@ namespace MUD.Tests
         }
 
         [Fact]
-        public void FeatureExamineReturnsDetailDescriptionIndependentOfRoomLine()
+        public void FeatureExamineReturnsLongDescriptionIndependentOfRoomLine()
         {
             var rocks = Rocks();
             Assert.Equal("Grey, jagged rocks.", rocks.Examine());
         }
 
         [Fact]
-        public void ExamineFallsBackToLongDescriptionWhenNoDetail()
+        public void ExamineReturnsTheOneLookText()
         {
             var f = new Feature { LongDescription = "from long" };
             Assert.Equal("from long", f.Examine());
+            Assert.Equal("from long", f.Examine(null));
+            Assert.Equal("from long", f.GetLongDescription(null));
         }
 
         private static string Look(Player player, string noun)
@@ -141,7 +143,7 @@ namespace MUD.Tests
             Assert.Equal("There is no rock to look at.", Look(player, "rock"));
         }
 
-        // Shows a different line/detail to a given examiner, and hides entirely from another.
+        // Shows a different line/look text to a given examiner, and hides entirely from another.
         public class ExaminerAwareFeature : Feature
         {
             public Living Hidden;
@@ -152,10 +154,10 @@ namespace MUD.Tests
                 return examiner == null ? RoomLine : RoomLine + " (seen by " + examiner.ShortDescription + ")";
             }
 
-            public override string GetDetailDescription(Living examiner)
+            public override string GetLongDescription(Living examiner)
             {
                 if (examiner != null && examiner == Hidden) { return null; }
-                return examiner == null ? DetailDescription : DetailDescription + " Examined by " + examiner.ShortDescription + ".";
+                return examiner == null ? LongDescription : LongDescription + " Examined by " + examiner.ShortDescription + ".";
             }
         }
 
@@ -169,9 +171,8 @@ namespace MUD.Tests
                 ShortDescription = "a glyph",
                 Handles = new List<string> { "glyph" },
                 Plurals = new List<string>(),
-                LongDescription = "A faint glyph.",
+                LongDescription = "An intricate glyph.",
                 RoomLine = "A glyph glows on the floor.",
-                DetailDescription = "An intricate glyph.",
                 Hidden = blind
             };
             var room = NewRoom(new FakeRoomRepo(), feature);
@@ -183,8 +184,8 @@ namespace MUD.Tests
             Assert.DoesNotContain("glyph", room.Examine(blind));
 
             Assert.Equal("An intricate glyph. Examined by Seer.", Look(seer, "glyph"));
-            // Hidden detail falls back to LongDescription.
-            Assert.Equal("A faint glyph.", Look(blind, "glyph"));
+            // The hook decides: a hidden examiner gets no look text (there is no second text to fall back to).
+            Assert.True(string.IsNullOrEmpty(feature.Examine(blind)));
             // Examiner-less Examine() still works.
             Assert.Equal("An intricate glyph.", feature.Examine());
         }
@@ -194,7 +195,7 @@ namespace MUD.Tests
         {
             var rocks = Rocks();
             Assert.Equal("Loose rocks litter the ground.", rocks.GetRoomLine(null));
-            Assert.Equal("Grey, jagged rocks.", rocks.GetDetailDescription(null));
+            Assert.Equal("Grey, jagged rocks.", rocks.GetLongDescription(null));
         }
 
         [Fact]
@@ -209,11 +210,11 @@ namespace MUD.Tests
                 Assert.False(string.IsNullOrWhiteSpace(f.GetRoomLine(null)));
                 Assert.EndsWith(".", f.RoomLine);
                 Assert.Contains(f.RoomLine, firstLine);
-                Assert.False(string.IsNullOrWhiteSpace(f.DetailDescription));
+                Assert.False(string.IsNullOrWhiteSpace(f.LongDescription));
                 Assert.NotEmpty(f.Handles);
             }
             var player = new CapturePlayer(new FakePlayerRepo()) { CurrentLocation = room };
-            Assert.Equal(room.Features[0].DetailDescription, Look(player, room.Features[0].Handles[0]));
+            Assert.Equal(room.Features[0].LongDescription, Look(player, room.Features[0].Handles[0]));
         }
 
         [Fact]
@@ -233,7 +234,7 @@ namespace MUD.Tests
             var reloaded = BsonSerializer.Deserialize<Room>(repo.Docs["t.hall"]);
             var feature = Assert.Single(reloaded.Features);
             Assert.Equal("An oak table stands here.", feature.RoomLine);
-            Assert.Equal("A scarred oak table.", feature.DetailDescription);
+            Assert.Equal("A scarred oak table.", feature.LongDescription);
             Assert.True(feature.IsMatchForString("table"));
         }
     }

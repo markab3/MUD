@@ -384,7 +384,6 @@ namespace MUD.Core.Generation
                     fm.Add("short", Str(f.Short));
                     fm.Add("long", Str(f.Long ?? f.Short));
                     if (!string.IsNullOrWhiteSpace(f.RoomLine)) { fm.Add("room_line", Str(f.RoomLine)); }
-                    if (!string.IsNullOrWhiteSpace(f.Detail)) { fm.Add("detail", Str(f.Detail)); }
                     AddList(fm, "handles", f.Handles);
                     AddList(fm, "adjectives", f.Adjectives);
                     var fg = new YamlMappingNode { Style = MappingStyle.Flow };
