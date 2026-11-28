@@ -63,17 +63,20 @@ public sealed class AreaListPresenter
     }
 
     // What each area contains today (the hub): terrain types (ListTerrainTypes) and item templates (ListItemTemplates) per area prefix; rooms come
-    // from the area record itself (RoomCount). NPC templates do not exist yet, so none are shown. A count that could not be loaded is null.
+    // from the area record itself (RoomCount); NPC templates likewise (ListNpcTemplates). A count that could not be loaded is null.
     public IReadOnlyDictionary<string, int>? TerrainTypeCounts { get; private set; }
     public IReadOnlyDictionary<string, int>? ItemTemplateCounts { get; private set; }
+    public IReadOnlyDictionary<string, int>? NpcTemplateCounts { get; private set; }
 
     public int? TerrainTypesIn(string area) => TerrainTypeCounts == null ? null : TerrainTypeCounts.TryGetValue(area, out var n) ? n : 0;
     public int? ItemTemplatesIn(string area) => ItemTemplateCounts == null ? null : ItemTemplateCounts.TryGetValue(area, out var n) ? n : 0;
+    public int? NpcTemplatesIn(string area) => NpcTemplateCounts == null ? null : NpcTemplateCounts.TryGetValue(area, out var n) ? n : 0;
 
     private async Task LoadCountsAsync(CancellationToken cancellation)
     {
         TerrainTypeCounts = null;
         ItemTemplateCounts = null;
+        NpcTemplateCounts = null;
         try
         {
             TerrainTypeCounts = (await _core.ListTerrainTypesAsync(_token, null, cancellation)).GroupBy(t => t.Area, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
@@ -84,11 +87,18 @@ public sealed class AreaListPresenter
             ItemTemplateCounts = (await _core.ListItemTemplatesAsync(_token, null, cancellation)).GroupBy(i => i.Area, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
         }
         catch (Exception) { ItemTemplateCounts = null; }
+        try
+        {
+            NpcTemplateCounts = (await _core.ListNpcTemplatesAsync(_token, null, cancellation)).GroupBy(i => i.Area, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        }
+        catch (Exception) { NpcTemplateCounts = null; }
     }
 
     public static string RoomsUrl(string area) => WebRoutes.MapFor(area, null);
     public static string TerrainTypesUrl(string area) => WebRoutes.TerrainFor(area);
     public static string ItemTemplatesUrl(string area) => WebRoutes.ItemTemplatesFor(area);
+    // The NPC template page is a placeholder list of every area, so the link has no area filter.
+    public static string NpcTemplatesUrl(string area) => WebRoutes.NpcTemplates;
 
     public void BeginNew()
     {

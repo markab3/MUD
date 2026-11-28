@@ -360,7 +360,7 @@ public class BlazorShellTests
         Assert.Equal(new[] { WebRoutes.AccessDenied, WebRoutes.Character, WebRoutes.Home, WebRoutes.Login, WebRoutes.Password,
                 WebRoutes.Creator, WebRoutes.Map, WebRoutes.Prefix + "/creator/rooms/{Key}",
                 WebRoutes.Players, WebRoutes.Prefix + "/creator/players/{NameKey}", WebRoutes.Modules,
-                WebRoutes.Terrain, WebRoutes.TerrainEditPage, WebRoutes.Areas, WebRoutes.ItemTemplates, WebRoutes.ItemTemplateEditPage }.OrderBy(x => x),
+                WebRoutes.Terrain, WebRoutes.TerrainEditPage, WebRoutes.Areas, WebRoutes.ItemTemplates, WebRoutes.ItemTemplateEditPage, WebRoutes.NpcTemplates }.OrderBy(x => x),
             byRoute.Keys.OrderBy(x => x));
         Assert.NotNull(byRoute[WebRoutes.Character].GetCustomAttribute<AuthorizeAttribute>());
         Assert.NotNull(byRoute[WebRoutes.Password].GetCustomAttribute<AuthorizeAttribute>());

@@ -118,6 +118,16 @@ namespace MUD.Core.Administration
 
         public override Task<ListItemTemplateReferencesReply> ListItemTemplateReferences(ItemTemplateIdRequest request, ServerCallContext context) { return Run(() => _api.ListItemTemplateReferences(request)); }
 
+        public override Task<ListNpcTemplatesReply> ListNpcTemplates(ListNpcTemplatesRequest request, ServerCallContext context) { return Run(() => _api.ListNpcTemplates(request)); }
+
+        public override Task<GetNpcTemplateReply> GetNpcTemplate(NpcTemplateIdRequest request, ServerCallContext context) { return Run(() => _api.GetNpcTemplate(request)); }
+
+        public override Task<NpcTemplateEditReply> CreateNpcTemplate(SaveNpcTemplateRequest request, ServerCallContext context) { return Run(() => _api.CreateNpcTemplate(request)); }
+
+        public override Task<NpcTemplateEditReply> UpdateNpcTemplate(SaveNpcTemplateRequest request, ServerCallContext context) { return Run(() => _api.UpdateNpcTemplate(request)); }
+
+        public override Task<NpcTemplateEditReply> DeleteNpcTemplate(NpcTemplateIdRequest request, ServerCallContext context) { return Run(() => _api.DeleteNpcTemplate(request)); }
+
         public override Task<GenerationReply> RegenerateMap(RegenerateMapRequest request, ServerCallContext context) { return Run(() => _api.RegenerateMap(request)); }
 
         public override Task<GenerationReply> RegenerateRooms(RegenerateRoomsRequest request, ServerCallContext context) { return Run(() => _api.RegenerateRooms(request)); }

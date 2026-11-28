@@ -341,7 +341,7 @@ public class TerrainHierarchyPageTests
     public async Task Areas_EachAreaShowsItsCountsAndLinks_AsTableAndCards()
     {
         var core = Core();
-        core.AddItemTemplate("a.sword", "a sword").AddItemTemplate("a.shield", "a shield").AddItemTemplate("b.lamp", "a lamp");
+        core.AddItemTemplate("a.sword", "a sword").AddItemTemplate("a.shield", "a shield").AddItemTemplate("b.lamp", "a lamp").AddNpcTemplate("a.guard", "a guard");
         await using var page = await Page<AreaList>.OpenAsync(core);
         var html = await page.Html();
         // Alpha: 4 rooms, 2 terrain types, 2 item templates; shown in the table and the cards.
@@ -354,7 +354,9 @@ public class TerrainHierarchyPageTests
         Assert.Equal(2, Regex.Matches(html, "href=\"/creator/map\\?area=c\">0 rooms</a>").Count);
         Assert.Contains("Alpha", html);
         Assert.Contains("First.", html);
-        Assert.DoesNotContain("NPC", html);       // NPC templates do not exist yet: no section
+        // NPC templates (placeholder page): a count and a link to /creator/npcs per area.
+        Assert.Equal(2, Regex.Matches(html, "href=\"/creator/npcs\">1 NPC template</a>").Count);
+        Assert.Equal(4, Regex.Matches(html, "href=\"/creator/npcs\">0 NPC templates</a>").Count);
     }
 
     [Fact]

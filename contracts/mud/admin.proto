@@ -88,6 +88,11 @@ service Admin {
   rpc UpdateItemTemplate(SaveItemTemplateRequest) returns (ItemTemplateEditReply);
   rpc DeleteItemTemplate(ItemTemplateIdRequest) returns (ItemTemplateEditReply);
   rpc ListItemTemplateReferences(ItemTemplateIdRequest) returns (ListItemTemplateReferencesReply);
+  rpc ListNpcTemplates(ListNpcTemplatesRequest) returns (ListNpcTemplatesReply);
+  rpc GetNpcTemplate(NpcTemplateIdRequest) returns (GetNpcTemplateReply);
+  rpc CreateNpcTemplate(SaveNpcTemplateRequest) returns (NpcTemplateEditReply);
+  rpc UpdateNpcTemplate(SaveNpcTemplateRequest) returns (NpcTemplateEditReply);
+  rpc DeleteNpcTemplate(NpcTemplateIdRequest) returns (NpcTemplateEditReply);
 
   // Regen and update of generated rooms (specs/TERRAIN_GENERATORS.md section 9). Creator or admin. A room is generated when it has
   // provenance (RoomDetail.gen). RegenerateMap and RegenerateRooms replace description, ALL features (hand-added too), properties and
@@ -648,6 +653,50 @@ message ItemTemplateReferenceRecord { string room_key = 1; string entry_id = 2; 
 
 // Empty references and current_version 0 when the template does not exist or the library is not available. Ordered by room key, then entry id.
 message ListItemTemplateReferencesReply { int32 current_version = 1; repeated ItemTemplateReferenceRecord references = 2; }
+
+// ---- NPC templates (specs/NPC_TEMPLATES.md): a data library only; nothing in the game reads it yet ----
+
+// id is "<area>.<local>" and never changes; area must equal the id's prefix and have an area record. version is read-only (core sets 1 on
+// create and +1 on every edit that changes something; ignored on input). The stats are optional: not set = the default of Living applies
+// (vitals 1000, experience 0, ability scores 10). Bounds: the three max values 0-1000, experience 0 or more, the six ability scores 0-255.
+message NpcTemplateRecord {
+  string id = 1;
+  string area = 2;
+  string short = 3;
+  string long = 4;
+  repeated string handles = 5;
+  repeated string adjectives = 6;
+  repeated string plurals = 7;
+  optional int32 max_health = 8;
+  optional int32 max_stamina = 9;
+  optional int32 max_alacrity = 10;
+  optional int64 experience = 11;
+  optional int32 strength = 12;
+  optional int32 dexterity = 13;
+  optional int32 intelligence = 14;
+  optional int32 wisdom = 15;
+  optional int32 constitution = 16;
+  optional int32 charisma = 17;
+  int32 version = 18;
+}
+
+// area empty = every area.
+message ListNpcTemplatesRequest { string token = 1; string area = 2; }
+message NpcTemplateIdRequest { string token = 1; string id = 2; }
+message SaveNpcTemplateRequest { string token = 1; NpcTemplateRecord template = 2; }
+message ListNpcTemplatesReply { repeated NpcTemplateRecord templates = 1; }
+message GetNpcTemplateReply { bool found = 1; NpcTemplateRecord template = 2; }
+
+// result: OK; NO_CHANGE (update with nothing changed); INVALID (errors lists the fields); NOT_FOUND (update/delete: unknown id);
+// ALREADY_EXISTS (create: the id is taken); REFUSED (the store is not available; nothing references an NPC template, so a delete is never
+// refused for use); AUDIT_FAILED; FAILED (the database write failed). template is the record as stored after a create or update.
+message NpcTemplateEditReply {
+  AdminResult result = 1;
+  repeated FieldError errors = 2;
+  // A fixed sentence. Never contains stored values.
+  string message = 3;
+  NpcTemplateRecord template = 4;
+}
 
 // ---- Regen and update of generated rooms (specs/TERRAIN_GENERATORS.md sections 9 and 10) ----
 

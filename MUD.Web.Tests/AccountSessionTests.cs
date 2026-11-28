@@ -507,6 +507,76 @@ public class FakeAdminClient : IAdminClient
         return Task.FromResult(ItemTemplateReferences);
     }
 
+    // NPC templates. Same shape as the item templates above: seed NpcTemplates (AddNpcTemplate), set NpcTemplateResult for create/update/delete.
+    public AdminResult NpcTemplateResult { get; set; } = AdminResult.Ok;
+    public string NpcTemplateMessage { get; set; } = string.Empty;
+    public List<FieldError> NpcTemplateErrors { get; } = new();
+    public bool RefuseNpcTemplateCalls { get; set; }
+    public List<string> NpcTemplateTokens { get; } = new();
+    public List<string> NpcTemplateCalls { get; } = new();
+    public List<NpcTemplateRecord> NpcTemplateSaves { get; } = new();
+    public Dictionary<string, NpcTemplateRecord> NpcTemplates { get; } = new();
+
+    public FakeAdminClient AddNpcTemplate(string id, string shortText = "", string area = "")
+    {
+        NpcTemplates[id] = new NpcTemplateRecord { Id = id, Area = string.IsNullOrEmpty(area) ? id.Substring(0, id.IndexOf('.')) : area, Short = string.IsNullOrEmpty(shortText) ? id : shortText, Long = "Long " + id, Version = 1 };
+        return this;
+    }
+
+    private void CheckNpcTemplateCall(string token, string call)
+    {
+        if (Unavailable) { throw new CoreUnavailableException(); }
+        if (Crash) { throw new InvalidOperationException("boom"); }
+        NpcTemplateTokens.Add(token);
+        NpcTemplateCalls.Add(call);
+        if (RefuseNpcTemplateCalls) { throw new CoreRefusedException(false); }
+    }
+
+    private NpcTemplateEditReply NpcTemplateReply()
+    {
+        var reply = new NpcTemplateEditReply { Result = NpcTemplateResult, Message = NpcTemplateMessage };
+        reply.Errors.AddRange(NpcTemplateErrors);
+        return reply;
+    }
+
+    public Task<IReadOnlyList<NpcTemplateRecord>> ListNpcTemplatesAsync(string token, string? area = null, CancellationToken cancellation = default)
+    {
+        CheckNpcTemplateCall(token, "ListNpcTemplates:" + area);
+        return Task.FromResult<IReadOnlyList<NpcTemplateRecord>>(NpcTemplates.Values.Where(i => string.IsNullOrEmpty(area) || i.Area == area).OrderBy(i => i.Id, StringComparer.Ordinal).ToList());
+    }
+
+    public Task<NpcTemplateRecord?> GetNpcTemplateAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckNpcTemplateCall(token, "GetNpcTemplate");
+        return Task.FromResult(NpcTemplates.TryGetValue(id, out var i) ? i : null);
+    }
+
+    public Task<NpcTemplateEditReply> CreateNpcTemplateAsync(string token, NpcTemplateRecord template, CancellationToken cancellation = default)
+    {
+        CheckNpcTemplateCall(token, "CreateNpcTemplate");
+        NpcTemplateSaves.Add(template);
+        var reply = NpcTemplateReply();
+        if (reply.Result == AdminResult.Ok) { template.Version = 1; NpcTemplates[template.Id] = template; reply.Template = template; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<NpcTemplateEditReply> UpdateNpcTemplateAsync(string token, NpcTemplateRecord template, CancellationToken cancellation = default)
+    {
+        CheckNpcTemplateCall(token, "UpdateNpcTemplate");
+        NpcTemplateSaves.Add(template);
+        var reply = NpcTemplateReply();
+        if (reply.Result == AdminResult.Ok) { template.Version = NpcTemplates.TryGetValue(template.Id, out var old) ? old.Version + 1 : 1; NpcTemplates[template.Id] = template; reply.Template = template; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<NpcTemplateEditReply> DeleteNpcTemplateAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckNpcTemplateCall(token, "DeleteNpcTemplate:" + id);
+        var reply = NpcTemplateReply();
+        if (reply.Result == AdminResult.Ok) { NpcTemplates.Remove(id); }
+        return Task.FromResult(reply);
+    }
+
     // Terrain types. Tests seed TerrainTypes (AddTerrainType) and set TerrainTypeResult (what create/update/delete answer); every call records its token.
     public AdminResult TerrainTypeResult { get; set; } = AdminResult.Ok;
     public string TerrainTypeMessage { get; set; } = string.Empty;

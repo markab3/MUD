@@ -47,7 +47,7 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/creator/items` | `CreatorOrAdmin` | item templates grouped by area, filter, delete (see "Item templates pages") |
 | `/creator/items/edit?id=&area=` | `CreatorOrAdmin` | create or edit one item template (see "Item templates pages") |
 
-The pull-out menu has three labelled sections, in this order, and a section with no visible links is not rendered: **Player** (every signed-in user): Change password, Character; **Creator** (the `CreatorOrAdmin` policy): Areas, Create room (`/creator`), Items, Map, Modules, Terrain; **Admin** (admins only): Players. Within each section the links are sorted by visible label, case-insensitive ordinal, in code (`NavMenu.Sorted`), so a new link lands in order by itself; the sections keep the order Player, Creator, Admin. Log out is a POST form after the sections. The Players link is shown to admins only, and the player pages and their core rpcs are admin only too (policy `AdminOnly`), so a creator who opens `/creator/players` by URL gets the access-denied page.
+The pull-out menu has three labelled sections, in this order, and a section with no visible links is not rendered: **Player** (every signed-in user): Change password, Character; **Creator** (the `CreatorOrAdmin` policy): Areas, Create room (`/creator`), Items, Map, Modules, NPC templates, Terrain; **Admin** (admins only): Players. Within each section the links are sorted by visible label, case-insensitive ordinal, in code (`NavMenu.Sorted`), so a new link lands in order by itself; the sections keep the order Player, Creator, Admin. Log out is a POST form after the sections. The Players link is shown to admins only, and the player pages and their core rpcs are admin only too (policy `AdminOnly`), so a creator who opens `/creator/players` by URL gets the access-denied page.
 
 ## Create room page (`/creator`, room creation)
 
@@ -328,7 +328,7 @@ organisational label for the back end that usually lines up with a region of the
 - **Hub**: the page lists what an area contains TODAY, as links with counts: rooms (`ListAreas` room count, links to `/creator/map?area=<prefix>`), terrain types
   (`ListTerrainTypes`, links to `/creator/terrain?area=<prefix>`) and item templates (`ListItemTemplates`, links to `/creator/items?area=<prefix>`, which lists only
   that area's group and has a "Show all areas" link). No new rpc: the three lists are already available. A count that could not be loaded shows "?" instead of a
-  wrong 0. NPC templates do not exist in the code yet, so there is no NPC entry and no empty NPC section; one is added here when they exist.
+  wrong 0. NPC templates (`ListNpcTemplates`) are a fourth link with a count; it goes to `/creator/npcs` (the placeholder list of every area; no area filter yet).
 - **List**: one row per area (prefix, name, description, room count, the contents links), sorted by prefix, as a table from 600px and the same rows as stacked cards
   below (CSS shows one of them). Help text under the heading says the prefix is fixed once created and that renaming an area means moving its rooms.
 - **New area / Edit**: one inline form (prefix typed for a new area, `#ar-id`; name `#ar-name`, required, 100 characters; short description
@@ -368,6 +368,22 @@ the entity in `specs/ITEM_TEMPLATES.md`).
   `.mud-code` and `.mud-refs` in `mobile.css`.
 - Tests: `MUD.Web.Tests/ItemTemplateWebTests.cs` (gRPC client over a socket, fake client, both presenters, rendered pages). Not verified: the layout
   at 360px in a real browser.
+
+## NPC templates page (`/creator/npcs`)
+
+A placeholder (`Components/Pages/NpcTemplateList.razor`, `NpcTemplateListPresenter`). Policy `CreatorOrAdmin` (a plain player gets the access-denied page,
+an anonymous visitor the login page); Creator menu section, "NPC templates", between Modules and Terrain (sorted by code). Entity, deliberate gaps and open
+questions: `specs/NPC_TEMPLATES.md`; backend: `specs/ADMIN_API.md` "NPC templates".
+
+- Heading "NPC templates"; the notice "NPC templates are not available yet. This page is a placeholder." (`#npc-notice`).
+- Read-only list from `ListAreas` and `ListNpcTemplates`, so stored templates are visible: a count (`#npc-count`, "N NPC templates"), an empty state
+  ("There are no NPC templates yet.") and one native `<details>` per area, in prefix order, collapsed, with the area name, prefix and count in the summary
+  (44px), the area description, and one card per template (short, id, version). An area without templates says so; a template whose area has no record gets
+  a group named by its prefix.
+- NO create, edit or delete controls, no filter and no edit route: the rpcs exist and are tested; the editor is a later card.
+- A load failure shows the fixed error (unavailable, forbidden, failed) and still shows the notice.
+- Palette variables only (the shared `.mud-itemgroup*`, `.mud-cardlist`, `.mud-facts` rules), no horizontal scroll at 360px.
+- Tests: `MUD.Web.Tests/NpcTemplateWebTests.cs`. Not verified: the layout at 360px in a real browser.
 
 ## Terrain library pages (`/creator/terrain`, `/creator/terrain/edit`)
 

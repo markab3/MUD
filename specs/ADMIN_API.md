@@ -38,7 +38,7 @@ Messages are fixed sentences. No token, password or stored value is put in a sta
 |---|---|
 | `WebAuthenticate`, `Logout` | none |
 | `GetSession`, `GetOwnPlayer`, `ChangePassword` | any signed-in player |
-| `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListModules`, `ListAreas`, `GetArea`, `CreateArea`, `UpdateArea`, `DeleteArea`, `ListItemTemplates`, `GetItemTemplate`, `CreateItemTemplate`, `UpdateItemTemplate`, `DeleteItemTemplate`, `ListItemTemplateReferences` | creator or admin |
+| `ListRooms`, `GetRoom`, `CreateRoom`, `UpdateRoom`, `DeleteRoom`, `MoveRoom`, `ListModules`, `ListAreas`, `GetArea`, `CreateArea`, `UpdateArea`, `DeleteArea`, `ListItemTemplates`, `GetItemTemplate`, `CreateItemTemplate`, `UpdateItemTemplate`, `DeleteItemTemplate`, `ListItemTemplateReferences`, `ListNpcTemplates`, `GetNpcTemplate`, `CreateNpcTemplate`, `UpdateNpcTemplate`, `DeleteNpcTemplate` | creator or admin |
 | `ListPlayers`, `GetPlayer`, `UpdatePlayer`, `ListAudit`, `StartModule`, `StopModule`, `RestartModule` | admin only |
 
 Not in this card: `GetRoomMap` (the map is laid out by the web from `ListRooms`, as `RoomMapLayout` does today), `GetStats` and `Flush` (sketched in
@@ -205,7 +205,7 @@ Backend of the website Areas page and of every area dropdown. Logic: `MUD.Core/A
 
 - **Update changes name and description only.** The id is the key: an update of an id that has no record is `NOT_FOUND`, never a rename. Renaming
   an area means moving its rooms (`MoveRoom`), which is out of scope here and said so on the page.
-- **Delete is refused while any room or terrain type uses the area.** The counts are the number of rooms with `Area` equal to the id and the number of terrain types of the area (`terrain_type`). Item templates are NOT
+- **Delete is refused while any room, terrain type or NPC template uses the area.** The counts are the number of rooms with `Area` equal to the id, the number of terrain types of the area (`terrain_type`) and the number of NPC templates of the area (`INpcTemplateStore.CountInArea`; the message names them: "1 NPC template still uses this area. ..."). Item templates are NOT
   counted yet (a one-line addition to `RemoveArea` using `IItemTemplateStore.CountInArea`, which exists; left out because no card asked for it,
   so an area that still has item templates can be deleted and leaves them with an area that has no record: open question in specs/ITEM_TEMPLATES.md).
 - **Audit first**, entity `area`, `entity_id` = the prefix. Update: one row per changed field (`name`, `description`, old and new text). Create:
@@ -312,7 +312,41 @@ by copying the Areas pattern above (five touch points: `admin.proto`, `AdminApi.
   oversize config, delete refusal and its count, the references call and the scan, the template copy), `MUD.Tests/TemplateReferenceTests.cs`
   (the importer with a reward template, `clone`).
 
+## NPC templates (`ListNpcTemplates`, `GetNpcTemplate`, `CreateNpcTemplate`, `UpdateNpcTemplate`, `DeleteNpcTemplate`)
+
+A data library only (entity, rules, deliberate gaps and open questions: `specs/NPC_TEMPLATES.md`). Copy of the Item templates section above without
+components, behaviors and references. Logic: `MUD.Core/Administration/AdminApi.NpcTemplates.cs`; storage seam `INpcTemplateStore` (`MongoNpcTemplateStore`,
+an in-memory fake in tests) in `MUD.Core/NpcTemplates/NpcTemplateStore.cs`; rules `NpcTemplateRules.cs`. The five touch points: `admin.proto`,
+`AdminApi.NpcTemplates.cs`, `AdminService.cs`, the `AdminApi` constructor and `World.CreateAdminApi`, and the web client (`IAdminClient`,
+`GrpcAdminClient`, `FakeAdminClient`).
+
+- **Roles.** All five calls: creator or admin; writes run on the game thread via `Mutate`.
+- **Contract.** `NpcTemplateRecord { id, area, short, long, handles, adjectives, plurals, optional max_health, max_stamina, max_alacrity, optional int64 experience,
+  optional strength, dexterity, intelligence, wisdom, constitution, charisma, version }`. `ListNpcTemplates(ListNpcTemplatesRequest { token, area }) ->
+  ListNpcTemplatesReply` (ordered by id; empty `area` = all), `GetNpcTemplate(NpcTemplateIdRequest) -> GetNpcTemplateReply { found, template }`,
+  `CreateNpcTemplate` / `UpdateNpcTemplate(SaveNpcTemplateRequest) -> NpcTemplateEditReply`, `DeleteNpcTemplate(NpcTemplateIdRequest) -> NpcTemplateEditReply`.
+  `version` is ignored on input. A stat that is not set stays unset (proto3 `optional`, presence); 0 is a value.
+- **Reads.** With no store the list is empty and `GetNpcTemplate` says not found; a database failure answers gRPC `Unavailable`. Lists are never null.
+- **Fields** (`INVALID` lists every broken field; fixed sentences): `Id` as for item templates (`<area>.<local>`, `^[a-z0-9_]+$`, prefix equals `Area`); `Area` must have an
+  area record (unchecked without an area store); `Short`/`Long` the room rules; `Handles`, `Adjectives`, `Plurals` null-safe word lists (32 max, no repeats);
+  `MaxHealth`, `MaxStamina`, `MaxAlacrity` 0-1000; `Experience` 0 or more; `Strength`, `Dexterity`, `Intelligence`, `Wisdom`, `Constitution`, `Charisma` 0-255
+  (errors are on the field of that name).
+- **Results** (`NpcTemplateEditReply.result`): `OK` (with `template` as stored); `NO_CHANGE` (update, nothing differs; no bump, no audit); `INVALID`; `NOT_FOUND`
+  (update/delete of an unknown id; never a rename); `ALREADY_EXISTS` (create of a taken id, also on a race); `REFUSED` (no store available; a delete is never refused for
+  use: **nothing references an NPC template yet**, so there is no reference protection until a room or spawner does); `AUDIT_FAILED`; `FAILED`.
+- **Version.** 1 on create; an update that changes any field sets stored + 1 in the same write (clearing a stat counts as a change).
+- **Audit first**, entity `npc_template`, `entity_id` = the id: one row per changed field plus `version` on update, `*create*` / `*delete*` with the whole document.
+- **Collection** `npc_template`: `_id`, `area`, `short`, `long`, `handles`, `adjectives`, `plurals`, the stats that are set (`maxHealth`, `maxStamina`, `maxAlacrity`,
+  `experience`, `strength`, ...), `version`, `updatedAt`, `updatedBy`. Nothing is seeded.
+- **Area delete** counts NPC templates (see "Areas").
+- **Web.** `IAdminClient` has `ListNpcTemplatesAsync(token, area?)`, `GetNpcTemplateAsync` (null for unknown), `CreateNpcTemplateAsync`, `UpdateNpcTemplateAsync`,
+  `DeleteNpcTemplateAsync`; `FakeAdminClient` implements them (`AddNpcTemplate`, `NpcTemplateResult`).
+- Tests: `MUD.Tests/NpcTemplateTests.cs` (rules, documents, every rpc branch and role, validation, version bump, area delete refusal), `MUD.Web.Tests/NpcTemplateWebTests.cs` (gRPC client over a socket, fake client).
+
 ## Not verified here
+
+NPC templates: `MongoNpcTemplateStore` (the collection, duplicate-key handling, the area filter, `CountDocuments`) and its wiring in `World.CreateAdminApi` were
+not run against a database; the tests use an in-memory `INpcTemplateStore`. No index is created (as for item templates).
 
 Item templates: `MongoItemTemplateStore` (the collection, duplicate-key handling on insert, the area filter) and its wiring in `World.CreateAdminApi`
 were not run against a database; the tests use an in-memory `IItemTemplateStore`. No unique or area index is created: `_id` is unique by Mongo,

@@ -113,11 +113,12 @@ else
 }
 
 @code {
-    // What the area holds today, as links to the pages that list it. NPC templates do not exist yet, so there is no such entry.
+    // What the area holds today, as links to the pages that list it.
     private RenderFragment Links(Contracts.AreaRecord a) => @<div class="mud-arealinks">
         <a class="mud-btn" href="@AreaListPresenter.RoomsUrl(a.Id)">@Count(a.RoomCount, "room")</a>
         <a class="mud-btn" href="@AreaListPresenter.TerrainTypesUrl(a.Id)">@Count(_presenter?.TerrainTypesIn(a.Id), "terrain type")</a>
         <a class="mud-btn" href="@AreaListPresenter.ItemTemplatesUrl(a.Id)">@Count(_presenter?.ItemTemplatesIn(a.Id), "item template")</a>
+        <a class="mud-btn" href="@AreaListPresenter.NpcTemplatesUrl(a.Id)">@Count(_presenter?.NpcTemplatesIn(a.Id), "NPC template")</a>
     </div>;
 
     private static string Count(int? n, string noun) => n == null ? "? " + noun + "s" : n + " " + noun + (n == 1 ? "" : "s");

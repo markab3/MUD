@@ -44,6 +44,9 @@ public static class WebRoutes
     public const string ItemTemplates = Prefix + "/creator/items";
     public const string ItemTemplateEditPage = ItemTemplates + "/edit";
 
+    // NPC templates: a read-only placeholder list for now; there is no edit route yet.
+    public const string NpcTemplates = Prefix + "/creator/npcs";
+
     // The edit page: no id = a new template; otherwise the template with that id (query string only).
     // With no id and an area, a new template opens with that area chosen.
     public static string ItemTemplateEdit(string? id = null, string? area = null) =>
