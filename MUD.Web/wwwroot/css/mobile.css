@@ -266,3 +266,9 @@ fieldset.mud-behavior { min-width: 0; margin: 0 0 12px; }
 .mud-row-new { border-left: 6px solid var(--mud-cyan-ink); background: var(--mud-hover); }
 .mud-new-badge { margin: 0 0 8px; font-weight: 600; color: var(--mud-cyan-ink); }
 .mud-link-warn { margin: 4px 0; padding: 8px 12px; background: var(--mud-warn-bg); border: 1px solid var(--mud-warn-border); border-radius: 6px; color: var(--mud-text); overflow-wrap: anywhere; }
+
+/* Live filters (LiveFilter.razor): the input keeps its 44px height; the clear button sits beside it and never causes sideways scroll. */
+.mud-liverow { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.mud-liverow input { flex: 1 1 auto; min-width: 0; }
+.mud-liveclear[hidden] { display: none; }
+.mud-livestatus { display: flex; gap: 8px; align-items: center; min-height: 1.25rem; font-size: 0.9rem; color: var(--mud-text-soft); overflow-wrap: anywhere; }

@@ -24,14 +24,14 @@ public class NavMenuTests
     public void APlayer_GetsOnlyThePlayerSection()
     {
         Assert.Equal(new[] { "Player" }, Headings(false, false));
-        Assert.Equal(new[] { new[] { "Character", "Change password" } }, Labels(false, false));
+        Assert.Equal(new[] { new[] { "Change password", "Character" } }, Labels(false, false));
     }
 
     [Fact]
     public void ACreator_GetsPlayerThenCreator_AndNoAdminSection()
     {
         Assert.Equal(new[] { "Player", "Creator" }, Headings(true, false));
-        Assert.Equal(new[] { new[] { "Character", "Change password" }, new[] { "Map", "Modules", "Terrain", "Areas", "Items", "Create room" } }, Labels(true, false));
+        Assert.Equal(new[] { new[] { "Change password", "Character" }, new[] { "Areas", "Create room", "Items", "Map", "Modules", "Terrain" } }, Labels(true, false));
         Assert.DoesNotContain(NavMenu.SectionsFor(true, false).SelectMany(s => s.Items), i => i.Label == "Players");
     }
 
@@ -39,7 +39,7 @@ public class NavMenuTests
     public void AnAdmin_GetsPlayerCreatorAndAdminSections_InThatOrder()
     {
         Assert.Equal(new[] { "Player", "Creator", "Admin" }, Headings(true, true));
-        Assert.Equal(new[] { new[] { "Character", "Change password" }, new[] { "Map", "Modules", "Terrain", "Areas", "Items", "Create room" }, new[] { "Players" } }, Labels(true, true));
+        Assert.Equal(new[] { new[] { "Change password", "Character" }, new[] { "Areas", "Create room", "Items", "Map", "Modules", "Terrain" }, new[] { "Players" } }, Labels(true, true));
     }
 
     [Fact]
@@ -66,6 +66,29 @@ public class NavMenuTests
         var sections = NavMenu.SectionsFor(creatorOrAdmin, admin);
         Assert.All(sections, s => Assert.NotEmpty(s.Items));
         Assert.Equal(sections.Count, sections.Select(s => s.Id).Distinct().Count());
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void EverySection_IsSortedByLabel_CaseInsensitiveOrdinal_AndSectionOrderIsKept(bool creatorOrAdmin, bool admin)
+    {
+        var sections = NavMenu.SectionsFor(creatorOrAdmin, admin);
+        Assert.All(sections, s => Assert.Equal(s.Items.Select(i => i.Label).OrderBy(l => l, StringComparer.OrdinalIgnoreCase).ToArray(), s.Items.Select(i => i.Label).ToArray()));
+        Assert.Equal(new[] { "player", "creator", "admin" }.Take(sections.Count), sections.Select(s => s.Id));
+    }
+
+    [Fact]
+    public void ASectionAddedWithUnsortedItems_ComesOutSorted_AndEmptySectionsAreDropped()
+    {
+        var sections = NavMenu.Sorted(new[]
+        {
+            new NavSection("x", "X", new[] { new NavItem("zeta", "/z"), new NavItem("Alpha", "/a"), new NavItem("beta", "/b"), new NavItem("Gamma", "/g") }),
+            new NavSection("empty", "Empty", Array.Empty<NavItem>()),
+        });
+        var only = Assert.Single(sections);
+        Assert.Equal(new[] { "Alpha", "beta", "Gamma", "zeta" }, only.Items.Select(i => i.Label));
     }
 
     [Fact]

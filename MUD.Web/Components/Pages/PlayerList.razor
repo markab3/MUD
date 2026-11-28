@@ -11,18 +11,17 @@
 else
 {
     var p = _presenter;
-    @if (p.Error != null)
+    @if ((_liveError ?? p.Error) != null)
     {
-        <p role="alert" class="mud-error">@p.Error</p>
+        <p role="alert" class="mud-error">@(_liveError ?? p.Error)</p>
     }
-    <form class="mud-filter" @onsubmit="ApplyFilterAsync" @onsubmit:preventDefault>
-        <div class="mud-field"><label for="pl-q">Name contains</label>
-            <input id="pl-q" type="search" value="@_filterText" @oninput="e => _filterText = e.Value?.ToString()" maxlength="@PlayerListPresenter.MaxFilterLength" autocomplete="off" /></div>
+    <div class="mud-filter">
+        <LiveFilter Id="pl-q" Label="Name contains" Value="@p.Filter" MaxLength="@PlayerListPresenter.MaxFilterLength" Apply="ApplyFilterAsync"
+                    ResultText="@LiveFilterRunner.Count(p.Total, "player")" />
         <div class="mud-actions">
-            <button type="submit" class="mud-btn mud-btn-primary">Filter</button>
             <a class="mud-btn" href="@p.UrlFor(1, !p.Descending)">Name @(p.Descending ? "(Z-A)" : "(A-Z)")</a>
         </div>
-    </form>
+    </div>
 
     @* Wide screens: a table. Under 600px: the same rows as stacked cards (mobile.css switches them; no round trip). *@
     <div class="mud-table-wrap">
@@ -90,11 +89,16 @@ else
     [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
 
     private PlayerListPresenter? _presenter;
-    private string? _filterText;
+    private string? _liveError;
     private string _token = string.Empty;
+    private readonly LiveUrlEchoes _echoes = new();
+    private string? _currentKey;
 
     protected override async Task OnParametersSetAsync()
     {
+        var key = PlayerListPresenter.StateKey(Filter, Sort, PageNumber);
+        // The address a live filter just wrote (replace) comes back here: the list is already showing it.
+        if (_presenter != null && _echoes.Consume(key)) { _currentKey = key; return; }
         if (_token.Length == 0)
         {
             _token = (await AuthState).User.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
@@ -102,13 +106,27 @@ else
         var presenter = new PlayerListPresenter(Core, _token);
         await presenter.LoadAsync(Filter, Sort, PageNumber ?? 1);
         _presenter = presenter;
-        _filterText = presenter.Filter;
+        _liveError = null;
+        _currentKey = key;
     }
 
-    // Filtering starts again from page one, keeping the sort order.
-    private Task ApplyFilterAsync()
+    // Called once per settled value (the debounce), never twice at once (latest wins). Starts again from page one, keeping the sort order.
+    // A failed load keeps the list on screen and shows the fixed message; a result that arrives after a newer keystroke is dropped by the filter.
+    private async Task<Action?> ApplyFilterAsync(string text, CancellationToken cancellation)
     {
-        Navigation.NavigateTo(PlayerListPresenter.PageUrl(_filterText?.Trim(), _presenter?.Descending ?? false, 1));
-        return Task.CompletedTask;
+        var descending = _presenter?.Descending ?? false;
+        var presenter = new PlayerListPresenter(Core, _token);
+        var outcome = await presenter.LoadAsync(text, descending ? "desc" : "asc", 1, cancellation);
+        if (cancellation.IsCancellationRequested) { return null; }
+        return () =>
+        {
+            if (outcome != PlayerListOutcome.Ok) { _liveError = presenter.Error; return; }
+            _presenter = presenter;
+            _liveError = null;
+            var key = PlayerListPresenter.StateKey(presenter.Filter, descending ? "desc" : "asc", 1);
+            if (key != _currentKey) { _echoes.Expect(key); }
+            _currentKey = key;
+            Navigation.NavigateTo(PlayerListPresenter.PageUrl(presenter.Filter, descending, 1), new NavigationOptions { ReplaceHistoryEntry = true });
+        };
     }
 }

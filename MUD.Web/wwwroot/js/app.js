@@ -98,3 +98,12 @@ window.mudMenu = (function () {
     }
   };
 })();
+
+// Live filter boxes: set the text (and optionally focus) without recreating the input, so the phone keyboard stays up.
+window.mudLive = {
+  set: function (el, text, focus) {
+    if (!el) return;
+    if (el.value !== text) el.value = text;
+    if (focus) el.focus();
+  }
+};

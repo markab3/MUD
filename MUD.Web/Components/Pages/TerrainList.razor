@@ -35,16 +35,14 @@ else
         <a class="mud-btn" href="@WebRoutes.TerrainEdit(TerrainLibrary.Feature)">New feature template</a>
         <a class="mud-btn" href="@WebRoutes.TerrainEdit(TerrainLibrary.Phrase)">New neighbour phrase</a>
     </div>
-    <form class="mud-filter" @onsubmit="ApplyFilter" @onsubmit:preventDefault>
-        <div class="mud-field"><label for="tl-terrain">Terrain</label>
-            <input id="tl-terrain" value="@_terrainText" @oninput="e => _terrainText = e.Value?.ToString()" maxlength="100" list="terrain-list" autocomplete="off" /></div>
-        <div class="mud-field"><label for="tl-tag">Tag</label>
-            <input id="tl-tag" value="@_tagText" @oninput="e => _tagText = e.Value?.ToString()" maxlength="100" autocomplete="off" /></div>
+    <div class="mud-filter">
+        <LiveFilter Id="tl-terrain" Label="Terrain" Value="@p.TerrainFilter" MaxLength="100" ListId="terrain-list" Apply="ApplyTerrainAsync" />
+        <LiveFilter Id="tl-tag" Label="Tag" Value="@p.TagFilter" MaxLength="100" Apply="ApplyTagAsync"
+                    ResultText="@LiveFilterRunner.Count(p.Rows.Count, "entry", "entries")" />
         <datalist id="terrain-list">
             @foreach (var t in p.KnownTerrains) { <option value="@t"></option> }
         </datalist>
-        <div class="mud-actions"><button type="submit" class="mud-btn mud-btn-primary">Filter</button></div>
-    </form>
+    </div>
     @if (_confirm != null)
     {
         <ConfirmDialog Label="Confirm delete" Text="@(Messages.TerrainDeleteConfirm + " (" + _confirm.Id + ")")" ConfirmText="Delete"
@@ -113,13 +111,16 @@ else
 
     private TerrainListPresenter? _presenter;
     private TerrainListPresenter.Row? _confirm;
-    private string? _terrainText;
-    private string? _tagText;
+    private readonly LiveUrlEchoes _echoes = new();
+    private string? _currentKey;
     private string _token = string.Empty;
     private bool _busy;
 
     protected override async Task OnParametersSetAsync()
     {
+        var key = TerrainListPresenter.StateKey(Tab, TerrainFilter, TagFilter);
+        // The address a live filter just wrote (replace) comes back here: the list already shows it.
+        if (_presenter != null && _echoes.Consume(key)) { _currentKey = key; return; }
         if (_token.Length == 0)
         {
             _token = (await AuthState).User.FindFirstValue(SessionAuthentication.TokenClaim) ?? string.Empty;
@@ -128,16 +129,29 @@ else
         await presenter.LoadAsync(Tab, TerrainFilter, TagFilter);
         presenter.Notice = Notices.Take();
         _presenter = presenter;
-        _terrainText = presenter.TerrainFilter;
-        _tagText = presenter.TagFilter;
+        _currentKey = key;
         _confirm = null;
     }
 
     private void ChooseTab(string? tab) =>
         Navigation.NavigateTo(TerrainListPresenter.ListUrl(tab, _presenter?.TerrainFilter, _presenter?.TagFilter));
 
-    private void ApplyFilter() =>
-        Navigation.NavigateTo(TerrainListPresenter.ListUrl(_presenter?.Tab, _terrainText, _tagText));
+    // Client-side: the three lists are already loaded, so each settled value only narrows them (no call to core) and rewrites the address in place.
+    private Task<Action?> ApplyTerrainAsync(string text, CancellationToken cancellation) =>
+        Task.FromResult<Action?>(() => Narrow(text, _presenter?.TagFilter));
+
+    private Task<Action?> ApplyTagAsync(string text, CancellationToken cancellation) =>
+        Task.FromResult<Action?>(() => Narrow(_presenter?.TerrainFilter, text));
+
+    private void Narrow(string? terrain, string? tag)
+    {
+        if (_presenter == null) { return; }
+        _presenter.ApplyFilters(terrain, tag);
+        var key = TerrainListPresenter.StateKey(_presenter.Tab, _presenter.TerrainFilter, _presenter.TagFilter);
+        if (key != _currentKey) { _echoes.Expect(key); }
+        _currentKey = key;
+        Navigation.NavigateTo(TerrainListPresenter.ListUrl(_presenter.Tab, _presenter.TerrainFilter, _presenter.TagFilter), new NavigationOptions { ReplaceHistoryEntry = true });
+    }
 
     private void Ask(TerrainListPresenter.Row row) => _confirm = row;
 

@@ -47,7 +47,7 @@ rollback behaviour are in [DEPLOYMENT.md](DEPLOYMENT.md).
 | `/creator/items` | `CreatorOrAdmin` | item templates grouped by area, filter, delete (see "Item templates pages") |
 | `/creator/items/edit?id=&area=` | `CreatorOrAdmin` | create or edit one item template (see "Item templates pages") |
 
-The pull-out menu has three labelled sections, in this order, and a section with no visible links is not rendered: **Player** (every signed-in user): Character, Change password; **Creator** (the `CreatorOrAdmin` policy): Map, Modules, Terrain, Areas, Items, Create room (`/creator`); **Admin** (admins only): Players. Log out is a POST form after the sections. The Players link is shown to admins only, and the player pages and their core rpcs are admin only too (policy `AdminOnly`), so a creator who opens `/creator/players` by URL gets the access-denied page.
+The pull-out menu has three labelled sections, in this order, and a section with no visible links is not rendered: **Player** (every signed-in user): Change password, Character; **Creator** (the `CreatorOrAdmin` policy): Areas, Create room (`/creator`), Items, Map, Modules, Terrain; **Admin** (admins only): Players. Within each section the links are sorted by visible label, case-insensitive ordinal, in code (`NavMenu.Sorted`), so a new link lands in order by itself; the sections keep the order Player, Creator, Admin. Log out is a POST form after the sections. The Players link is shown to admins only, and the player pages and their core rpcs are admin only too (policy `AdminOnly`), so a creator who opens `/creator/players` by URL gets the access-denied page.
 
 ## Create room page (`/creator`, room creation)
 
@@ -168,7 +168,7 @@ or creator -> `/access-denied`). Owner decision: creators have no access to the 
 
 - List: name, race, class, gender, current location, role (Player/Creator/Admin), online and status (Active/Retired).
   Sortable by name (A-Z / Z-A), case-insensitive substring filter on the name (cut to 64 characters here), 50 per page; core filters,
-  sorts and pages. "Online" always reads `unknown`: the list reply carries no online flag.
+  sorts and pages. The name filter is live (see WEB_BLAZOR.md "Live filters"): it applies as you type, one core call per settled value, and keeps the sort. "Online" always reads `unknown`: the list reply carries no online flag.
 - Edit: `ShortDescription`, `LongDescription`, `Race`, `Gender`, `Class` (free text, max 32 characters, no control
   characters, no fixed vocabulary; descriptions follow the room rules), `Retired`, and the role. `CurrentLocationId` is NOT
   editable (owner decision Q12). The name key comes from the route only. There is no password, name, inventory or
@@ -344,7 +344,7 @@ the entity in `specs/ITEM_TEMPLATES.md`).
 - **List** (`/creator/items`): one native `<details>` per area, in prefix order, collapsed by default (open while a filter is applied). The summary
   (44px) shows the area name, its prefix and a count of the templates; inside are the area's description, one card per template (short, id, handles,
   version, Edit, Delete), and "New item in <prefix>" (opens the edit page with that area chosen). An area without templates is listed with
-  count 0. A template whose area has no record gets a group named by its prefix. `#it-filter` filters on a submit (id, short, handles and adjectives,
+  count 0. A template whose area has no record gets a group named by its prefix. `#it-filter` is a live filter, applied as you type with no rpc (id, short, handles and adjectives,
   case-insensitive); areas with no match are hidden. Delete asks first in `ConfirmDialog`; core's refusal message is shown and the row stays.
 - **Edit** (`/creator/items/edit`): new: `#it-area` dropdown of the area records (required), then the fixed prefix (`#it-prefix`, `.mud-keyrow`) and
   the local key `#it-local`; the full id is built from the two. Existing: the id and area are read-only and the page shows the version and what
@@ -371,7 +371,7 @@ Built (`Components/Pages/TerrainList.razor`, `TerrainEdit.razor`, `TerrainListPr
 `IAdminClient` (the Create/Update/Delete/List/Get calls for fragments, feature templates and neighbour phrases; backend in
 `specs/ADMIN_API.md` and `specs/TERRAIN_GENERATORS.md` sections 6 and 11). Core validates every write and owns the feature version.
 
-- **List**: tabs Fragments / Features / Neighbour phrases with counts, filter by terrain (a terrain type id) and by tag (fragments and features
+- **List**: tabs Fragments / Features / Neighbour phrases with counts, live filters (`#tl-terrain`, `#tl-tag`, no submit) by terrain (a terrain type id) and by tag (fragments and features
   only; phrases have no tags), a Delete POST form per row (antiforgery, kind and id in hidden fields). Every entity belongs to exactly one terrain
   type, so there is no "Unassigned" tab and no "Not used by any generator" badge any more (owner decision 2026-11-27,
   TERRAIN_GENERATORS.md section 18); the next card reworks these pages around areas and terrain types.

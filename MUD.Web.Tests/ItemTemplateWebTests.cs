@@ -684,6 +684,15 @@ public class ItemTemplatePageRenderTests
         public Task Set(string field, object? value) => _renderer.Dispatcher.InvokeAsync(() =>
             typeof(T).GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(_component, value));
 
+        // What the live filter does when a typed value settles: run the page's Apply callback and publish its result.
+        public Task InvokeApply(string text, string method = "ApplyFilterAsync") => _renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var m = typeof(T).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var publish = await (Task<Action?>)m.Invoke(_component, new object?[] { text, CancellationToken.None })!;
+            publish?.Invoke();
+            typeof(ComponentBase).GetMethod("StateHasChanged", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(_component, null);
+        });
+
         public T Component => _component;
         public ItemTemplateEditPresenter Presenter => (ItemTemplateEditPresenter)typeof(T).GetField("_presenter", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_component)!;
         public ValueTask DisposeAsync() => DisposeAll();
@@ -758,16 +767,14 @@ public class ItemTemplatePageRenderTests
     public async Task ListPage_Filter_ShowsOnlyMatchingGroups_Open_AndSaysWhenNothingMatches()
     {
         await using var page = await Page<ItemTemplateList>.OpenAsync(Seeded());
-        await page.Set("_filterText", "honey");
-        await page.Invoke("ApplyFilter");
+        await page.InvokeApply("honey");
         var html = await page.Html();
         Assert.Contains("a pot of honey", html);
         Assert.DoesNotContain("a rusty sword", html);
         Assert.DoesNotContain("data-area=\"a\"", html);
         Assert.Contains("open data-area=\"b\"", html);
 
-        await page.Set("_filterText", "nonsense");
-        await page.Invoke("ApplyFilter");
+        await page.InvokeApply("nonsense");
         Assert.Contains("No item template matches the filter.", await page.Html());
     }
 
