@@ -313,6 +313,17 @@ public class FakeAdminClient : IAdminClient
         return Task.FromResult(GenerationResult);
     }
 
+    public List<(string Token, string Area)> ExportCalls { get; } = new();
+    public ExportAreaReply ExportResult { get; set; } = new ExportAreaReply { Found = true, Yaml = "area:\n  prefix: a1\n", RoomCount = 2 };
+
+    public Task<ExportAreaReply> ExportAreaAsync(string token, string area, CancellationToken cancellation = default)
+    {
+        ExportCalls.Add((token, area));
+        if (Unavailable) { throw new CoreUnavailableException(); }
+        if (RefuseModuleCalls) { throw new CoreRefusedException(RefuseBecauseSessionEnded); }
+        return Task.FromResult(ExportResult);
+    }
+
     public Task<IReadOnlyList<TerrainColor>> ListTerrainColorsAsync(string token, CancellationToken cancellation = default)
     {
         ColorCalls++;

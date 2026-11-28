@@ -14,6 +14,9 @@ namespace MUD.Core.Import
 
         public int RoomCount { get; set; }
 
+        // Rooms of the file whose stored document has generator provenance ('gen'). The exporter does not write it (see AreaExporter).
+        public int GeneratedRoomCount { get; set; }
+
         public List<string> Errors { get; set; } = new List<string>();
 
         public bool Success { get { return Errors.Count == 0; } }
@@ -29,10 +32,14 @@ namespace MUD.Core.Import
         private static readonly Regex PlainScalarPattern = new Regex("^[a-z0-9_.]+$");
 
         private readonly IRoomImportStore _store;
+        private readonly MUD.Core.Areas.IAreaStore _areas;
 
-        public AreaExporter(IRoomImportStore store)
+        // areas (optional): the area record gives the file header its name and description. Without it, or without a record for the
+        // prefix, the name is the prefix and there is no description.
+        public AreaExporter(IRoomImportStore store, MUD.Core.Areas.IAreaStore areas = null)
         {
             _store = store;
+            _areas = areas;
         }
 
         // Every room whose Area is the given prefix, as one area file.
@@ -63,6 +70,7 @@ namespace MUD.Core.Import
                 }
                 var room = BuildRoom(doc, prefix, result.Errors);
                 if (room != null) { area.Rooms.Add(room); }
+                if (HasGen(doc)) { result.GeneratedRoomCount++; }
             }
             return Finish(area, result);
         }
@@ -88,6 +96,7 @@ namespace MUD.Core.Import
             var area = NewArea(prefix);
             var room = BuildRoom(doc, prefix, result.Errors);
             if (room != null) { area.Rooms.Add(room); }
+            if (HasGen(doc)) { result.GeneratedRoomCount++; }
             return Finish(area, result);
         }
 
@@ -109,10 +118,24 @@ namespace MUD.Core.Import
             return result;
         }
 
-        // The area name is not stored in the database, so the prefix is used as a placeholder.
-        private static AreaDefinition NewArea(string prefix)
+        private static bool HasGen(BsonDocument doc)
         {
-            return new AreaDefinition { Prefix = prefix, Name = prefix };
+            return doc.GetValue("gen", BsonNull.Value).IsBsonDocument;
+        }
+
+        // Name and description come from the area record when there is one; otherwise the prefix stands in as the name. A record that
+        // cannot be read (store down) counts as none: the export still works, and importing never overwrites a record anyway.
+        private AreaDefinition NewArea(string prefix)
+        {
+            var area = new AreaDefinition { Prefix = prefix, Name = prefix };
+            if (_areas == null) { return area; }
+            MUD.Core.Areas.AreaEntry record;
+            try { record = _areas.Get(prefix); }
+            catch (Exception ex) when (!(ex is OutOfMemoryException)) { return area; }
+            if (record == null) { return area; }
+            if (!string.IsNullOrWhiteSpace(record.Name)) { area.Name = record.Name; }
+            if (!string.IsNullOrWhiteSpace(record.Description)) { area.Description = record.Description; }
+            return area;
         }
 
         private static RoomDefinition BuildRoom(BsonDocument doc, string prefix, List<string> errors)
@@ -314,8 +337,8 @@ namespace MUD.Core.Import
             sb.Append("area:\n");
             sb.Append("  schema_version: 1\n");
             sb.Append("  prefix: ").Append(Scalar(area.Prefix)).Append('\n');
-            sb.Append("  # Not stored in the database; set the name by hand.\n");
             sb.Append("  name: ").Append(Quote(area.Name)).Append('\n');
+            if (!string.IsNullOrEmpty(area.Description)) { sb.Append("  description: ").Append(Quote(area.Description)).Append('\n'); }
             sb.Append('\n');
             sb.Append("rooms:\n");
             foreach (var room in area.Rooms) { WriteRoom(sb, room, area.Prefix); }

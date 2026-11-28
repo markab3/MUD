@@ -107,6 +107,12 @@ service Admin {
   // Legend colours of the map files, for the website map view only (specs/TERRAIN_GENERATORS.md section 3). Creator or admin. One entry per
   // map file and terrain that has a legend `color`; files that are not maps, and terrains without a valid colour, are left out. Read-only.
   rpc ListTerrainColors(TokenRequest) returns (TerrainColorsReply);
+
+  // One area as an area file (the text `export area <prefix>` writes), for the website's Export YAML button. Creator or admin. READ-ONLY:
+  // no audit row, nothing written, no file on the server. Runs on the game thread. found=false for an unknown or empty area. When the
+  // exporter refuses (for example a room without a long description) `errors` holds its messages and `yaml` is empty. A file over 3 MB is
+  // not returned: `errors` says to export by room range with the in-game command. `notes` carries warnings that do not stop the export.
+  rpc ExportArea(ExportAreaRequest) returns (ExportAreaReply);
 }
 
 enum AdminRole {
@@ -707,6 +713,14 @@ message RegenerateMapRequest { string token = 1; string map = 2; bool dry_run = 
 message RegenerateRoomsRequest { string token = 1; repeated string keys = 2; bool dry_run = 3; string new_seed = 4; }
 message TerrainColor { string map = 1; string terrain = 2; string color = 3; }
 message TerrainColorsReply { repeated TerrainColor colors = 1; }
+message ExportAreaRequest { string token = 1; string area = 2; }
+message ExportAreaReply {
+  bool found = 1;
+  string yaml = 2;
+  int32 room_count = 3;
+  repeated string errors = 4;
+  repeated string notes = 5;
+}
 message UpdateRoomsRequest { string token = 1; repeated string keys = 2; bool dry_run = 3; }
 
 enum RoomGenOutcome {

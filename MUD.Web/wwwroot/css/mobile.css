@@ -138,6 +138,10 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 .mud-sticky-actions .mud-btn { flex: 1 1 auto; }
 @media (min-width: 600px) { .mud-sticky-actions .mud-btn { flex: 0 0 auto; } }
 .mud-map-toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-width: 560px; }
+/* Export YAML sits under the two dropdowns on a phone (they keep their half each) and beside them from 600px. */
+.mud-map-export { grid-column: 1 / -1; margin-bottom: 0; justify-content: flex-end; }
+.mud-map-export .mud-btn { min-height: var(--mud-hit); }
+@media (min-width: 600px) { .mud-map-toolbar { grid-template-columns: 1fr 1fr auto; max-width: 720px; align-items: end; } .mud-map-export { grid-column: auto; } }
 .mud-map { position: relative; border: 1px solid var(--mud-border); border-radius: 8px; overflow: hidden; touch-action: none; width: 100%; height: 60vh; min-height: 280px; background: var(--mud-surface); user-select: none; -webkit-user-select: none; }
 .mud-map svg { width: 100%; height: 100%; display: block; }
 .mud-map a { cursor: pointer; }

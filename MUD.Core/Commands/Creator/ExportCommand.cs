@@ -10,9 +10,9 @@ namespace MUD.Core.Commands
     {
         private readonly AreaExportService _service;
 
-        public ExportCommand(IRoomRepository roomRepository, WorldSettings settings)
+        public ExportCommand(IRoomRepository roomRepository, WorldSettings settings, MongoDB.Driver.IMongoDatabase database)
         {
-            _service = new AreaExportService(new RoomRepositoryImportStore(roomRepository), settings.ContentDirectory);
+            _service = new AreaExportService(new RoomRepositoryImportStore(roomRepository), settings.ContentDirectory, new MUD.Core.Areas.MongoAreaStore(database));
         }
 
         public string[] CommandKeywords { get => new string[] { "export" }; }

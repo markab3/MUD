@@ -13,9 +13,9 @@ namespace MUD.Core.Import
         private readonly AreaExporter _exporter;
         private readonly string _contentDirectory;
 
-        public AreaExportService(IRoomImportStore store, string contentDirectory)
+        public AreaExportService(IRoomImportStore store, string contentDirectory, MUD.Core.Areas.IAreaStore areas = null)
         {
-            _exporter = new AreaExporter(store);
+            _exporter = new AreaExporter(store, areas);
             _contentDirectory = contentDirectory;
         }
 

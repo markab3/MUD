@@ -22,12 +22,15 @@ public sealed class CreatorMapPresenter
     }
 
     private readonly Dictionary<string, string> _names = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _roomCounts = new(StringComparer.Ordinal);
 
     public IReadOnlyList<string> Areas { get; private set; } = Array.Empty<string>();
 
     // "prefix - Name" for an area with a record, the bare prefix otherwise; "(no area)" for rooms without one.
     public string LabelFor(string area) =>
         area.Length == 0 ? "(no area)" : _names.TryGetValue(area, out var name) && !string.IsNullOrWhiteSpace(name) ? area + " - " + name : area;
+    // Rooms of the area on every level, from its area record; null when the record list was not available.
+    public int? RoomCountOf(string area) => _roomCounts.TryGetValue(area, out var n) ? n : null;
     public IReadOnlyList<int> Levels { get; private set; } = Array.Empty<int>();
     public string? Area { get; private set; }
     public int Z { get; private set; }
@@ -153,6 +156,7 @@ public sealed class CreatorMapPresenter
         // The dropdown lists the area records (so an area with no rooms yet appears) plus any room area that has no record (legacy data).
         // When core cannot list the records the rooms alone give the list.
         _names.Clear();
+        _roomCounts.Clear();
         var recordIds = new List<string>();
         try
         {
@@ -160,6 +164,7 @@ public sealed class CreatorMapPresenter
             {
                 recordIds.Add(a.Id);
                 _names[a.Id] = a.Name;
+                _roomCounts[a.Id] = a.RoomCount;
             }
         }
         catch (CoreUnavailableException) { }
