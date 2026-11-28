@@ -148,18 +148,19 @@ namespace MUD.Core.Administration
             if (_areas == null) { return AreaReply(AdminResult.Refused, AreaUnavailableMessage); }
             string id = (rawId ?? string.Empty).Trim();
             AreaEntry stored;
-            int roomCount;
+            int roomCount, terrainTypeCount;
             try
             {
                 stored = id.Length == 0 ? null : _areas.Get(id);
                 roomCount = stored == null ? 0 : CountOf(RoomCountsByArea(), id);
+                terrainTypeCount = stored == null ? 0 : CountTerrainTypesInArea(id);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException) { return AreaFailed("read", id, ex); }
             if (stored == null) { return AreaReply(AdminResult.NotFound, AreaNotFoundMessage); }
-            // Item templates will count here too once they exist (they carry an area).
-            if (roomCount > 0)
+            // Item templates are not counted (see specs/ADMIN_API.md "Areas"); rooms and terrain types are.
+            if (roomCount > 0 || terrainTypeCount > 0)
             {
-                return AreaReply(AdminResult.Refused, (roomCount == 1 ? "1 room still uses" : roomCount + " rooms still use") + " this area. Move or delete them first. Nothing was changed.", null, stored);
+                return AreaReply(AdminResult.Refused, AreaInUseMessage(roomCount, terrainTypeCount), null, stored);
             }
 
             List<AuditRecord> entries = BuildEntries(actor, AreaEntity, id, id, new List<AuditChange> { new AuditChange("*delete*", AreaDocuments.ToDocument(stored), BsonNull.Value) });
@@ -174,6 +175,16 @@ namespace MUD.Core.Administration
             }
             Finish(entries, deleted);
             return deleted ? AreaReply(AdminResult.Ok, null) : AreaReply(AdminResult.NotFound, AreaNotFoundMessage);
+        }
+
+        // "3 rooms still use this area. ...", "2 terrain types still use this area. ...", "1 room and 4 terrain types still use this area. ...".
+        public static string AreaInUseMessage(int rooms, int terrainTypes)
+        {
+            var parts = new List<string>();
+            if (rooms > 0) { parts.Add(rooms == 1 ? "1 room" : rooms + " rooms"); }
+            if (terrainTypes > 0) { parts.Add(terrainTypes == 1 ? "1 terrain type" : terrainTypes + " terrain types"); }
+            bool singular = parts.Count == 1 && (rooms == 1 || terrainTypes == 1);
+            return string.Join(" and ", parts) + (singular ? " still uses" : " still use") + " this area. Move or delete them first. Nothing was changed.";
         }
 
         // The backstop of CreateRoom and MoveRoom: an area with no record is refused. With no area store (not configured) nothing can be checked.

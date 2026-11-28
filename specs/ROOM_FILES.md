@@ -659,6 +659,8 @@ from other MUD formats) MUST emit this same YAML format, and nothing else:
   For rooms that carry `x-gen`, a map re-import REPLACES features, properties and behaviors instead of merging them (the merge rules
   of section 6.2 stay for hand-authored rooms). Regen and update of generated rooms go through the importer too. See
   [TERRAIN_GENERATORS.md](TERRAIN_GENERATORS.md) (proposed, not implemented).
+  `x-gen.terrain` stays the PLAIN legend name (for example `grass`): the room's key prefix is its area, and the library terrain type is
+  `<area>.<terrain>` (TERRAIN_GENERATORS.md section 18). Existing generated rooms need no change.
 
 ## 13. Future web backend
 

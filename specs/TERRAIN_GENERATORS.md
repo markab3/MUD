@@ -28,7 +28,7 @@ lock (section 9 of ROOM_FILES.md stays obsolete); any change to who writes autho
 | OD2 | Legend entries get optional `color: "#RRGGBB"`, used only by the website map view. The generator parses and ignores it; it never reaches room data. |
 | OD3 | Terrain id = legend template name. One generator class per terrain (`ITerrainGenerator`; `GenContext` with the cell, 8-neighbour lookup, seeded RNG via `SeededRandom`, the library). A generic `Terrain` base class does weighted, tag-filtered picks. Bespoke classes (e.g. river orientation from adjacent water) override. Registered in a `TerrainRegistry`. |
 | OD4 | The library lives in MongoDB, seeded from a YAML file in the repo on fresh install. Entities: description fragment, feature template, neighbour phrase. |
-| OD5 | Every entity has `terrains: []`. Empty list = NOT used by any generator (disabled/unassigned), never "any terrain". |
+| OD5 | **RETIRED (owner decision 2026-11-27, section 18).** Was: every entity has `terrains: []`, empty list = not used by any generator. Now every entity has exactly one `terrain` (a terrain type id, owned by an area); there is no unscoped and no shared entity. |
 | OD6 | Neighbour-aware descriptions: scan the 8 neighbours, pick phrases from the library, cap the count ("A river flows just north of here."). |
 | OD7 | Generated rooms carry provenance `x-gen` (map name, terrain, seed, libVersion). Generated features carry `templateId` + `templateVersion`. Description fragments are NOT tracked for update. |
 | OD8 | REGEN of a room wipes and refills description, ALL features (hand-added too) and properties. Keeps exits and occupants. No lock; hand edits are lost by design. |
@@ -166,17 +166,18 @@ features or the area YAML.
 
 ## 6. Library
 
-### 6.1 Entities and the `terrains` rule
+### 6.1 Entities and the `terrain` rule
 
-All three entities have `terrains: [<terrain id>, ...]`. **Empty list = not used by any generator** (OD5). A generator never selects an
-entity whose `terrains` does not contain its terrain id. The admin UI shows such entities under "Unassigned".
+All three entities have `terrain: <terrain type id>` (`<area>.<local>`), exactly one (section 18; this replaces the earlier `terrains` list and
+its empty-list rule, OD5). A generator selects only entities whose `terrain` equals the scoped id of its cell (map prefix + legend name).
+Where a table below still says `terrains`, read `terrain` (string, required).
 
 **Description fragment** (`terrain_fragments`)
 
 | field | type | notes |
 |---|---|---|
 | `id` | string | unique, kebab-case, stable |
-| `terrains` | string[] | see above |
+| `terrain` | string | see above |
 | `slot` | string | which pool of the terrain's long description it fills (e.g. `ground`, `sky`, `sound`, `flora`); a terrain's generator declares its ordered slots, one pick per slot (`GenericTerrain.Slots`); an empty slot is skipped |
 | `text` | string | one sentence/fragment; normalised by `AreaParser.NormalizeText` rules |
 | `weight` | int >= 0 | 0 = never picked by weight (kept for tag-forced use); default 1 |
@@ -187,7 +188,7 @@ entity whose `terrains` does not contain its terrain id. The admin UI shows such
 | field | type | notes |
 |---|---|---|
 | `id` | string | unique, stable; this is what `templateId` references |
-| `terrains` | string[] | |
+| `terrain` | string | |
 | `short` | string | the feature `short` (identity within the room, case-insensitive). **Added to the owner's field list**: a feature needs `short` and `long` to pass phase 1; see Q1 |
 | `long` | string | |
 | `handles`, `adjectives` | string[] | |
@@ -203,29 +204,36 @@ entity whose `terrains` does not contain its terrain id. The admin UI shows such
 | field | type | notes |
 |---|---|---|
 | `id` | string | |
-| `terrains` | string[] | the *room* terrains the phrase may appear in |
-| `neighborTerrain` | string | the terrain id of the neighbouring cell that triggers it |
+| `terrain` | string | the *room* terrain type the phrase appears in |
+| `neighborTerrain` | string | the terrain type id of the neighbouring cell that triggers it; same area as `terrain` |
 | `text` | string | contains `{dir}` (e.g. `A river flows just {dir} of here.`) |
 | `weight` | int | choice among phrases for the same `neighborTerrain` |
 | `merge` | bool | default true; if true, several sides matching the same `neighborTerrain` become one phrase with `{dir}` = `north and east` (rules in 7.4); if false, one phrase per side |
 
 ### 6.2 Seed file (repo) — YAML schema
 
-Path: `MUD.Core/Generation/Library/terrain-library.yaml` (shipped as a content file copied to the output directory; location is Q3).
+Path: `MUD.Core/Generation/Library/terrain-library.yaml` (an embedded resource of MUD.Core). `schema_version: 2` (section 18): the content belongs to one
+area and every entry is scoped to one of that area's terrain types, named by its local part.
 
 ```yaml
-schema_version: 1
+schema_version: 2
 library_version: 1            # initial value of the Mongo library version counter
+area:                          # created if missing, never overwritten (name/description: the map file's generator block)
+  id: sample_land
+  name: "Sample Land"
+  description: "A small stretch of coast: meadow, woods, a river that runs to the sea."
+terrainTypes:                  # ids are local; stored as <area>.<local> (sample_land.grass)
+  - { id: grass, name: "Grass", description: "Open meadow." }
 fragments:
   - id: grass-ground-1
-    terrains: [grass]
+    terrain: grass
     slot: ground
     text: "Short green grass carpets the ground."
     weight: 3
     tags: [dry]
 features:
   - id: boulder-grey
-    terrains: [grass, forest]
+    terrain: grass
     short: "a grey boulder"
     long: "A lichen-spotted boulder sits half buried in the earth."
     handles: [boulder, rock]
@@ -237,20 +245,20 @@ features:
     version: 1
 neighborPhrases:
   - id: river-near
-    terrains: [grass, forest]
+    terrain: grass
     neighborTerrain: river
     text: "A river flows just {dir} of here."
     weight: 1
     merge: true
 ```
 
-Validation of the seed file (run on load; failure aborts seeding and logs, nothing partial is written): known top-level keys only; ids unique
-per entity type; `weight` int >= 0; `chance` in [0,1]; `version` int >= 1; `text` of a neighbour phrase contains exactly one `{dir}`; every
-`terrains` / `neighborTerrain` entry is a non-empty string (it need not be registered; unknown ids are warned, not rejected, because maps
-define terrains by legend name and a library may be authored ahead of its terrain). Unknown non-`x-` keys are errors.
+Validation of the seed file (run on load; failure aborts seeding and logs, nothing partial is written): known top-level keys only; `area` and at least
+one terrain type are required; ids unique per entity type; `weight` int >= 0; `chance` in [0,1]; `version` int >= 1; `text` of a neighbour phrase
+contains exactly one `{dir}`; every `terrain` / `neighborTerrain` must be a terrain type declared in the same file (so a phrase never crosses areas).
+Unknown non-`x-` keys are errors (so a file still using `terrains:` is rejected).
 
-**Seeding rule ("fresh install").** On core start, if `terrain_meta` has no document `_id: "library"`, load the seed file, insert all entities,
-then insert `{_id: "library", version: <library_version>, seededAt}`. If the meta document exists the seed file is never read again, so
+**Seeding rule ("fresh install").** On core start, if `terrain_meta` has no document `_id: "library"`, load the seed file, insert the area, the terrain types and all entities,
+then insert `{_id: "library", version: <library_version>, seededAt}`. The area and the terrain types are created first (an insert that refuses an existing id, so an existing record is never overwritten), then the entries. If the meta document exists the seed file is never read again, so
 admin edits survive restarts and upgrades. Re-seeding is an explicit admin action (`ResetTerrainLibrary`, section 10), off by default and
 destructive (see Q4).
 
@@ -260,12 +268,13 @@ All in the world database; accessed only by core.
 
 | collection | `_id` | document |
 |---|---|---|
-| `terrain_fragments` | entity `id` | `{_id, terrains, slot, text, weight, tags, updatedAt, updatedBy}` |
-| `terrain_features` | entity `id` | `{_id, terrains, short, long, handles, adjectives, roomLine, detail, weight, chance, version, tags, updatedAt, updatedBy}` |
-| `terrain_neighbor_phrases` | entity `id` | `{_id, terrains, neighborTerrain, text, weight, merge, updatedAt, updatedBy}` |
+| `terrain_type` | `<area>.<local>` | `{_id, area, name, description, updatedAt, updatedBy}` |
+| `terrain_fragments` | entity `id` | `{_id, terrain, slot, text, weight, tags, updatedAt, updatedBy}` |
+| `terrain_features` | entity `id` | `{_id, terrain, short, long, handles, adjectives, roomLine, detail, weight, chance, version, tags, updatedAt, updatedBy}` |
+| `terrain_neighbor_phrases` | entity `id` | `{_id, terrain, neighborTerrain, text, weight, merge, updatedAt, updatedBy}` |
 | `terrain_meta` | `"library"` | `{_id: "library", version: int, seededAt}` |
 
-Index: multikey on `terrains` for each entity collection. Entity deletion removes the document (no tombstone); update's "template deleted" case
+Index: `terrain` on each entity collection (a migrated document also keeps its retired `terrains` array, ignored). Terrain type deletion is refused while any entity is scoped to it or names it as neighbour (section 18). Entity deletion removes the document (no tombstone); update's "template deleted" case
 is therefore "no document with that `_id`" (section 9.3). Edits go through the audit store like web room edits (D34, per-field rows); the
 collection name in the audit row is the entity collection.
 
@@ -315,9 +324,9 @@ public class Neighbour { public Dir Dir; public bool Exists; public string Terra
 public interface ITerrainLibrary
 {
     int Version { get; }
-    IReadOnlyList<DescriptionFragment> Fragments(string terrain, string slot);
-    IReadOnlyList<FeatureTemplate> Features(string terrain);
-    IReadOnlyList<NeighborPhrase> Phrases(string roomTerrain, string neighborTerrain);
+    IReadOnlyList<DescriptionFragment> Fragments(string terrainTypeId, string slot);   // per terrain type id "<area>.<local>" (section 18)
+    IReadOnlyList<FeatureTemplate> Features(string terrainTypeId);
+    IReadOnlyList<NeighborPhrase> Phrases(string roomTerrainTypeId, string neighborTerrainTypeId);
     FeatureTemplate FeatureById(string id);         // for update (9.3)
 }
 
@@ -541,8 +550,8 @@ enum LibraryEntityKind { LIBRARY_ENTITY_KIND_UNSPECIFIED = 0; LIBRARY_FRAGMENT =
 
 message TerrainLibraryQuery {
   string token = 1;
-  string terrain = 2;          // filter: entities whose terrains contain this id
-  bool unassigned_only = 3;    // filter: terrains is empty (OD5); wins over `terrain`
+  string terrain = 2;          // filter: one terrain type id (section 18)
+  string area = 5;             // filter: every terrain type of this area
   LibraryEntityKind kind = 4;  // UNSPECIFIED = all kinds
 }
 message TerrainLibraryReply {
@@ -552,18 +561,19 @@ message TerrainLibraryReply {
   repeated NeighborPhraseRecord phrases = 4;
   repeated string known_terrains = 5;   // registered classes + terrains seen in stored rooms' gen.terrain + terrains referenced by entities
 }
-message FragmentRecord { string id = 1; repeated string terrains = 2; string slot = 3; string text = 4; int32 weight = 5; repeated string tags = 6; }
+// Section 18: `terrains = 2` is reserved in the three records (never reused); each has `terrain` (new field number) and a read-only `area`. The shipped admin.proto is the truth.
+message FragmentRecord { reserved 2; string id = 1; string slot = 3; string text = 4; int32 weight = 5; repeated string tags = 6; string terrain = 7; string area = 8; }
 message FeatureTemplateRecord {
-  string id = 1; repeated string terrains = 2; string short = 3; string long = 4;
+  reserved 2; string id = 1; string short = 3; string long = 4; string terrain = 13; string area = 14;
   repeated string handles = 5; repeated string adjectives = 6;
   string room_line = 7; string detail = 8; int32 weight = 9; double chance = 10; int32 version = 11; repeated string tags = 12;
 }
-message NeighborPhraseRecord { string id = 1; repeated string terrains = 2; string neighbor_terrain = 3; string text = 4; int32 weight = 5; bool merge = 6; }
+message NeighborPhraseRecord { reserved 2; string id = 1; string terrain = 7; string area = 8; string neighbor_terrain = 3; string text = 4; int32 weight = 5; bool merge = 6; }
 
 message SaveFragmentRequest { string token = 1; FragmentRecord fragment = 2; bool create = 3; }
 message SaveFeatureTemplateRequest {
   string token = 1; FeatureTemplateRecord template = 2; bool create = 3;
-  // The server sets version = stored version + 1 when any of short/long/handles/adjectives/room_line/detail changed; weight/chance/terrains/tags edits do not bump it.
+  // The server sets version = stored version + 1 when any of short/long/handles/adjectives/room_line/detail changed; weight/chance/terrain/tags edits do not bump it.
   // The client-sent version is ignored.
 }
 message SaveNeighborPhraseRequest { string token = 1; NeighborPhraseRecord phrase = 2; bool create = 3; }
@@ -627,10 +637,9 @@ Notes:
 
 All through `IAdminClient`; the web never reads Mongo.
 
-1. **`/creator/terrain`** — library list with tabs Fragments / Features / Neighbour phrases / Unassigned; filter by terrain and tag; shows
-   weight, and for features the version. Row actions Edit / Delete / "assign to terrain". "Unassigned" shows every entity whose `terrains`
-   is empty (OD5) with a banner "Not used by any generator".
-2. **`/creator/terrain/edit?kind=&id=`** — one form per entity kind; `terrains` as a multi-select of `known_terrains` plus free text; preview of
+1. **`/creator/terrain`** — library list with tabs Fragments / Features / Neighbour phrases; filter by terrain (a terrain type id) and tag; shows
+   weight, and for features the version. Row actions Edit / Delete. (The earlier "Unassigned" tab and its "Not used by any generator" banner are retired, section 18.)
+2. **`/creator/terrain/edit?kind=&id=`** — one form per entity kind; `terrain` as a single terrain-type dropdown (`ListTerrainTypes`, all areas); preview of
    the phrase with `{dir}` filled in; features show "saving text changes bumps the version from N to N+1".
 3. **`/creator/maps`** — maps from `ListMaps`, with the legend colour swatches from `GetMapMeta`; buttons "Dry run" and "Regenerate and re-import
    (all rooms of this map)" with a confirmation that hand edits will be lost (OD8/OD10); the result table is `GenerationReply`.
@@ -650,7 +659,7 @@ Nav: add "Terrain" and "Maps" links to the Creator page. Layout/styling follows 
 - Importer: `Replace` replaces features (hand-added gone), behaviours, properties; a hand-authored room at a map key is reported `NotOwned`; phase-1 errors
   write nothing; `Unchanged` when regenerated with identical output (idempotent).
 - Update: each outcome of 9.3 (updated / current / newer-in-room / deleted / conflict / unreferenced untouched; description untouched).
-- Admin API: roles, audit rows, `terrains: []` semantics (an entity with empty terrains is never selected by a generator).
+- Admin API: roles, audit rows, terrain scoping (unknown terrain, phrase neighbour in another area) and terrain type delete refusals (section 18).
 Mongo is unavailable in CI sandboxes; repository-level behaviour needs the in-memory fakes (`MUD.Tests/InMemoryRepositories.cs`) and a clear note of what was not run against Mongo.
 
 ## 13. Proposed card split (for the orchestrator; not created here)
@@ -697,7 +706,7 @@ Implemented in `MUD.Core/Generation/Terrains/` and `MapGenerator.cs`; tests in `
 - Opt-in: `MapGenerator.Generate(mapYaml)` is unchanged (no library, no `x-gen`, byte-identical output to before). `MapGenerator.Generate(mapYaml, mapName, library, registry = null)` is the terrain-aware entry point; it emits room `x-gen` (`map`, `terrain`, `seed`, `libVersion`; `genVersion` not emitted yet) and, on generated features, feature `x-gen: {templateId, templateVersion}`.
 - Generic `Terrain` draw order: map-template short, map-template long pools (exactly as before), then library fragments only where the template has none (`short` slot, then `Slots`, default `ground`), `Orientation` hook, neighbour phrases, features. Neighbour phrases and features are added whenever a library is supplied, even to templates with map-file text (a library-less run is the only mode that is identical to the old output).
 - Neighbour phrase draws: one weighted pick per neighbour terrain that has phrases, in first-`Dir` order, all drawn before the cap is applied; ranking by side count then `Dir` then terrain ordinal. Generic cap `MaxNeighborSentences` = 2, `MaxFeatures` = 2.
-- Empty `terrains` rule is enforced twice: `InMemoryLibrary` never returns such entities, and `Terrain` filters again so a misbehaving `ILibrary` cannot leak them.
+- The earlier "empty `terrains`" rule (OD5) is retired (section 18): every entity has exactly one terrain, `InMemoryLibrary` matches on it, and `Terrain` no longer filters again.
 - Legend: scalar or `{template, color}`. `color` must match `#RRGGBB` (stored upper-case); exposed as `GenerateResult.Colors` (terrain id -> colour), never in the YAML. Two different colours for one terrain: first wins, a message goes to `GenerateResult.Warnings`.
 - Not done (other cards): `RoomDefinition.Gen`/`FeatureDefinition.TemplateId` parser fields and storage (the parser still skips `x-` keys, so provenance is emitted but not yet persisted), importer `Replace` mode, `MapFileService`/`genmap` wiring, `TerrainRegistry` bespoke classes (registry ships empty).
 
@@ -714,3 +723,51 @@ Implemented: library entities (already in `Library.cs`), `ILibraryStore` / `Mong
 - **MapGenerator.** With a library, the "a walkable template needs 'short' and 'long'" check is skipped (text may come from the library); a cell that still has no text is an error per room.
 - **Seed and sample.** Seed library gained the `ocean` terrain (fragments, a feature, a river-meets-ocean phrase) and ocean neighbour phrases for grass/forest/river. Sample map `MUD.Main/Content/maps/sample_land.map.yaml` (grass = grassland, forest, river, ocean). Grassland's terrain id is `grass`.
 - **Not run against MongoDB** (`MongoLibraryStore`, `GenMapCommand` wiring, `UpsertFields` of `gen`). `AreaExporter` does not export `gen`/`templateId` yet, so export then import of a generated room loses provenance. `GenMapCommand` needs `IMongoDatabase` from DI (registered in `World`).
+
+## 18. Terrain types owned by areas (card t_8162b4b3, branch terrainscope)
+
+**Owner decision 2026-11-27. It reverses OD5 and the "one entry shared by several terrains" model of 6.1.** Every fragment, feature template and
+neighbour phrase is scoped to EXACTLY ONE terrain type. The earlier rule "an entity lists terrains; an EMPTY list means used by no generator" is
+retired (an entity can no longer be unscoped), and so is sharing one entry between terrains: a shared entry is now one copy per terrain.
+
+Hierarchy: **Area -> terrain types, item templates, rooms** (NPC templates later, not built); **terrain type -> fragments, feature templates,
+neighbour phrases.**
+
+- **Terrain type** (Mongo `terrain_type`): `_id` = `<area>.<local>`; `local` matches `^[a-z0-9_]+$` and equals the map legend template name; the
+  area must have a record; `name` (required, one line, up to 100), `description` (optional, up to 200), plus `area` (= the id's prefix, stored for
+  queries), `updatedAt`, `updatedBy`. The id (and so the area) never changes; update changes name and description only. Admin rpcs and rules:
+  specs/ADMIN_API.md "Terrain types".
+- **Scope field.** Fragment, feature template and phrase have a required `terrain` = a terrain type id that exists. A phrase's `terrain` is the ROOM
+  terrain it appears in; its `neighborTerrain` is a terrain type id in the SAME area as `terrain` (a map never crosses areas). Update may change
+  `terrain` (a move); a moved phrase must still have its neighbour in the new terrain's area. **Entry ids are globally unique free strings and are
+  never renamed** (generated rooms reference feature templates by id; regen/update look entries up by id).
+- **Weight 0** is already "never picked" (the weighted pick excludes `weight <= 0`); there is no separate enabled flag.
+- **Generator.** A map with prefix `P` and legend template `T` uses terrain type `P.T`. `Terrain` keeps the plain legend name (`TerrainId`) for the
+  map file's own template data and asks the library with the scoped id; `NeighbourPhrases.Build` compares neighbour cells by scoped id inside the
+  same map. `ILibrary` queries are per terrain type id (`Fragments(typeId, slot)`, `Features(typeId)`, `Phrases(roomTypeId, neighbourTypeId)`);
+  `InMemoryLibrary` returns an entity only when `Terrain` equals the id, so a legacy entity without a terrain is never returned.
+- **No record, no content.** A terrain with no terrain type record (for example `wall` in `sample_city`) has no library content and falls back to the
+  map file's own text, exactly as a terrain with no entries always did: no error, no warning.
+- **Provenance.** Rooms keep storing `x-gen.terrain` as the PLAIN name; a generated room's `Area` equals the map prefix (its key prefix), so the
+  scoped id is always `room.Area + "." + gen.terrain`. Existing generated rooms, regen and update keep working unchanged: regen and update look
+  library entries up by id (`FeatureById`) or regenerate from the map, never by a terrain name.
+- **Seed** (`terrain-library.yaml`, `schema_version: 2`): an `area` block (id, name, description, those of the map file's generator block), a
+  `terrainTypes` list (local ids) and entries with `terrain` / `neighborTerrain` as local names of that area. On a fresh install (no `terrain_meta`)
+  the loader creates the area and the terrain types if missing (never overwriting) and then the entries scoped to `<area>.<local>`. The shipped seed
+  creates area `sample_land`, 4 terrain types (grass, forest, river, ocean), 13 fragments, 4 feature templates and 12 neighbour phrases. Shared
+  entries are split: the first terrain keeps the original id, every other terrain gets a copy with id `<id>-<terrain local>` (`boulder-grey` on grass,
+  `boulder-grey-forest` on forest; `river-near` / `river-near-forest`; `ocean-near`, `ocean-near-forest`, `ocean-near-river`; ...).
+- **Migration** (`LibraryMigration`, run at core start after the seed, logs what it did; MUD.Main content directory `maps/*.map.yaml`): for every
+  fragment, feature template or phrase WITHOUT a `terrain` field, for each name in its legacy `terrains` list find the maps whose legend uses that
+  name; create the area (if missing, from the map's generator block) and the terrain type `<area>.<name>` (if missing), and write the scoped entry
+  (the first terrain keeps the id, every other gets a copy `<id>-<local>`; if that id is taken by another entry, `<id>-<area>-<local>`). A phrase's
+  `neighborTerrain` is resolved in the same area (a map that does not use the neighbour name gets no copy). **A name used by no map file, and any
+  entry whose legacy list is empty, is NOT migrated: its id is logged and the document is left untouched.** The legacy `terrains` array stays on
+  migrated documents (ignored from now on; a later cleanup can drop it). The library version is bumped once when anything was migrated, so regen and
+  update see a change. Idempotent: a document that has a `terrain` is never read again, every other write is an insert that refuses an existing id,
+  and the original is replaced last, so a run that died half way is finished by the next one.
+  Against the live data (db `testmud`: 13 fragments, 3 features, 6 phrases, no `sample_land` area record): area `sample_land` with 4 terrain types,
+  13 fragments, 4 feature templates (3 originals + `boulder-grey-forest`) and 12 phrases (6 originals + 6 copies), 22 documents moved, 7 copies,
+  version 1 -> 2. These numbers come from `LibraryMigrationTests`, which uses the live-shaped data; the Mongo path was not run here.
+- **Not part of this card:** the website pages (the next card reworks them; for now the terrains multi-select is a single terrain-type dropdown
+  across all areas, and the "Unassigned" tab is gone), NPC templates.

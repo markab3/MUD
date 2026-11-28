@@ -33,11 +33,11 @@ public class LibraryGrpcClientTests : IDisposable
             _ => new LibraryEditReply { Result = AdminResult.Ok, LibraryVersion = 12 },
         };
 
-        public override Task<ListFragmentsReply> ListFragments(TokenRequest request, Grpc.Core.ServerCallContext context)
+        public override Task<ListFragmentsReply> ListFragments(ListLibraryRequest request, Grpc.Core.ServerCallContext context)
         {
             RequireToken(request.Token);
             var reply = new ListFragmentsReply { LibraryVersion = 3 };
-            reply.Fragments.Add(new FragmentRecord { Id = "f1", Slot = "ground", Text = "Grass." });
+            reply.Fragments.Add(new FragmentRecord { Id = "f1", Slot = "ground", Text = "Grass.", Terrain = request.Terrain.Length > 0 ? request.Terrain : "a.grass", Area = request.Area });
             return Task.FromResult(reply);
         }
 
@@ -51,7 +51,7 @@ public class LibraryGrpcClientTests : IDisposable
         public override Task<LibraryEditReply> UpdateFragment(SaveFragmentRequest request, Grpc.Core.ServerCallContext context) { RequireToken(request.Token); return Task.FromResult(Answer(request.Fragment.Id)); }
         public override Task<LibraryEditReply> DeleteFragment(LibraryIdRequest request, Grpc.Core.ServerCallContext context) { RequireToken(request.Token); return Task.FromResult(Answer(request.Id)); }
 
-        public override Task<ListFeatureTemplatesReply> ListFeatureTemplates(TokenRequest request, Grpc.Core.ServerCallContext context)
+        public override Task<ListFeatureTemplatesReply> ListFeatureTemplates(ListLibraryRequest request, Grpc.Core.ServerCallContext context)
         {
             RequireToken(request.Token);
             var reply = new ListFeatureTemplatesReply();
@@ -69,7 +69,7 @@ public class LibraryGrpcClientTests : IDisposable
         public override Task<LibraryEditReply> UpdateFeatureTemplate(SaveFeatureTemplateRequest request, Grpc.Core.ServerCallContext context) { RequireToken(request.Token); return Task.FromResult(Answer(request.Template.Id)); }
         public override Task<LibraryEditReply> DeleteFeatureTemplate(LibraryIdRequest request, Grpc.Core.ServerCallContext context) { RequireToken(request.Token); return Task.FromResult(Answer(request.Id)); }
 
-        public override Task<ListNeighborPhrasesReply> ListNeighborPhrases(TokenRequest request, Grpc.Core.ServerCallContext context)
+        public override Task<ListNeighborPhrasesReply> ListNeighborPhrases(ListLibraryRequest request, Grpc.Core.ServerCallContext context)
         {
             RequireToken(request.Token);
             var reply = new ListNeighborPhrasesReply();
@@ -86,6 +86,34 @@ public class LibraryGrpcClientTests : IDisposable
         public override Task<LibraryEditReply> CreateNeighborPhrase(SaveNeighborPhraseRequest request, Grpc.Core.ServerCallContext context) { RequireToken(request.Token); return Task.FromResult(Answer(request.Phrase.Id)); }
         public override Task<LibraryEditReply> UpdateNeighborPhrase(SaveNeighborPhraseRequest request, Grpc.Core.ServerCallContext context) { RequireToken(request.Token); return Task.FromResult(Answer(request.Phrase.Id)); }
         public override Task<LibraryEditReply> DeleteNeighborPhrase(LibraryIdRequest request, Grpc.Core.ServerCallContext context) { RequireToken(request.Token); return Task.FromResult(Answer(request.Id)); }
+
+        // Terrain types: the id decides the answer, as for the library entities.
+        private static TerrainTypeEditReply TerrainTypeAnswer(string id) => id switch
+        {
+            "a.taken" => new TerrainTypeEditReply { Result = AdminResult.AlreadyExists, Message = "exists" },
+            "a.gone" => new TerrainTypeEditReply { Result = AdminResult.NotFound, Message = "missing" },
+            "a.used" => new TerrainTypeEditReply { Result = AdminResult.Refused, Message = "3 description fragments still use it" },
+            "a.bad" => new TerrainTypeEditReply { Result = AdminResult.Invalid, Errors = { new FieldError { Field = "Name", Message = "required" } } },
+            _ => new TerrainTypeEditReply { Result = AdminResult.Ok, TerrainType = new TerrainTypeRecord { Id = id, Area = "a", Name = "N" } },
+        };
+
+        public override Task<ListTerrainTypesReply> ListTerrainTypes(ListTerrainTypesRequest request, Grpc.Core.ServerCallContext context)
+        {
+            RequireToken(request.Token);
+            var reply = new ListTerrainTypesReply();
+            reply.TerrainTypes.Add(new TerrainTypeRecord { Id = (request.Area.Length > 0 ? request.Area : "a") + ".grass", Area = request.Area.Length > 0 ? request.Area : "a", Name = "Grass" });
+            return Task.FromResult(reply);
+        }
+
+        public override Task<GetTerrainTypeReply> GetTerrainType(TerrainTypeIdRequest request, Grpc.Core.ServerCallContext context)
+        {
+            RequireToken(request.Token);
+            return Task.FromResult(request.Id == "a.grass" ? new GetTerrainTypeReply { Found = true, TerrainType = new TerrainTypeRecord { Id = "a.grass", Area = "a", Name = "Grass" } } : new GetTerrainTypeReply());
+        }
+
+        public override Task<TerrainTypeEditReply> CreateTerrainType(SaveTerrainTypeRequest request, Grpc.Core.ServerCallContext context) { RequireToken(request.Token); return Task.FromResult(TerrainTypeAnswer(request.TerrainType.Id)); }
+        public override Task<TerrainTypeEditReply> UpdateTerrainType(SaveTerrainTypeRequest request, Grpc.Core.ServerCallContext context) { RequireToken(request.Token); return Task.FromResult(TerrainTypeAnswer(request.TerrainType.Id)); }
+        public override Task<TerrainTypeEditReply> DeleteTerrainType(TerrainTypeIdRequest request, Grpc.Core.ServerCallContext context) { RequireToken(request.Token); return Task.FromResult(TerrainTypeAnswer(request.Id)); }
     }
 
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "wl" + Guid.NewGuid().ToString("N").Substring(0, 8));
@@ -144,6 +172,51 @@ public class LibraryGrpcClientTests : IDisposable
         Assert.Equal(expected, (await client.CreateNeighborPhraseAsync("tok", new NeighborPhraseRecord { Id = id })).Result);
         Assert.Equal(expected, (await client.UpdateNeighborPhraseAsync("tok", new NeighborPhraseRecord { Id = id })).Result);
         Assert.Equal(expected, (await client.DeleteNeighborPhraseAsync("tok", id)).Result);
+    }
+
+    [Fact]
+    public async Task ListFilters_TerrainAndArea_ReachCore()
+    {
+        var client = await Start();
+        Assert.Equal("a.forest", Assert.Single(await client.ListFragmentsAsync("tok", terrain: "a.forest")).Terrain);
+        Assert.Equal("b", Assert.Single(await client.ListFragmentsAsync("tok", area: "b")).Area);
+        Assert.Equal("b.grass", Assert.Single(await client.ListTerrainTypesAsync("tok", "b")).Id);
+    }
+
+    [Fact]
+    public async Task TerrainTypes_ListGet_AndGetOfAnUnknownIdIsNull()
+    {
+        var client = await Start();
+        Assert.Equal("a.grass", Assert.Single(await client.ListTerrainTypesAsync("tok")).Id);
+        Assert.Equal("a", (await client.GetTerrainTypeAsync("tok", "a.grass"))!.Area);
+        Assert.Null(await client.GetTerrainTypeAsync("tok", "a.nope"));
+    }
+
+    [Theory]
+    [InlineData("a.ok", AdminResult.Ok)]
+    [InlineData("a.taken", AdminResult.AlreadyExists)]
+    [InlineData("a.gone", AdminResult.NotFound)]
+    [InlineData("a.used", AdminResult.Refused)]
+    [InlineData("a.bad", AdminResult.Invalid)]
+    public async Task TerrainTypeWrites_PassEveryResultBranchThrough(string id, AdminResult expected)
+    {
+        var client = await Start();
+        Assert.Equal(expected, (await client.CreateTerrainTypeAsync("tok", new TerrainTypeRecord { Id = id })).Result);
+        Assert.Equal(expected, (await client.UpdateTerrainTypeAsync("tok", new TerrainTypeRecord { Id = id })).Result);
+        Assert.Equal(expected, (await client.DeleteTerrainTypeAsync("tok", id)).Result);
+    }
+
+    [Fact]
+    public async Task TerrainTypeStatuses_MapOntoTheTwoExceptions_AndWhenNothingListens()
+    {
+        var client = await Start();
+        Assert.True((await Assert.ThrowsAsync<CoreRefusedException>(() => client.ListTerrainTypesAsync("stale"))).SessionEnded);
+        Assert.False((await Assert.ThrowsAsync<CoreRefusedException>(() => client.CreateTerrainTypeAsync("low", new TerrainTypeRecord { Id = "a.x" }))).SessionEnded);
+        await Assert.ThrowsAsync<CoreUnavailableException>(() => client.DeleteTerrainTypeAsync("busy", "a.x"));
+
+        var none = new GrpcAdminClient(new Admin.AdminClient(CoreSocket.OpenChannel(Path.Combine(_directory, "none.sock"))));
+        await Assert.ThrowsAsync<CoreUnavailableException>(() => none.ListTerrainTypesAsync("tok"));
+        await Assert.ThrowsAsync<CoreUnavailableException>(() => none.UpdateTerrainTypeAsync("tok", new TerrainTypeRecord { Id = "a.x" }));
     }
 
     [Fact]

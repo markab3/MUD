@@ -38,19 +38,21 @@ namespace MUD.Core.Generation.Terrains
         // At most `cap` sentences. One weighted phrase pick per neighbour terrain (draws happen for every
         // qualifying group before the cap is applied, so the cap never shifts later draws). Groups with the
         // most matching sides win; ties by first Dir order, then neighbour terrain ordinal. No RNG in ranking.
+        // roomTerrain is the plain legend name of the room's cell. The library is asked with scoped terrain type ids
+        // ("<map prefix>.<name>") and neighbour cells are compared by scoped id inside the same map (a map never crosses areas).
         public static List<string> Build(GenContext ctx, string roomTerrain, int cap)
         {
             var result = new List<string>();
             if (ctx.Library == null || cap <= 0) { return result; }
 
+            string roomScoped = TerrainTypeRules.IdFor(ctx.Prefix, roomTerrain);
             var groups = ctx.Neighbours.Where(n => n.Exists && n.TerrainId != null)
-                .GroupBy(n => n.TerrainId).OrderBy(g => g.Min(n => (int)n.Dir)).ToList();
+                .GroupBy(n => TerrainTypeRules.IdFor(ctx.Prefix, n.TerrainId)).OrderBy(g => g.Min(n => (int)n.Dir)).ToList();
             var candidates = new List<Candidate>();
             foreach (var g in groups)
             {
-                var phrases = ctx.Library.Phrases(roomTerrain, g.Key)
-                    .Where(p => InMemoryLibrary.Uses(p.Terrains, roomTerrain) && p.NeighborTerrain == g.Key
-                        && p.Text != null && p.Text.Contains("{dir}")).ToList();
+                var phrases = ctx.Library.Phrases(roomScoped, g.Key)
+                    .Where(p => p.Text != null && p.Text.Contains("{dir}")).ToList();
                 var pick = Pick(ctx.Rng, phrases);
                 if (pick == null) { continue; }
                 var dirs = g.Select(n => n.Dir).OrderBy(d => (int)d).ToList();

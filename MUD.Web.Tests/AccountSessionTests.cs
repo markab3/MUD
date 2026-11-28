@@ -507,6 +507,77 @@ public class FakeAdminClient : IAdminClient
         return Task.FromResult(ItemTemplateReferences);
     }
 
+    // Terrain types. Tests seed TerrainTypes (AddTerrainType) and set TerrainTypeResult (what create/update/delete answer); every call records its token.
+    public AdminResult TerrainTypeResult { get; set; } = AdminResult.Ok;
+    public string TerrainTypeMessage { get; set; } = string.Empty;
+    public List<FieldError> TerrainTypeErrors { get; } = new();
+    public bool RefuseTerrainTypeCalls { get; set; }
+    public List<string> TerrainTypeTokens { get; } = new();
+    public List<string> TerrainTypeCalls { get; } = new();
+    public Dictionary<string, TerrainTypeRecord> TerrainTypes { get; } = new();
+
+    public FakeAdminClient AddTerrainType(string id, string name = "", string description = "")
+    {
+        TerrainTypes[id] = new TerrainTypeRecord { Id = id, Area = id.Substring(0, id.LastIndexOf('.')), Name = string.IsNullOrEmpty(name) ? id : name, Description = description };
+        return this;
+    }
+
+    // The optional terrain and area filters of the library list calls (the area of a terrain id is the part before the last '.').
+    private static bool ScopeMatches(string entityTerrain, string? terrain, string? area) =>
+        (string.IsNullOrEmpty(terrain) || entityTerrain == terrain)
+        && (string.IsNullOrEmpty(area) || (entityTerrain.Contains('.') && entityTerrain.Substring(0, entityTerrain.LastIndexOf('.')) == area));
+
+    private void CheckTerrainTypeCall(string token, string call)
+    {
+        if (Unavailable) { throw new CoreUnavailableException(); }
+        TerrainTypeTokens.Add(token);
+        TerrainTypeCalls.Add(call);
+        if (RefuseTerrainTypeCalls) { throw new CoreRefusedException(false); }
+    }
+
+    private TerrainTypeEditReply TerrainTypeReply()
+    {
+        var reply = new TerrainTypeEditReply { Result = TerrainTypeResult, Message = TerrainTypeMessage };
+        reply.Errors.AddRange(TerrainTypeErrors);
+        return reply;
+    }
+
+    public Task<IReadOnlyList<TerrainTypeRecord>> ListTerrainTypesAsync(string token, string? area = null, CancellationToken cancellation = default)
+    {
+        CheckTerrainTypeCall(token, "ListTerrainTypes");
+        return Task.FromResult<IReadOnlyList<TerrainTypeRecord>>(TerrainTypes.Values.Where(t => string.IsNullOrEmpty(area) || t.Area == area).OrderBy(t => t.Id, StringComparer.Ordinal).ToList());
+    }
+
+    public Task<TerrainTypeRecord?> GetTerrainTypeAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckTerrainTypeCall(token, "GetTerrainType");
+        return Task.FromResult(TerrainTypes.TryGetValue(id, out var t) ? t : null);
+    }
+
+    public Task<TerrainTypeEditReply> CreateTerrainTypeAsync(string token, TerrainTypeRecord terrainType, CancellationToken cancellation = default)
+    {
+        CheckTerrainTypeCall(token, "CreateTerrainType");
+        var reply = TerrainTypeReply();
+        if (reply.Result == AdminResult.Ok) { terrainType.Area = terrainType.Id.Substring(0, terrainType.Id.LastIndexOf('.')); TerrainTypes[terrainType.Id] = terrainType; reply.TerrainType = terrainType; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<TerrainTypeEditReply> UpdateTerrainTypeAsync(string token, TerrainTypeRecord terrainType, CancellationToken cancellation = default)
+    {
+        CheckTerrainTypeCall(token, "UpdateTerrainType");
+        var reply = TerrainTypeReply();
+        if (reply.Result == AdminResult.Ok) { TerrainTypes[terrainType.Id] = terrainType; reply.TerrainType = terrainType; }
+        return Task.FromResult(reply);
+    }
+
+    public Task<TerrainTypeEditReply> DeleteTerrainTypeAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        CheckTerrainTypeCall(token, "DeleteTerrainType:" + id);
+        var reply = TerrainTypeReply();
+        if (reply.Result == AdminResult.Ok) { TerrainTypes.Remove(id); }
+        return Task.FromResult(reply);
+    }
+
     // Terrain library. Tests set LibraryResult (what the create/update/delete calls answer) and seed the stores; every call records its token.
     public AdminResult LibraryResult { get; set; } = AdminResult.Ok;
     public string LibraryMessage { get; set; } = string.Empty;
@@ -528,10 +599,10 @@ public class FakeAdminClient : IAdminClient
 
     private LibraryEditReply LibraryReply() => new() { Result = LibraryResult, Message = LibraryMessage };
 
-    public Task<IReadOnlyList<FragmentRecord>> ListFragmentsAsync(string token, CancellationToken cancellation = default)
+    public Task<IReadOnlyList<FragmentRecord>> ListFragmentsAsync(string token, string? terrain = null, string? area = null, CancellationToken cancellation = default)
     {
         CheckLibraryCall(token, "ListFragments");
-        return Task.FromResult<IReadOnlyList<FragmentRecord>>(Fragments.Values.OrderBy(f => f.Id, StringComparer.Ordinal).ToList());
+        return Task.FromResult<IReadOnlyList<FragmentRecord>>(Fragments.Values.Where(f => ScopeMatches(f.Terrain, terrain, area)).OrderBy(f => f.Id, StringComparer.Ordinal).ToList());
     }
 
     public Task<FragmentRecord?> GetFragmentAsync(string token, string id, CancellationToken cancellation = default)
@@ -564,10 +635,10 @@ public class FakeAdminClient : IAdminClient
         return Task.FromResult(reply);
     }
 
-    public Task<IReadOnlyList<FeatureTemplateRecord>> ListFeatureTemplatesAsync(string token, CancellationToken cancellation = default)
+    public Task<IReadOnlyList<FeatureTemplateRecord>> ListFeatureTemplatesAsync(string token, string? terrain = null, string? area = null, CancellationToken cancellation = default)
     {
         CheckLibraryCall(token, "ListFeatureTemplates");
-        return Task.FromResult<IReadOnlyList<FeatureTemplateRecord>>(FeatureTemplates.Values.OrderBy(f => f.Id, StringComparer.Ordinal).ToList());
+        return Task.FromResult<IReadOnlyList<FeatureTemplateRecord>>(FeatureTemplates.Values.Where(f => ScopeMatches(f.Terrain, terrain, area)).OrderBy(f => f.Id, StringComparer.Ordinal).ToList());
     }
 
     public Task<FeatureTemplateRecord?> GetFeatureTemplateAsync(string token, string id, CancellationToken cancellation = default)
@@ -607,10 +678,10 @@ public class FakeAdminClient : IAdminClient
         return Task.FromResult(reply);
     }
 
-    public Task<IReadOnlyList<NeighborPhraseRecord>> ListNeighborPhrasesAsync(string token, CancellationToken cancellation = default)
+    public Task<IReadOnlyList<NeighborPhraseRecord>> ListNeighborPhrasesAsync(string token, string? terrain = null, string? area = null, CancellationToken cancellation = default)
     {
         CheckLibraryCall(token, "ListNeighborPhrases");
-        return Task.FromResult<IReadOnlyList<NeighborPhraseRecord>>(NeighborPhrases.Values.OrderBy(f => f.Id, StringComparer.Ordinal).ToList());
+        return Task.FromResult<IReadOnlyList<NeighborPhraseRecord>>(NeighborPhrases.Values.Where(f => ScopeMatches(f.Terrain, terrain, area)).OrderBy(f => f.Id, StringComparer.Ordinal).ToList());
     }
 
     public Task<NeighborPhraseRecord?> GetNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default)

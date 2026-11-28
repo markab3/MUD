@@ -72,8 +72,9 @@ public interface IAdminClient
 
     // Terrain library (creator or admin; specs/TERRAIN_GENERATORS.md section 6). Same exceptions as the room calls. Get returns null when
     // no entity has the id. Create/update/delete answer in the reply's result (Ok, NoChange, Invalid, NotFound, AlreadyExists, Refused,
-    // AuditFailed, Failed). An entity with an empty terrains list is used by no generator. A feature template's version is set by core.
-    Task<IReadOnlyList<FragmentRecord>> ListFragmentsAsync(string token, CancellationToken cancellation = default);
+    // AuditFailed, Failed). Every entity is scoped to exactly one terrain type (terrain). The list calls take optional terrain and area filters
+    // (null or empty = all). A feature template's version is set by core.
+    Task<IReadOnlyList<FragmentRecord>> ListFragmentsAsync(string token, string? terrain = null, string? area = null, CancellationToken cancellation = default);
 
     Task<FragmentRecord?> GetFragmentAsync(string token, string id, CancellationToken cancellation = default);
 
@@ -83,7 +84,7 @@ public interface IAdminClient
 
     Task<LibraryEditReply> DeleteFragmentAsync(string token, string id, CancellationToken cancellation = default);
 
-    Task<IReadOnlyList<FeatureTemplateRecord>> ListFeatureTemplatesAsync(string token, CancellationToken cancellation = default);
+    Task<IReadOnlyList<FeatureTemplateRecord>> ListFeatureTemplatesAsync(string token, string? terrain = null, string? area = null, CancellationToken cancellation = default);
 
     Task<FeatureTemplateRecord?> GetFeatureTemplateAsync(string token, string id, CancellationToken cancellation = default);
 
@@ -93,7 +94,7 @@ public interface IAdminClient
 
     Task<LibraryEditReply> DeleteFeatureTemplateAsync(string token, string id, CancellationToken cancellation = default);
 
-    Task<IReadOnlyList<NeighborPhraseRecord>> ListNeighborPhrasesAsync(string token, CancellationToken cancellation = default);
+    Task<IReadOnlyList<NeighborPhraseRecord>> ListNeighborPhrasesAsync(string token, string? terrain = null, string? area = null, CancellationToken cancellation = default);
 
     Task<NeighborPhraseRecord?> GetNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default);
 
@@ -102,6 +103,20 @@ public interface IAdminClient
     Task<LibraryEditReply> UpdateNeighborPhraseAsync(string token, NeighborPhraseRecord phrase, CancellationToken cancellation = default);
 
     Task<LibraryEditReply> DeleteNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default);
+
+    // Terrain types (creator or admin; specs/ADMIN_API.md "Terrain types"). Same exceptions as the room calls. List takes an optional area
+    // (null or empty = all). Get returns null for an unknown id. Create, update and delete answer in the reply's result (Ok, NoChange, Invalid,
+    // NotFound, AlreadyExists, Refused, AuditFailed, Failed). Delete is Refused while library entries still use the terrain type (the message
+    // names the counts). The id (<area>.<local>) never changes; update changes name and description only.
+    Task<IReadOnlyList<TerrainTypeRecord>> ListTerrainTypesAsync(string token, string? area = null, CancellationToken cancellation = default);
+
+    Task<TerrainTypeRecord?> GetTerrainTypeAsync(string token, string id, CancellationToken cancellation = default);
+
+    Task<TerrainTypeEditReply> CreateTerrainTypeAsync(string token, TerrainTypeRecord terrainType, CancellationToken cancellation = default);
+
+    Task<TerrainTypeEditReply> UpdateTerrainTypeAsync(string token, TerrainTypeRecord terrainType, CancellationToken cancellation = default);
+
+    Task<TerrainTypeEditReply> DeleteTerrainTypeAsync(string token, string id, CancellationToken cancellation = default);
 
     // Areas (creator or admin; specs/ADMIN_API.md "Areas"). Same exceptions as the room calls. Get returns null for an unknown id. Create,
     // update and delete answer in the reply's result (Ok, NoChange, Invalid, NotFound, AlreadyExists, Refused, AuditFailed, Failed). Delete is
@@ -331,8 +346,8 @@ public sealed class GrpcAdminClient : IAdminClient
 
     private static DateTime Deadline() => DateTime.UtcNow + CallDeadline;
 
-    public async Task<IReadOnlyList<FragmentRecord>> ListFragmentsAsync(string token, CancellationToken cancellation = default) =>
-        (await Call(() => _client.ListFragmentsAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Fragments.ToList();
+    public async Task<IReadOnlyList<FragmentRecord>> ListFragmentsAsync(string token, string? terrain = null, string? area = null, CancellationToken cancellation = default) =>
+        (await Call(() => _client.ListFragmentsAsync(new ListLibraryRequest { Token = token ?? string.Empty, Terrain = terrain ?? string.Empty, Area = area ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Fragments.ToList();
 
     public async Task<FragmentRecord?> GetFragmentAsync(string token, string id, CancellationToken cancellation = default)
     {
@@ -349,8 +364,8 @@ public sealed class GrpcAdminClient : IAdminClient
     public Task<LibraryEditReply> DeleteFragmentAsync(string token, string id, CancellationToken cancellation = default) =>
         Call(() => _client.DeleteFragmentAsync(new LibraryIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
 
-    public async Task<IReadOnlyList<FeatureTemplateRecord>> ListFeatureTemplatesAsync(string token, CancellationToken cancellation = default) =>
-        (await Call(() => _client.ListFeatureTemplatesAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Templates.ToList();
+    public async Task<IReadOnlyList<FeatureTemplateRecord>> ListFeatureTemplatesAsync(string token, string? terrain = null, string? area = null, CancellationToken cancellation = default) =>
+        (await Call(() => _client.ListFeatureTemplatesAsync(new ListLibraryRequest { Token = token ?? string.Empty, Terrain = terrain ?? string.Empty, Area = area ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Templates.ToList();
 
     public async Task<FeatureTemplateRecord?> GetFeatureTemplateAsync(string token, string id, CancellationToken cancellation = default)
     {
@@ -367,8 +382,8 @@ public sealed class GrpcAdminClient : IAdminClient
     public Task<LibraryEditReply> DeleteFeatureTemplateAsync(string token, string id, CancellationToken cancellation = default) =>
         Call(() => _client.DeleteFeatureTemplateAsync(new LibraryIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
 
-    public async Task<IReadOnlyList<NeighborPhraseRecord>> ListNeighborPhrasesAsync(string token, CancellationToken cancellation = default) =>
-        (await Call(() => _client.ListNeighborPhrasesAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Phrases.ToList();
+    public async Task<IReadOnlyList<NeighborPhraseRecord>> ListNeighborPhrasesAsync(string token, string? terrain = null, string? area = null, CancellationToken cancellation = default) =>
+        (await Call(() => _client.ListNeighborPhrasesAsync(new ListLibraryRequest { Token = token ?? string.Empty, Terrain = terrain ?? string.Empty, Area = area ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Phrases.ToList();
 
     public async Task<NeighborPhraseRecord?> GetNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default)
     {
@@ -384,6 +399,24 @@ public sealed class GrpcAdminClient : IAdminClient
 
     public Task<LibraryEditReply> DeleteNeighborPhraseAsync(string token, string id, CancellationToken cancellation = default) =>
         Call(() => _client.DeleteNeighborPhraseAsync(new LibraryIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public async Task<IReadOnlyList<TerrainTypeRecord>> ListTerrainTypesAsync(string token, string? area = null, CancellationToken cancellation = default) =>
+        (await Call(() => _client.ListTerrainTypesAsync(new ListTerrainTypesRequest { Token = token ?? string.Empty, Area = area ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).TerrainTypes.ToList();
+
+    public async Task<TerrainTypeRecord?> GetTerrainTypeAsync(string token, string id, CancellationToken cancellation = default)
+    {
+        var reply = await Call(() => _client.GetTerrainTypeAsync(new TerrainTypeIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
+        return reply.Found ? reply.TerrainType : null;
+    }
+
+    public Task<TerrainTypeEditReply> CreateTerrainTypeAsync(string token, TerrainTypeRecord terrainType, CancellationToken cancellation = default) =>
+        Call(() => _client.CreateTerrainTypeAsync(new SaveTerrainTypeRequest { Token = token ?? string.Empty, TerrainType = terrainType }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<TerrainTypeEditReply> UpdateTerrainTypeAsync(string token, TerrainTypeRecord terrainType, CancellationToken cancellation = default) =>
+        Call(() => _client.UpdateTerrainTypeAsync(new SaveTerrainTypeRequest { Token = token ?? string.Empty, TerrainType = terrainType }, deadline: Deadline(), cancellationToken: cancellation));
+
+    public Task<TerrainTypeEditReply> DeleteTerrainTypeAsync(string token, string id, CancellationToken cancellation = default) =>
+        Call(() => _client.DeleteTerrainTypeAsync(new TerrainTypeIdRequest { Token = token ?? string.Empty, Id = id ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation));
 
     public async Task<IReadOnlyList<AreaRecord>> ListAreasAsync(string token, CancellationToken cancellation = default) =>
         (await Call(() => _client.ListAreasAsync(new TokenRequest { Token = token ?? string.Empty }, deadline: Deadline(), cancellationToken: cancellation))).Areas.ToList();

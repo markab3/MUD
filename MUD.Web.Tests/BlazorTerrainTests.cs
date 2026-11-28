@@ -19,12 +19,13 @@ public class TerrainPresenterTests
     {
         var core = new FakeAdminClient();
         var f1 = new FragmentRecord { Id = "g1", Slot = "opening", Text = "Grass.", Weight = 2 };
-        f1.Terrains.Add("grass"); f1.Tags.Add("calm");
-        var f2 = new FragmentRecord { Id = "orphan", Slot = "opening", Text = "Nothing.", Weight = 1 };
+        f1.Terrain = "a.grass"; f1.Tags.Add("calm");
+        var f2 = new FragmentRecord { Id = "orphan", Slot = "opening", Text = "Nothing.", Weight = 1, Terrain = "a.forest" };
         var t1 = new FeatureTemplateRecord { Id = "t1", Short = "a rock", Long = "A rock.", Weight = 1, Chance = 0.5, Version = 3 };
-        t1.Terrains.Add("forest");
-        var p1 = new NeighborPhraseRecord { Id = "p1", NeighborTerrain = "river", Text = "A river flows {dir} of here.", Weight = 1 };
-        p1.Terrains.Add("grass");
+        t1.Terrain = "a.forest";
+        var p1 = new NeighborPhraseRecord { Id = "p1", NeighborTerrain = "a.river", Text = "A river flows {dir} of here.", Weight = 1 };
+        p1.Terrain = "a.grass";
+        core.AddTerrainType("a.forest").AddTerrainType("a.grass").AddTerrainType("a.river");
         core.Fragments["g1"] = f1; core.Fragments["orphan"] = f2;
         core.FeatureTemplates["t1"] = t1; core.NeighborPhrases["p1"] = p1;
         return core;
@@ -52,26 +53,26 @@ public class TerrainPresenterTests
         var core = Core();
         var page = await List(core);
         Assert.Equal(new[] { "g1", "orphan" }, page.Rows.Select(r => r.Id));
-        Assert.Equal(new[] { "forest", "grass", "river" }, page.KnownTerrains);
+        Assert.Equal(new[] { "a.forest", "a.grass", "a.river" }, page.KnownTerrains);
         Assert.Equal(new[] { Token }, core.LibraryTokens.Distinct());
-        Assert.Equal(1, page.UnassignedCount);
     }
 
     [Fact]
-    public async Task List_UnassignedTab_ShowsOnlyEntitiesWithEmptyTerrains()
+    public async Task List_UnassignedTabIsGone_AnUnknownTabIsTheFragmentsList_AndRowsCarryTheirTerrain()
     {
+        // The earlier "unassigned" tab (empty terrains list) was retired with the empty-list rule: every entity has exactly one terrain.
         var page = await List(Core(), "unassigned");
-        Assert.Equal(new[] { "orphan" }, page.Rows.Select(r => r.Id));
-        Assert.Equal(1, page.UnassignedCount);
-        Assert.Empty(page.Rows[0].Terrains);
+        Assert.Equal(TerrainLibrary.Fragment, page.Tab);
+        Assert.Equal(new[] { ("g1", "a.grass"), ("orphan", "a.forest") }, page.Rows.Select(r => (r.Id, r.Terrain)));
     }
 
     [Fact]
     public async Task List_FiltersByTerrainAndTag()
     {
-        Assert.Equal(new[] { "g1" }, (await List(Core(), "fragment", "grass")).Rows.Select(r => r.Id));
+        Assert.Equal(new[] { "g1" }, (await List(Core(), "fragment", "a.grass")).Rows.Select(r => r.Id));
         Assert.Equal(new[] { "g1" }, (await List(Core(), "fragment", null, "calm")).Rows.Select(r => r.Id));
-        Assert.Empty((await List(Core(), "fragment", "forest")).Rows);
+        Assert.Equal(new[] { "orphan" }, (await List(Core(), "fragment", "a.forest")).Rows.Select(r => r.Id));
+        Assert.Empty((await List(Core(), "fragment", "a.river")).Rows);
     }
 
     [Fact]
@@ -188,45 +189,35 @@ public class TerrainPresenterTests
     // ---- edit: load ----
 
     [Fact]
-    public async Task Edit_New_Fragment_ListsKnownTerrains_AndWarnsWhenNoneTicked()
+    public async Task Edit_New_Fragment_ListsTheTerrainTypesOfEveryArea()
     {
         var page = await Edit(Core(), "fragment", null);
         Assert.True(page.IsNew);
         Assert.False(page.IsMissing);
-        Assert.Equal(new[] { "forest", "grass", "river" }, page.TerrainChoices);
-        Assert.True(page.Unused);
+        Assert.Equal(new[] { "a.forest", "a.grass", "a.river" }, page.TerrainChoices);
         Assert.Equal("A new template starts at version 1.", page.VersionHint);
     }
 
     [Fact]
-    public async Task Edit_Existing_LoadsFields_AndNoWarningWhenAssigned()
+    public async Task Edit_Existing_LoadsFields_AndItsTerrain()
     {
         var page = await Edit(Core(), "feature", "t1");
         Assert.False(page.IsNew);
         Assert.Equal("a rock", page.Short);
+        Assert.Equal("a.forest", page.Terrain);
         Assert.Equal(3, page.Version);
-        Assert.False(page.Unused);
         Assert.Contains("from 3 to 4", page.VersionHint);
     }
 
     [Fact]
-    public async Task Edit_Existing_WithEmptyTerrains_ShowsUnusedWarning()
+    public async Task Edit_Existing_FragmentLoadsItsTerrain_AndAMoveIsSentAsTheNewTerrain()
     {
-        Assert.True((await Edit(Core(), "fragment", "orphan")).Unused);
-    }
-
-    [Fact]
-    public async Task Edit_TickingATerrain_ClearsTheWarning_AndUntickingBringsItBack()
-    {
-        var page = await Edit(Core(), "fragment", "orphan");
-        page.SetTerrain("grass", true);
-        page.SetTerrain("grass", true);
-        Assert.Equal(new[] { "grass" }, page.Terrains);
-        Assert.False(page.Unused);
-        page.SetTerrain("grass", false);
-        Assert.True(page.Unused);
-        page.ExtraTerrains = " swamp ";
-        Assert.False(page.Unused);
+        var core = Core();
+        var page = await Edit(core, "fragment", "orphan");
+        Assert.Equal("a.forest", page.Terrain);
+        page.Terrain = "a.grass";
+        Assert.Equal(TerrainEditOutcome.Ok, await page.SaveAsync());
+        Assert.Equal("a.grass", core.Fragments["orphan"].Terrain);
     }
 
     [Fact]
@@ -261,24 +252,24 @@ public class TerrainPresenterTests
         var core = Core();
         var page = await Edit(core, "fragment", null);
         page.NewId = " new1 "; page.Slot = "opening"; page.Text = "Text."; page.Weight = 4; page.Tags = "a, b  c";
-        page.Terrains = new List<string> { "grass" }; page.ExtraTerrains = "swamp, grass";
+        page.Terrain = " a.grass ";
         Assert.Equal(TerrainEditOutcome.Ok, await page.SaveAsync());
         Assert.Equal("Saved.", page.Notice);
         var saved = core.Fragments["new1"];
-        Assert.Equal(new[] { "grass", "swamp" }, saved.Terrains);
+        Assert.Equal("a.grass", saved.Terrain);
         Assert.Equal(new[] { "a", "b", "c" }, saved.Tags);
         Assert.Equal(4, saved.Weight);
         Assert.Contains("CreateFragment", core.LibraryCalls);
     }
 
     [Fact]
-    public async Task Save_EmptyTerrains_IsSentEmpty()
+    public async Task Save_NewPhrase_SendsTheTerrainAndTheNeighbourAsTypedIds()
     {
         var core = Core();
         var page = await Edit(core, "phrase", null);
-        page.NewId = "x"; page.NeighborTerrain = "river"; page.Text = "{dir}";
+        page.NewId = "x"; page.Terrain = "a.grass"; page.NeighborTerrain = "a.river"; page.Text = "{dir}";
         await page.SaveAsync();
-        Assert.Empty(core.NeighborPhrases["x"].Terrains);
+        Assert.Equal(("a.grass", "a.river"), (core.NeighborPhrases["x"].Terrain, core.NeighborPhrases["x"].NeighborTerrain));
     }
 
     [Fact]
@@ -286,7 +277,7 @@ public class TerrainPresenterTests
     {
         var core = Core();
         var page = await Edit(core, "feature", "t1");
-        page.NewId = "other"; page.Short = "a big rock"; page.Long = "A rock."; page.Chance = 0.5; page.Weight = 1; page.Terrains = new List<string> { "forest" };
+        page.NewId = "other"; page.Short = "a big rock"; page.Long = "A rock."; page.Chance = 0.5; page.Weight = 1; page.Terrain = "a.forest";
         await page.SaveAsync();
         Assert.Contains("UpdateFeatureTemplate", core.LibraryCalls);
         Assert.False(core.FeatureTemplates.ContainsKey("other"));
@@ -300,10 +291,10 @@ public class TerrainPresenterTests
         var core = Core();
         core.LibraryResult = AdminResult.Invalid;
         var page = await Edit(core, "phrase", null);
-        page.NewId = "x"; page.Text = "no placeholder"; page.NeighborTerrain = "river";
+        page.NewId = "x"; page.Text = "no placeholder"; page.NeighborTerrain = "a.river";
         Assert.Equal(TerrainEditOutcome.Invalid, await page.SaveAsync());
         Assert.Equal("no placeholder", page.Text);
-        Assert.Equal("river", page.NeighborTerrain);
+        Assert.Equal("a.river", page.NeighborTerrain);
         Assert.False(page.IsMissing);
     }
 
@@ -489,15 +480,14 @@ public class TerrainPresenterTests
     }
 
     [Fact]
-    public void TheEditor_KeepsADraft_ShowsTheEmptyListWarning_AndScrollsTheTerrainList()
+    public void TheEditor_KeepsADraft_AndOffersASingleTerrainTypeDropdown_WithNoEmptyListWarning()
     {
         var src = Read("MUD.Web/Components/Pages/TerrainEdit.razor");
         Assert.Contains("Drafts.SaveAsync", src);
         Assert.Contains("Messages.TerrainDraftFound", src);
-        Assert.Contains("p.Unused", src);
-        Assert.Contains("TerrainLibrary.UnusedWarning", src);
-        Assert.Contains("mud-terrain-list", src);
-        Assert.Contains("max-height: 40vh", Read("MUD.Web/wwwroot/css/mobile.css"));
+        Assert.DoesNotContain("Unused", src);               // the empty-list warning is retired: every entry has exactly one terrain
+        Assert.DoesNotContain("ExtraTerrains", src);
+        Assert.Contains("id=\"te-terrain\"", src);        // one terrain-type dropdown fed from ListTerrainTypes
         Assert.Contains("inputmode=\"numeric\"", src);
         Assert.Contains("mud-sticky-actions", src);
     }

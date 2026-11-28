@@ -21,7 +21,7 @@ namespace MUD.Core.Generation.Terrains
         {
             var e = new List<LibraryError>();
             Id(e, f.Id);
-            Terrains(e, "terrains", f.Terrains);
+            Scope(e, f.Terrain);
             if (string.IsNullOrWhiteSpace(f.Slot)) { e.Add(new LibraryError("slot", "The slot is required.")); }
             Required(e, "text", f.Text);
             if (f.Weight < 0) { e.Add(new LibraryError("weight", "The weight must be 0 or more.")); }
@@ -33,7 +33,7 @@ namespace MUD.Core.Generation.Terrains
         {
             var e = new List<LibraryError>();
             Id(e, f.Id);
-            Terrains(e, "terrains", f.Terrains);
+            Scope(e, f.Terrain);
             Required(e, "short", f.Short);
             Required(e, "long", f.Long);
             Strings(e, "handles", f.Handles);
@@ -49,8 +49,8 @@ namespace MUD.Core.Generation.Terrains
         {
             var e = new List<LibraryError>();
             Id(e, p.Id);
-            Terrains(e, "terrains", p.Terrains);
-            if (string.IsNullOrWhiteSpace(p.NeighborTerrain)) { e.Add(new LibraryError("neighborTerrain", "The neighbour terrain is required.")); }
+            Scope(e, p.Terrain);
+            NeighborScope(e, p.NeighborTerrain);
             Required(e, "text", p.Text);
             if (!string.IsNullOrEmpty(p.Text) && CountDir(p.Text) != 1) { e.Add(new LibraryError("text", "The text must contain {dir} exactly once.")); }
             if (p.Weight < 0) { e.Add(new LibraryError("weight", "The weight must be 0 or more.")); }
@@ -79,12 +79,18 @@ namespace MUD.Core.Generation.Terrains
             else if (value.Length > MaxTextLength) { e.Add(new LibraryError(field, "This field is too long.")); }
         }
 
-        // Empty list is valid (OD5: not used by any generator). Entries must be non-empty strings.
-        private static void Terrains(List<LibraryError> e, string field, List<string> terrains)
+        // The terrain is required and must have the shape of a terrain type id. That the terrain type exists (and, for a phrase, that the
+        // neighbour is in the same area) needs the store and is checked by the admin API.
+        private static void Scope(List<LibraryError> e, string terrain)
         {
-            if (terrains == null) { return; }
-            if (terrains.Any(t => string.IsNullOrWhiteSpace(t))) { e.Add(new LibraryError(field, "Every terrain id must be a non-empty string.")); }
-            if (terrains.Distinct().Count() != terrains.Count) { e.Add(new LibraryError(field, "A terrain id is listed twice.")); }
+            if (string.IsNullOrWhiteSpace(terrain)) { e.Add(new LibraryError("terrain", "The terrain is required.")); return; }
+            if (TerrainTypeRules.CheckId(terrain) != null) { e.Add(new LibraryError("terrain", "The terrain must be a terrain type id such as 'area.name'.")); }
+        }
+
+        private static void NeighborScope(List<LibraryError> e, string neighbor)
+        {
+            if (string.IsNullOrWhiteSpace(neighbor)) { e.Add(new LibraryError("neighborTerrain", "The neighbour terrain is required.")); return; }
+            if (TerrainTypeRules.CheckId(neighbor) != null) { e.Add(new LibraryError("neighborTerrain", "The neighbour terrain must be a terrain type id such as 'area.name'.")); }
         }
 
         private static void Strings(List<LibraryError> e, string field, List<string> items)

@@ -1,82 +1,108 @@
 # Terrain library seed (specs/TERRAIN_GENERATORS.md section 6.2).
 # Loaded into MongoDB ONLY on a fresh install (no terrain_meta "library" document). After that the database is the truth and edits
 # are made through the admin API; changing this file does not change an existing install.
-# `terrains: []` would mean "used by no generator" (never "any terrain").
-schema_version: 1
+#
+# The content belongs to one area (`area`), its terrain types (`terrainTypes`, ids are the local part: `grass` becomes `sample_land.grass`)
+# and every entry is scoped to EXACTLY ONE terrain type (`terrain`, and for a phrase `neighborTerrain`, both local names of this area).
+# There is no unscoped entry and no entry shared by several terrains: an entry that fits two terrains is written twice, the second copy
+# with the id `<id>-<terrain>`. The area name and description are those of the generator block of MUD.Main/Content/maps/sample_land.map.yaml.
+schema_version: 2
 library_version: 1
+
+area:
+  id: sample_land
+  name: "Sample Land"
+  description: "A small stretch of coast: meadow, woods, a river that runs to the sea."
+
+terrainTypes:
+  - { id: grass, name: "Grass", description: "Open meadow." }
+  - { id: forest, name: "Forest", description: "Woodland." }
+  - { id: river, name: "River", description: "Running water." }
+  - { id: ocean, name: "Ocean", description: "The open sea." }
 
 fragments:
   - id: grass-short-1
-    terrains: [grass]
+    terrain: grass
     slot: short
     text: "a grassy meadow"
     weight: 2
   - id: grass-short-2
-    terrains: [grass]
+    terrain: grass
     slot: short
     text: "an open field"
     weight: 1
   - id: grass-ground-1
-    terrains: [grass]
+    terrain: grass
     slot: ground
     text: "Short green grass carpets the ground."
     weight: 3
     tags: [dry]
   - id: grass-ground-2
-    terrains: [grass]
+    terrain: grass
     slot: ground
     text: "Tall grass sways in the breeze."
     weight: 2
     tags: [dry]
   - id: forest-short-1
-    terrains: [forest]
+    terrain: forest
     slot: short
     text: "a shaded forest"
     weight: 2
   - id: forest-short-2
-    terrains: [forest]
+    terrain: forest
     slot: short
     text: "deep in the woods"
     weight: 1
   - id: forest-ground-1
-    terrains: [forest]
+    terrain: forest
     slot: ground
     text: "Tall trees crowd close and the ground is thick with fallen leaves."
     weight: 3
   - id: forest-ground-2
-    terrains: [forest]
+    terrain: forest
     slot: ground
     text: "Roots twist across a floor of moss and needles."
     weight: 2
   - id: river-short-1
-    terrains: [river]
+    terrain: river
     slot: short
     text: "a flowing river"
     weight: 1
   - id: river-ground-1
-    terrains: [river]
+    terrain: river
     slot: ground
     text: "Cold water runs swiftly over smooth stones."
     weight: 1
   - id: ocean-short-1
-    terrains: [ocean]
+    terrain: ocean
     slot: short
     text: "the open sea"
     weight: 1
   - id: ocean-ground-1
-    terrains: [ocean]
+    terrain: ocean
     slot: ground
     text: "Grey swells roll in endless lines toward the horizon."
     weight: 1
   - id: ocean-ground-2
-    terrains: [ocean]
+    terrain: ocean
     slot: ground
     text: "Salt spray hangs in the air above the heaving water."
     weight: 1
 
 features:
   - id: boulder-grey
-    terrains: [grass, forest]
+    terrain: grass
+    short: "a grey boulder"
+    long: "A lichen-spotted boulder sits half buried in the earth."
+    handles: [boulder, rock]
+    adjectives: [grey, lichen-spotted]
+    roomLine: "A grey boulder squats nearby."
+    detail: "The boulder is cold and rough, and dotted with pale lichen."
+    weight: 2
+    chance: 0.15
+    version: 1
+  - id: boulder-grey-forest
+    terrain: forest
     short: "a grey boulder"
     long: "A lichen-spotted boulder sits half buried in the earth."
     handles: [boulder, rock]
@@ -87,7 +113,7 @@ features:
     chance: 0.15
     version: 1
   - id: fallen-log
-    terrains: [forest]
+    terrain: forest
     short: "a fallen log"
     long: "A moss-covered log lies where it fell, soft with rot."
     handles: [log, trunk]
@@ -96,9 +122,8 @@ features:
     weight: 1
     chance: 0.2
     version: 1
-
   - id: driftwood
-    terrains: [ocean]
+    terrain: ocean
     short: "a piece of driftwood"
     long: "A bleached length of driftwood bobs on the swell."
     handles: [driftwood, wood]
@@ -110,37 +135,73 @@ features:
 
 neighborPhrases:
   - id: river-near
-    terrains: [grass, forest]
+    terrain: grass
+    neighborTerrain: river
+    text: "A river flows just {dir} of here."
+    weight: 2
+    merge: true
+  - id: river-near-forest
+    terrain: forest
     neighborTerrain: river
     text: "A river flows just {dir} of here."
     weight: 2
     merge: true
   - id: river-near-alt
-    terrains: [grass, forest]
+    terrain: grass
+    neighborTerrain: river
+    text: "You hear running water to the {dir}."
+    weight: 1
+    merge: true
+  - id: river-near-alt-forest
+    terrain: forest
     neighborTerrain: river
     text: "You hear running water to the {dir}."
     weight: 1
     merge: true
   - id: forest-near
-    terrains: [grass]
+    terrain: grass
     neighborTerrain: forest
     text: "Trees crowd together to the {dir}."
     weight: 1
     merge: true
   - id: ocean-near
-    terrains: [grass, forest, river]
+    terrain: grass
+    neighborTerrain: ocean
+    text: "The sea stretches away to the {dir}."
+    weight: 2
+    merge: true
+  - id: ocean-near-forest
+    terrain: forest
+    neighborTerrain: ocean
+    text: "The sea stretches away to the {dir}."
+    weight: 2
+    merge: true
+  - id: ocean-near-river
+    terrain: river
     neighborTerrain: ocean
     text: "The sea stretches away to the {dir}."
     weight: 2
     merge: true
   - id: ocean-near-alt
-    terrains: [grass, forest, river]
+    terrain: grass
+    neighborTerrain: ocean
+    text: "You taste salt on the wind from the {dir}."
+    weight: 1
+    merge: true
+  - id: ocean-near-alt-forest
+    terrain: forest
+    neighborTerrain: ocean
+    text: "You taste salt on the wind from the {dir}."
+    weight: 1
+    merge: true
+  - id: ocean-near-alt-river
+    terrain: river
     neighborTerrain: ocean
     text: "You taste salt on the wind from the {dir}."
     weight: 1
     merge: true
   - id: river-meets-ocean
-    terrains: [ocean]
+    terrain: ocean
     neighborTerrain: river
     text: "A river empties into the sea to the {dir}."
     weight: 1

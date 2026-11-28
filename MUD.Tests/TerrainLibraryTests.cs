@@ -11,7 +11,7 @@ using Xunit;
 
 namespace MUD.Tests
 {
-    // Card t_e62bb6f3: terrain library store, seed loader and the Admin library calls. No database: an in-memory ILibraryStore and fakes.
+    // Terrain library store, seed loader, migration and the Admin library calls (every entity scoped to exactly one terrain type). No database: in-memory stores and fakes.
     // The Mongo implementation (MongoLibraryStore) was NOT run here; see specs/ADMIN_API.md "Not verified here".
     public class FakeLibraryStore : ILibraryStore
     {
@@ -35,11 +35,13 @@ namespace MUD.Tests
         public Table<DescriptionFragment> FragmentTable = new Table<DescriptionFragment>(e => e.Id);
         public Table<FeatureTemplate> FeatureTable = new Table<FeatureTemplate>(e => e.Id);
         public Table<NeighborPhrase> PhraseTable = new Table<NeighborPhrase>(e => e.Id);
+        public Table<TerrainType> TerrainTypeTable = new Table<TerrainType>(e => e.Id);
         public int? Version;
 
         public ILibraryCollection<DescriptionFragment> Fragments { get { return FragmentTable; } }
         public ILibraryCollection<FeatureTemplate> Features { get { return FeatureTable; } }
         public ILibraryCollection<NeighborPhrase> Phrases { get { return PhraseTable; } }
+        public ILibraryCollection<TerrainType> TerrainTypes { get { return TerrainTypeTable; } }
         public int? GetVersion() { return Version; }
         public void InitMeta(int version) { if (!Version.HasValue) { Version = version; } }
         public int BumpVersion() { if (!Version.HasValue) { throw new InvalidOperationException("no meta"); } Version = Version.Value + 1; return Version.Value; }
@@ -48,15 +50,19 @@ namespace MUD.Tests
     public class TerrainLibrarySeedTests
     {
         private const string Good = @"
-schema_version: 1
+schema_version: 2
 library_version: 4
+area: { id: demo, name: ""Demo"", description: ""A demo area."" }
+terrainTypes:
+  - { id: grass, name: ""Grass"" }
+  - { id: forest, name: ""Forest"" }
 fragments:
-  - { id: g1, terrains: [grass], slot: short, text: ""a meadow"", weight: 2, tags: [dry] }
-  - { id: unused, terrains: [], slot: short, text: ""nobody uses me"" }
+  - { id: g1, terrain: grass, slot: short, text: ""a meadow"", weight: 2, tags: [dry] }
+  - { id: silent, terrain: forest, slot: short, text: ""never picked"", weight: 0 }
 features:
-  - { id: b1, terrains: [grass], short: ""a boulder"", long: ""A boulder."", handles: [boulder], weight: 2, chance: 0.5, version: 3 }
+  - { id: b1, terrain: grass, short: ""a boulder"", long: ""A boulder."", handles: [boulder], weight: 2, chance: 0.5, version: 3 }
 neighborPhrases:
-  - { id: p1, terrains: [grass], neighborTerrain: river, text: ""A river flows just {dir} of here."", merge: false }
+  - { id: p1, terrain: grass, neighborTerrain: forest, text: ""Trees stand {dir} of here."", merge: false }
 ";
 
         private static List<string> ParseErrors(string yaml)
@@ -67,68 +73,131 @@ neighborPhrases:
         }
 
         [Fact]
-        public void AValidFileParsesWithAllFieldsAndKeepsAnEmptyTerrainsListEmpty()
+        public void AValidFileParsesWithAllFields_AndEveryEntryIsScopedToOneScopedTerrainTypeId()
         {
             var errors = new List<string>();
             LibrarySeedData data = LibrarySeed.Parse(Good, errors, new List<string>());
             Assert.Empty(errors);
             Assert.Equal(4, data.LibraryVersion);
+            Assert.Equal(("demo", "Demo", "A demo area."), (data.Area.Id, data.Area.Name, data.Area.Description));
+            Assert.Equal(new[] { "demo.grass", "demo.forest" }, data.TerrainTypes.Select(t => t.Id));
             Assert.Equal(2, data.Fragments.Count);
-            Assert.Equal(2, data.Fragments[0].Weight);
+            Assert.Equal(("demo.grass", 2), (data.Fragments[0].Terrain, data.Fragments[0].Weight));
+            Assert.Equal(0, data.Fragments[1].Weight);   // weight 0 is kept (never picked), not rejected
             Assert.Equal(new[] { "dry" }, data.Fragments[0].Tags);
-            Assert.Empty(data.Fragments[1].Terrains);   // OD5: empty stays empty, it is not "any terrain"
-            Assert.Equal((3, 0.5, 2), (data.Features[0].Version, data.Features[0].Chance, data.Features[0].Weight));
-            Assert.False(data.Phrases[0].Merge);
+            Assert.Equal((3, 0.5, 2, "demo.grass"), (data.Features[0].Version, data.Features[0].Chance, data.Features[0].Weight, data.Features[0].Terrain));
+            Assert.Equal(("demo.grass", "demo.forest", false), (data.Phrases[0].Terrain, data.Phrases[0].NeighborTerrain, data.Phrases[0].Merge));
         }
 
         [Fact]
-        public void TheEmbeddedSeedFileIsPresentAndValid()
+        public void TheEmbeddedSeedFileIsPresentValidAndAllInOneAreaWithFourTerrainTypes()
         {
             string yaml = LibrarySeed.ReadEmbedded();
             Assert.NotNull(yaml);
             var errors = new List<string>();
             LibrarySeedData data = LibrarySeed.Parse(yaml, errors, new List<string>());
             Assert.Empty(errors);
-            Assert.NotEmpty(data.Fragments);
-            Assert.NotEmpty(data.Features);
-            Assert.NotEmpty(data.Phrases);
-            // Every seeded entity is assigned to a terrain: the shipped library has nothing disabled.
-            Assert.All(data.Fragments, f => Assert.NotEmpty(f.Terrains));
-            Assert.All(data.Features, f => Assert.NotEmpty(f.Terrains));
-            Assert.All(data.Phrases, f => Assert.NotEmpty(f.Terrains));
+            Assert.Equal("sample_land", data.Area.Id);
+            Assert.Equal(new[] { "sample_land.grass", "sample_land.forest", "sample_land.river", "sample_land.ocean" }, data.TerrainTypes.Select(t => t.Id));
+            Assert.Equal((13, 4, 12), (data.Fragments.Count, data.Features.Count, data.Phrases.Count));
+            var types = new HashSet<string>(data.TerrainTypes.Select(t => t.Id));
+            Assert.All(data.Fragments, f => Assert.Contains(f.Terrain, types));
+            Assert.All(data.Features, f => Assert.Contains(f.Terrain, types));
+            Assert.All(data.Phrases, p => { Assert.Contains(p.Terrain, types); Assert.Contains(p.NeighborTerrain, types); });
+        }
+
+        [Fact]
+        public void TheEmbeddedSeedSplitsSharedEntries_TheFirstTerrainKeepsTheOriginalId()
+        {
+            var data = LibrarySeed.Parse(LibrarySeed.ReadEmbedded(), new List<string>(), new List<string>());
+            Assert.Equal("sample_land.grass", data.Features.Single(f => f.Id == "boulder-grey").Terrain);
+            Assert.Equal("sample_land.forest", data.Features.Single(f => f.Id == "boulder-grey-forest").Terrain);
+            Assert.Equal("sample_land.grass", data.Phrases.Single(p => p.Id == "river-near").Terrain);
+            Assert.Equal("sample_land.forest", data.Phrases.Single(p => p.Id == "river-near-forest").Terrain);
+            Assert.Equal(new[] { "sample_land.forest", "sample_land.grass", "sample_land.river" }, data.Phrases.Where(p => p.Id.StartsWith("ocean-near") && !p.Id.Contains("alt")).Select(p => p.Terrain).OrderBy(x => x));
         }
 
         [Fact]
         public void TheEmbeddedSeedGivesEveryTerrainItWorksOnAShortFragment()
         {
             var data = LibrarySeed.Parse(LibrarySeed.ReadEmbedded(), new List<string>(), new List<string>());
-            foreach (string terrain in data.Fragments.SelectMany(f => f.Terrains).Distinct())
+            foreach (string terrain in data.TerrainTypes.Select(t => t.Id))
             {
-                Assert.Contains(data.Fragments, f => f.Slot == "short" && f.Terrains.Contains(terrain));
+                Assert.Contains(data.Fragments, f => f.Slot == "short" && f.Terrain == terrain);
             }
         }
 
         [Fact]
-        public void AFreshStoreIsSeededAndTheMetaDocumentIsCreatedLast()
+        public void TheSeedAreaMatchesTheGeneratorBlockOfTheSampleLandMap()
+        {
+            string path = FindSampleMap();
+            var map = MapAreaReader.Read(System.IO.File.ReadAllText(path));
+            var data = LibrarySeed.Parse(LibrarySeed.ReadEmbedded(), new List<string>(), new List<string>());
+            Assert.Equal((map.Prefix, map.Name, map.Description), (data.Area.Id, data.Area.Name, data.Area.Description));
+            Assert.Equal(map.Terrains.OrderBy(x => x), data.TerrainTypes.Select(t => t.Local).OrderBy(x => x));
+        }
+
+        private static string FindSampleMap()
+        {
+            string dir = AppContext.BaseDirectory;
+            while (dir != null && !System.IO.File.Exists(System.IO.Path.Combine(dir, "MUD.sln"))) { dir = System.IO.Path.GetDirectoryName(dir); }
+            return System.IO.Path.Combine(dir, "MUD.Main", "Content", "maps", "sample_land.map.yaml");
+        }
+
+        [Fact]
+        public void AFreshStoreIsSeededAreaFirst_TerrainTypesThenEntries_AndTheMetaDocumentIsCreatedLast()
         {
             var store = new FakeLibraryStore();
-            LibrarySeedResult result = LibrarySeed.SeedIfFresh(store, Good);
+            var areas = new FakeAreaStore();
+            LibrarySeedResult result = LibrarySeed.SeedIfFresh(store, areas, Good);
             Assert.True(result.Seeded);
             Assert.Empty(result.Errors);
+            Assert.True(result.AreaCreated);
             Assert.Equal(4, store.Version);
+            Assert.Equal(("Demo", "A demo area."), (areas.Items["demo"].Name, areas.Items["demo"].Description));
+            Assert.Equal(new[] { "demo.forest", "demo.grass" }, store.TerrainTypeTable.Items.Keys.OrderBy(x => x));
             Assert.Equal((2, 1, 1), (store.FragmentTable.Items.Count, store.FeatureTable.Items.Count, store.PhraseTable.Items.Count));
-            Assert.Equal((2, 1, 1), (result.Fragments, result.Features, result.Phrases));
+            Assert.Equal((2, 2, 1, 1), (result.TerrainTypes, result.Fragments, result.Features, result.Phrases));
+        }
+
+        [Fact]
+        public void TheSeedNeverOverwritesAnExistingAreaOrTerrainType()
+        {
+            var store = new FakeLibraryStore();
+            var areas = new FakeAreaStore().With("demo", "My own name", "mine");
+            store.TerrainTypeTable.Items["demo.grass"] = new TerrainType { Id = "demo.grass", Name = "Meadow", Description = "edited" };
+
+            LibrarySeedResult result = LibrarySeed.SeedIfFresh(store, areas, Good);
+
+            Assert.True(result.Seeded);
+            Assert.False(result.AreaCreated);
+            Assert.Equal("My own name", areas.Items["demo"].Name);
+            Assert.Equal("Meadow", store.TerrainTypeTable.Items["demo.grass"].Name);
+            Assert.Equal("Forest", store.TerrainTypeTable.Items["demo.forest"].Name);
+        }
+
+        [Fact]
+        public void TheEmbeddedSeedOnAFreshInstallCreatesSampleLandWith4TerrainTypes_13Fragments_4Features_12Phrases()
+        {
+            var store = new FakeLibraryStore();
+            var areas = new FakeAreaStore();
+            LibrarySeedResult result = LibrarySeed.SeedIfFresh(store, areas, LibrarySeed.ReadEmbedded());
+            Assert.True(result.Seeded, string.Join("; ", result.Errors));
+            Assert.Equal((4, 13, 4, 12), (store.TerrainTypeTable.Items.Count, store.FragmentTable.Items.Count, store.FeatureTable.Items.Count, store.PhraseTable.Items.Count));
+            Assert.Equal("Sample Land", areas.Items["sample_land"].Name);
+            Assert.Equal(1, store.Version);
         }
 
         [Fact]
         public void ASecondStartDoesNotReseedAndAdminEditsSurvive()
         {
             var store = new FakeLibraryStore();
-            LibrarySeed.SeedIfFresh(store, Good);
+            var areas = new FakeAreaStore();
+            LibrarySeed.SeedIfFresh(store, areas, Good);
             store.FragmentTable.Items.Remove("g1");                  // an admin deleted it
             store.FragmentTable.Items["extra"] = new DescriptionFragment { Id = "extra" };
 
-            LibrarySeedResult second = LibrarySeed.SeedIfFresh(store, Good);
+            LibrarySeedResult second = LibrarySeed.SeedIfFresh(store, areas, Good);
 
             Assert.False(second.Seeded);
             Assert.True(second.AlreadySeeded);
@@ -140,39 +209,46 @@ neighborPhrases:
         public void AnInvalidSeedWritesNothingAndLeavesTheStoreFresh()
         {
             var store = new FakeLibraryStore();
-            LibrarySeedResult result = LibrarySeed.SeedIfFresh(store, Good.Replace("{dir}", "somewhere"));
+            var areas = new FakeAreaStore();
+            LibrarySeedResult result = LibrarySeed.SeedIfFresh(store, areas, Good.Replace("{dir}", "somewhere"));
             Assert.False(result.Seeded);
             Assert.NotEmpty(result.Errors);
             Assert.Null(store.Version);
             Assert.Empty(store.FragmentTable.Items);
-            Assert.Empty(store.FeatureTable.Items);
+            Assert.Empty(store.TerrainTypeTable.Items);
+            Assert.Empty(areas.Items);
         }
 
         [Fact]
         public void AMissingSeedIsReportedAndNothingIsWritten()
         {
             var store = new FakeLibraryStore();
-            LibrarySeedResult result = LibrarySeed.SeedIfFresh(store, null);
+            LibrarySeedResult result = LibrarySeed.SeedIfFresh(store, new FakeAreaStore(), null);
             Assert.False(result.Seeded);
             Assert.Single(result.Errors);
             Assert.Null(store.Version);
         }
 
         [Theory]
-        [InlineData("schema_version: 2\n", "schema_version")]
-        [InlineData("schema_version: 1\nbogus: 1\n", "Unknown top-level key")]
-        [InlineData("schema_version: 1\nfragments:\n  - { id: a, terrains: [t], slot: s, text: x, colour: red }\n", "Unknown fragment key")]
-        [InlineData("schema_version: 1\nfragments:\n  - { id: a, terrains: [t], slot: s, text: x }\n  - { id: a, terrains: [t], slot: s, text: y }\n", "Duplicate fragment id")]
-        [InlineData("schema_version: 1\nfragments:\n  - { id: a, terrains: [t], slot: s, text: x, weight: -1 }\n", "weight")]
-        [InlineData("schema_version: 1\nfragments:\n  - { id: a, terrains: [t], slot: s, text: x, weight: many }\n", "weight must be an integer")]
-        [InlineData("schema_version: 1\nfragments:\n  - { id: a, terrains: [\"\"], slot: s, text: x }\n", "non-empty")]
-        [InlineData("schema_version: 1\nfeatures:\n  - { id: a, terrains: [t], short: s, long: l, chance: 1.5 }\n", "chance")]
-        [InlineData("schema_version: 1\nfeatures:\n  - { id: a, terrains: [t], short: s, long: l, version: 0 }\n", "version")]
-        [InlineData("schema_version: 1\nfeatures:\n  - { id: a, terrains: [t], long: l }\n", "short")]
-        [InlineData("schema_version: 1\nneighborPhrases:\n  - { id: a, terrains: [t], neighborTerrain: river, text: \"no placeholder\" }\n", "{dir}")]
-        [InlineData("schema_version: 1\nneighborPhrases:\n  - { id: a, terrains: [t], neighborTerrain: river, text: \"{dir} and {dir}\" }\n", "{dir}")]
-        [InlineData("schema_version: 1\nneighborPhrases:\n  - { id: a, terrains: [t], text: \"x {dir}\" }\n", "neighbour terrain")]
-        [InlineData("schema_version: 1\nfragments: [oops\n", "not valid YAML")]
+        [InlineData("schema_version: 1\n", "schema_version")]
+        [InlineData("schema_version: 2\nbogus: 1\n", "Unknown top-level key")]
+        [InlineData("schema_version: 2\nterrainTypes:\n  - { id: t, name: T }\n", "'area' is required")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\n", "at least one terrain type")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: Bad-Id, name: T }\n", "lowercase")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nfragments:\n  - { id: a, terrain: t, slot: s, text: x, colour: red }\n", "Unknown fragment key")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nfragments:\n  - { id: a, terrain: t, slot: s, text: x }\n  - { id: a, terrain: t, slot: s, text: y }\n", "Duplicate fragment id")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nfragments:\n  - { id: a, terrain: t, slot: s, text: x, weight: -1 }\n", "weight")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nfragments:\n  - { id: a, terrain: t, slot: s, text: x, weight: many }\n", "weight must be an integer")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nfragments:\n  - { id: a, slot: s, text: x }\n", "terrain is required")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nfragments:\n  - { id: a, terrain: nope, slot: s, text: x }\n", "not one of the seed's terrain types")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nfragments:\n  - { id: a, terrains: [t], slot: s, text: x }\n", "Unknown fragment key")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nfeatures:\n  - { id: a, terrain: t, short: s, long: l, chance: 1.5 }\n", "chance")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nfeatures:\n  - { id: a, terrain: t, short: s, long: l, version: 0 }\n", "version")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nfeatures:\n  - { id: a, terrain: t, long: l }\n", "short")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nneighborPhrases:\n  - { id: a, terrain: t, neighborTerrain: t, text: \"no placeholder\" }\n", "{dir}")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nneighborPhrases:\n  - { id: a, terrain: t, neighborTerrain: t, text: \"{dir} and {dir}\" }\n", "{dir}")]
+        [InlineData("schema_version: 2\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nneighborPhrases:\n  - { id: a, terrain: t, text: \"x {dir}\" }\n", "neighbour terrain")]
+        [InlineData("schema_version: 2\nfragments: [oops\n", "not valid YAML")]
         public void EachInvalidCaseIsRejected(string yaml, string expected)
         {
             List<string> errors = ParseErrors(yaml);
@@ -180,9 +256,9 @@ neighborPhrases:
         }
 
         [Fact]
-        public void XKeysAreAllowedAndUnknownTerrainsAreNotRejected()
+        public void XKeysAreAllowed()
         {
-            Assert.Empty(ParseErrors("schema_version: 1\nx-note: hi\nfragments:\n  - { id: a, terrains: [not-registered-yet], slot: s, text: x, x-why: y }\n"));
+            Assert.Empty(ParseErrors("schema_version: 2\nx-note: hi\narea: { id: a, name: A }\nterrainTypes:\n  - { id: t, name: T }\nfragments:\n  - { id: a, terrain: t, slot: s, text: x, x-why: y }\n"));
         }
 
         [Fact]
@@ -190,7 +266,7 @@ neighborPhrases:
         {
             var store = new FakeLibraryStore();
             store.FragmentTable.FailWrites = true;
-            Assert.Throws<InvalidOperationException>(() => LibrarySeed.SeedIfFresh(store, Good));
+            Assert.Throws<InvalidOperationException>(() => LibrarySeed.SeedIfFresh(store, new FakeAreaStore(), Good));
             Assert.Null(store.Version);   // so the next start tries again
         }
 
@@ -198,8 +274,10 @@ neighborPhrases:
         public void ARetryAfterAHalfFinishedSeedDoesNotDuplicateOrFail()
         {
             var store = new FakeLibraryStore();
+            var areas = new FakeAreaStore();
             store.FragmentTable.Items["g1"] = new DescriptionFragment { Id = "g1", Text = "left over" };   // inserted before a crash, no meta yet
-            LibrarySeedResult result = LibrarySeed.SeedIfFresh(store, Good);
+            areas.With("demo");
+            LibrarySeedResult result = LibrarySeed.SeedIfFresh(store, areas, Good);
             Assert.True(result.Seeded);
             Assert.Equal(2, store.FragmentTable.Items.Count);
         }
@@ -207,86 +285,158 @@ neighborPhrases:
 
     public class TerrainStoreLibraryTests
     {
+        private static DescriptionFragment Frag(string id, string terrain) { return new DescriptionFragment { Id = id, Terrain = terrain, Slot = "short" }; }
+
         [Fact]
-        public void ReturnsEntitiesOfThatTerrainOnlyAndNeverAnEmptyTerrainsEntity()
+        public void ReturnsEntitiesOfThatTerrainTypeOnly_AndNeverALegacyEntityWithoutOne()
         {
             var store = new FakeLibraryStore { Version = 5 };
-            store.FragmentTable.Items["a"] = new DescriptionFragment { Id = "a", Terrains = new List<string> { "grass" }, Slot = "short" };
-            store.FragmentTable.Items["b"] = new DescriptionFragment { Id = "b", Terrains = new List<string>(), Slot = "short" };
-            store.FeatureTable.Items["f"] = new FeatureTemplate { Id = "f", Terrains = new List<string>() };
-            store.PhraseTable.Items["p"] = new NeighborPhrase { Id = "p", Terrains = new List<string>(), NeighborTerrain = "river", Text = "{dir}" };
+            store.FragmentTable.Items["a"] = Frag("a", "demo.grass");
+            store.FragmentTable.Items["b"] = new DescriptionFragment { Id = "b", Terrain = null, LegacyTerrains = new List<string> { "grass" }, Slot = "short" };   // not migrated
+            store.FeatureTable.Items["f"] = new FeatureTemplate { Id = "f", Terrain = null };
+            store.PhraseTable.Items["p"] = new NeighborPhrase { Id = "p", Terrain = null, NeighborTerrain = "demo.river", Text = "{dir}" };
             var library = new StoreLibrary(store);
 
             Assert.Equal(5, library.Version);
-            Assert.Equal(new[] { "a" }, library.Fragments("grass", "short").Select(f => f.Id));
-            Assert.Empty(library.Fragments("forest", "short"));
-            Assert.Empty(library.Features("grass"));
-            Assert.Empty(library.Phrases("grass", "river"));
+            Assert.Equal(new[] { "a" }, library.Fragments("demo.grass", "short").Select(f => f.Id));
+            Assert.Empty(library.Fragments("demo.forest", "short"));
+            Assert.Empty(library.Fragments("grass", "short"));        // the plain name is not a terrain type id
+            Assert.Empty(library.Fragments("", "short"));
+            Assert.Empty(library.Features("demo.grass"));
+            Assert.Empty(library.Phrases("demo.grass", "demo.river"));
             Assert.Null(library.FeatureById("nope"));
             Assert.NotNull(library.FeatureById("f"));
+        }
+
+        [Fact]
+        public void TheSameLocalNameInTwoAreasIsTwoTerrainTypes()
+        {
+            var lib = new InMemoryLibrary();
+            lib.FragmentList.Add(Frag("a1", "alpha.grass"));
+            lib.FragmentList.Add(Frag("b1", "beta.grass"));
+            Assert.Equal(new[] { "a1" }, lib.Fragments("alpha.grass", "short").Select(f => f.Id));
+            Assert.Equal(new[] { "b1" }, lib.Fragments("beta.grass", "short").Select(f => f.Id));
         }
 
         [Fact]
         public void ReadsOneSnapshotUntilRefreshed()
         {
             var store = new FakeLibraryStore { Version = 1 };
-            store.FragmentTable.Items["a"] = new DescriptionFragment { Id = "a", Terrains = new List<string> { "grass" }, Slot = "short" };
+            store.FragmentTable.Items["a"] = Frag("a", "demo.grass");
             var library = new StoreLibrary(store);
-            Assert.Single(library.Fragments("grass", "short"));
+            Assert.Single(library.Fragments("demo.grass", "short"));
 
-            store.FragmentTable.Items["b"] = new DescriptionFragment { Id = "b", Terrains = new List<string> { "grass" }, Slot = "short" };
+            store.FragmentTable.Items["b"] = Frag("b", "demo.grass");
             store.Version = 2;
-            Assert.Single(library.Fragments("grass", "short"));   // same run, same snapshot
+            Assert.Single(library.Fragments("demo.grass", "short"));   // same run, same snapshot
             Assert.Equal(1, library.Version);
 
             library.Refresh();
-            Assert.Equal(2, library.Fragments("grass", "short").Count);
+            Assert.Equal(2, library.Fragments("demo.grass", "short").Count);
             Assert.Equal(2, library.Version);
         }
 
         [Fact]
-        public void ARealMapRunUsesTheLibraryFromTheStore()
+        public void ARealMapRunUsesTheLibraryFromTheStore_MapPrefixAndLegendNameGiveTheScopedId()
         {
             var store = new FakeLibraryStore();
-            var seeded = LibrarySeed.SeedIfFresh(store, LibrarySeed.ReadEmbedded());
+            var seeded = LibrarySeed.SeedIfFresh(store, new FakeAreaStore(), LibrarySeed.ReadEmbedded());
             Assert.True(seeded.Seeded, string.Join("; ", seeded.Errors));
-            Assert.Equal(6, store.PhraseTable.Items.Count);   // seed: 3 grass/forest phrases plus 3 ocean ones (card t_d4afabb3)
+            Assert.Equal(12, store.PhraseTable.Items.Count);
             var library = new StoreLibrary(store);
-            string map = "generator:\n  prefix: demo\n  name: Demo\n  seed: s1\ngrid:\n  - \"~~\"\n  - \"..\"\nlegend:\n  \"~\": {template: river}\n  \".\": grass\ntemplates:\n  river: {walkable: false}\n  grass: {short: a meadow, long: [[Grass grows here.]]}\n";
-            var generated = MUD.Core.Generation.MapGenerator.Generate(map, "demo", library);
+            // The map's prefix is sample_land, the legend names are the plain terrain names: sample_land.river / sample_land.grass.
+            string map = "generator:\n  prefix: sample_land\n  name: Demo\n  seed: s1\ngrid:\n  - \"~~\"\n  - \"..\"\nlegend:\n  \"~\": {template: river}\n  \".\": grass\ntemplates:\n  river: {walkable: false}\n  grass: {short: a meadow, long: [[Grass grows here.]]}\n";
+            var generated = MUD.Core.Generation.MapGenerator.Generate(map, "sample_land", library);
             Assert.True(generated.Success, string.Join("; ", generated.Errors));
             Assert.Contains("libVersion: 1", generated.Yaml);   // library_version of the seed file
             string flat = generated.Yaml.Replace("\r", "").Replace("\n    ", " ");
             Assert.True(flat.Contains("A river flows just north and northeast of here.") || flat.Contains("You hear running water to the north and northeast."), flat);   // a seeded river phrase
+        }
+
+        [Fact]
+        public void AMapWithAnotherPrefixFindsNoLibraryContent_AndFallsBackToItsOwnText()
+        {
+            var store = new FakeLibraryStore();
+            LibrarySeed.SeedIfFresh(store, new FakeAreaStore(), LibrarySeed.ReadEmbedded());
+            var library = new StoreLibrary(store);
+            // Same legend names as the library's terrains, but the area is "elsewhere": there are no terrain types elsewhere.grass / elsewhere.river.
+            string map = "generator:\n  prefix: elsewhere\n  name: Demo\n  seed: s1\ngrid:\n  - \"~~\"\n  - \"..\"\nlegend:\n  \"~\": {template: river}\n  \".\": grass\ntemplates:\n  river: {walkable: false}\n  grass: {short: a meadow, long: [[Grass grows here.]]}\n";
+            var generated = MUD.Core.Generation.MapGenerator.Generate(map, "elsewhere", library);
+            Assert.True(generated.Success, string.Join("; ", generated.Errors));
+            Assert.DoesNotContain("river flows", generated.Yaml);
+            Assert.DoesNotContain("running water", generated.Yaml);
+            Assert.Contains("Grass grows here.", generated.Yaml);
         }
     }
 
     public class TerrainDocumentTests
     {
         [Fact]
-        public void EntitiesRoundTripThroughTheirDocuments()
+        public void EntitiesRoundTripThroughTheirDocuments_WithTheirOneTerrain()
         {
             var feature = new FeatureTemplate
             {
-                Id = "b", Terrains = new List<string> { "grass", "forest" }, Short = "s", Long = "l", Handles = new List<string> { "h" }, Adjectives = new List<string> { "a" },
+                Id = "b", Terrain = "demo.grass", Short = "s", Long = "l", Handles = new List<string> { "h" }, Adjectives = new List<string> { "a" },
                 RoomLine = "r", Detail = "d", Weight = 3, Chance = 0.25, Version = 4, Tags = new List<string> { "t" },
             };
             BsonDocument document = LibraryDocuments.ToDocument(feature);
             Assert.Equal("b", document["_id"].AsString);
+            Assert.Equal("demo.grass", document["terrain"].AsString);
+            Assert.False(document.Contains("terrains"));   // a document that was never legacy has no retired array
             FeatureTemplate back = LibraryDocuments.FeatureFrom(document);
-            Assert.Equal(feature.Terrains, back.Terrains);
+            Assert.Equal("demo.grass", back.Terrain);
             Assert.Equal((feature.Short, feature.Long, feature.RoomLine, feature.Detail, feature.Weight, feature.Chance, feature.Version),
                 (back.Short, back.Long, back.RoomLine, back.Detail, back.Weight, back.Chance, back.Version));
 
-            var fragment = new DescriptionFragment { Id = "f", Terrains = new List<string>(), Slot = "ground", Text = "x", Weight = 0, Tags = new List<string> { "wet" } };
+            var fragment = new DescriptionFragment { Id = "f", Terrain = "demo.forest", Slot = "ground", Text = "x", Weight = 0, Tags = new List<string> { "wet" } };
             DescriptionFragment fragmentBack = LibraryDocuments.FragmentFrom(LibraryDocuments.ToDocument(fragment));
-            Assert.Empty(fragmentBack.Terrains);
+            Assert.Equal("demo.forest", fragmentBack.Terrain);
             Assert.Equal(0, fragmentBack.Weight);
 
-            var phrase = new NeighborPhrase { Id = "p", Terrains = new List<string> { "grass" }, NeighborTerrain = "river", Text = "{dir}", Weight = 2, Merge = false };
+            var phrase = new NeighborPhrase { Id = "p", Terrain = "demo.grass", NeighborTerrain = "demo.river", Text = "{dir}", Weight = 2, Merge = false };
             NeighborPhrase phraseBack = LibraryDocuments.PhraseFrom(LibraryDocuments.ToDocument(phrase));
             Assert.False(phraseBack.Merge);
-            Assert.Equal("river", phraseBack.NeighborTerrain);
+            Assert.Equal(("demo.grass", "demo.river"), (phraseBack.Terrain, phraseBack.NeighborTerrain));
+        }
+
+        [Fact]
+        public void ALegacyDocumentIsReadWithoutATerrain_AndKeepsItsTermsArrayWhenWrittenBack()
+        {
+            var legacy = new BsonDocument { { "_id", "x" }, { "terrains", new BsonArray { "grass", "forest" } }, { "slot", "short" }, { "text", "t" }, { "weight", 1 }, { "tags", new BsonArray() } };
+            DescriptionFragment read = LibraryDocuments.FragmentFrom(legacy);
+            Assert.Null(read.Terrain);
+            Assert.Equal(new[] { "grass", "forest" }, read.LegacyTerrains);
+            read.Terrain = "demo.grass";
+            BsonDocument written = LibraryDocuments.ToDocument(read);
+            Assert.Equal("demo.grass", written["terrain"].AsString);
+            Assert.Equal(new[] { "grass", "forest" }, written["terrains"].AsBsonArray.Select(v => v.AsString));
+        }
+
+        [Fact]
+        public void TerrainTypesRoundTrip_AndTheAreaIsTheIdPrefix()
+        {
+            var t = new TerrainType { Id = "a.b.c_1", Name = "N", Description = "D" };
+            Assert.Equal(("a.b", "c_1"), (t.Area, t.Local));
+            BsonDocument d = TerrainTypeDocuments.ToDocument(t);
+            Assert.Equal("a.b", d["area"].AsString);
+            TerrainType back = TerrainTypeDocuments.From(d);
+            Assert.Equal(("a.b.c_1", "N", "D"), (back.Id, back.Name, back.Description));
+        }
+
+        [Theory]
+        [InlineData("sample_land.grass", null)]
+        [InlineData("a.b.grass", null)]
+        [InlineData("grass", "must be")]
+        [InlineData(".grass", "must be")]
+        [InlineData("sample_land.", "name part")]
+        [InlineData("sample_land.Grass", "name part")]
+        [InlineData("sample_land.gr ass", "name part")]
+        [InlineData("Sample.grass", "area part")]
+        [InlineData("", "required")]
+        public void TerrainTypeIdRules(string id, string problem)
+        {
+            string result = TerrainTypeRules.CheckId(id);
+            if (problem == null) { Assert.Null(result); } else { Assert.Contains(problem, result); }
         }
     }
 
@@ -338,6 +488,7 @@ neighborPhrases:
             public SyncPlayerRepo Players = new SyncPlayerRepo();
             public AdminSessions Sessions = new AdminSessions();
             public FakeLibraryStore Store = new FakeLibraryStore { Version = 10 };
+            public FakeAreaStore Areas = new FakeAreaStore().With("demo").With("other");
             public StoreLibrary Cache;
             public List<string> Log = new List<string>();
             public AdminApi Api;
@@ -346,7 +497,11 @@ neighborPhrases:
             {
                 Cache = new StoreLibrary(Store);
                 Api = new AdminApi(Host, Players, new SyncRoomRepo(), new NoQueries(), Audit, Sessions, new FakeClock(), Log.Add, max => 0, null,
-                    withLibrary ? Store : null, withLibrary ? Cache : null);
+                    withLibrary ? Store : null, withLibrary ? Cache : null, null, Areas);
+                foreach (string id in new[] { "demo.grass", "demo.forest", "demo.river", "other.grass" })
+                {
+                    Store.TerrainTypeTable.Items[id] = new TerrainType { Id = id, Name = id };
+                }
             }
 
             public string Login(string name, bool creator = false, bool admin = false)
@@ -362,26 +517,24 @@ neighborPhrases:
             public string Creator() { return Login("Cora", creator: true); }
         }
 
-        private static FragmentRecord Fragment(string id = "f1", params string[] terrains)
+        // A plain terrain name ("grass") means the terrain type of the demo area ("demo.grass"); an id with a '.' is used as given.
+        private static string Scoped(string terrain) { return terrain.Contains('.') ? terrain : "demo." + terrain; }
+
+        private static FragmentRecord Fragment(string id = "f1", string terrain = "grass")
         {
-            var r = new FragmentRecord { Id = id, Slot = "ground", Text = "Grass.", Weight = 1 };
-            r.Terrains.AddRange(terrains);
-            return r;
+            return new FragmentRecord { Id = id, Terrain = Scoped(terrain), Slot = "ground", Text = "Grass.", Weight = 1 };
         }
 
-        private static FeatureTemplateRecord Template(string id = "t1", params string[] terrains)
+        private static FeatureTemplateRecord Template(string id = "t1", string terrain = "grass")
         {
-            var r = new FeatureTemplateRecord { Id = id, Short = "a rock", Long = "A rock.", Weight = 1, Chance = 0.5, Version = 99 };
-            r.Terrains.AddRange(terrains);
+            var r = new FeatureTemplateRecord { Id = id, Terrain = Scoped(terrain), Short = "a rock", Long = "A rock.", Weight = 1, Chance = 0.5, Version = 99 };
             r.Handles.Add("rock");
             return r;
         }
 
-        private static NeighborPhraseRecord Phrase(string id = "p1", params string[] terrains)
+        private static NeighborPhraseRecord Phrase(string id = "p1", string terrain = "grass", string neighbor = "river")
         {
-            var r = new NeighborPhraseRecord { Id = id, NeighborTerrain = "river", Text = "A river flows just {dir} of here.", Weight = 1, Merge = true };
-            r.Terrains.AddRange(terrains);
-            return r;
+            return new NeighborPhraseRecord { Id = id, Terrain = Scoped(terrain), NeighborTerrain = Scoped(neighbor), Text = "A river flows just {dir} of here.", Weight = 1, Merge = true };
         }
 
         private static AdminCallException Throws(Action call) { return Assert.Throws<AdminCallException>(call); }
@@ -401,11 +554,11 @@ neighborPhrases:
             Assert.Equal(11, reply.LibraryVersion);
             Assert.Equal("f1", reply.Fragment.Id);
             Assert.Equal(11, f.Store.Version);
-            Assert.Equal(new[] { "grass" }, f.Store.FragmentTable.Items["f1"].Terrains);
+            Assert.Equal("demo.grass", f.Store.FragmentTable.Items["f1"].Terrain);
             AuditRecord row = Assert.Single(f.Audit.Rows);
             Assert.Equal((AdminApi.FragmentEntity, "f1", "*create*", true), (row.Entity, row.EntityId, row.Field, row.Applied));
             Assert.Equal("Cora", row.ActorName);
-            Assert.Single(f.Cache.Fragments("grass", "ground"));   // generators see it without a restart
+            Assert.Single(f.Cache.Fragments("demo.grass", "ground"));   // generators see it without a restart
             Assert.Equal(11, f.Cache.Version);
         }
 
@@ -437,12 +590,12 @@ neighborPhrases:
             f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment("f1", "grass") });
             f.Audit.Rows.Clear();
 
-            var edit = Fragment("f1", "grass", "forest");
+            var edit = Fragment("f1", "forest");
             edit.Text = "New text.";
             LibraryEditReply reply = f.Api.UpdateFragment(new SaveFragmentRequest { Token = token, Fragment = edit });
 
             Assert.Equal(AdminResult.Ok, reply.Result);
-            Assert.Equal(new[] { "terrains", "text" }, f.Audit.Rows.Select(r => r.Field).OrderBy(x => x));
+            Assert.Equal(new[] { "terrain", "text" }, f.Audit.Rows.Select(r => r.Field).OrderBy(x => x));
             AuditRecord text = f.Audit.Rows.Single(r => r.Field == "text");
             Assert.Equal(("Grass.", "New text."), (text.Old.AsString, text.New.AsString));
             Assert.All(f.Audit.Rows, r => Assert.True(r.Applied));
@@ -456,33 +609,137 @@ neighborPhrases:
             f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment("b") });
             f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment("a", "grass") });
 
-            ListFragmentsReply list = f.Api.ListFragments(new TokenRequest { Token = token });
+            ListFragmentsReply list = f.Api.ListFragments(new ListLibraryRequest { Token = token });
             Assert.Equal(new[] { "a", "b" }, list.Fragments.Select(x => x.Id));
             Assert.Equal(12, list.LibraryVersion);
             Assert.True(f.Api.GetFragment(new LibraryIdRequest { Token = token, Id = "a" }).Found);
             Assert.False(f.Api.GetFragment(new LibraryIdRequest { Token = token, Id = "zzz" }).Found);
-            Assert.Empty(f.Api.ListFeatureTemplates(new TokenRequest { Token = token }).Templates);
+            Assert.Empty(f.Api.ListFeatureTemplates(new ListLibraryRequest { Token = token }).Templates);
             Assert.False(f.Api.GetNeighborPhrase(new LibraryIdRequest { Token = token, Id = "x" }).Found);
         }
 
-        // ---------------------------------------------------------------- empty terrains (OD5)
+        // ---------------------------------------------------------------- scoping (exactly one terrain type)
 
         [Fact]
-        public void AnEntityWithAnEmptyTerrainsListIsAcceptedStoredAndNeverSelectedByAGenerator()
+        public void ATerrainIsRequired_AnEmptyOneIsInvalid_ForEveryKind()
         {
             var f = new Fixture();
             string token = f.Creator();
-            Assert.Equal(AdminResult.Ok, f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment("off") }).Result);
-            Assert.Equal(AdminResult.Ok, f.Api.CreateFeatureTemplate(new SaveFeatureTemplateRequest { Token = token, Template = Template("off") }).Result);
-            Assert.Equal(AdminResult.Ok, f.Api.CreateNeighborPhrase(new SaveNeighborPhraseRequest { Token = token, Phrase = Phrase("off") }).Result);
+            var frag = Fragment("x"); frag.Terrain = "";
+            var tmpl = Template("x"); tmpl.Terrain = "";
+            var phrase = Phrase("x"); phrase.Terrain = "";
+            Assert.Contains(f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = frag }).Errors, e => e.Field == "terrain");
+            Assert.Contains(f.Api.CreateFeatureTemplate(new SaveFeatureTemplateRequest { Token = token, Template = tmpl }).Errors, e => e.Field == "terrain");
+            Assert.Contains(f.Api.CreateNeighborPhrase(new SaveNeighborPhraseRequest { Token = token, Phrase = phrase }).Errors, e => e.Field == "terrain");
+            Assert.Empty(f.Store.FragmentTable.Items);
+            Assert.Empty(f.Audit.Rows);
+        }
 
-            Assert.Empty(f.Api.GetFragment(new LibraryIdRequest { Token = token, Id = "off" }).Fragment.Terrains);
-            foreach (string terrain in new[] { "grass", "forest", "river", "" })
-            {
-                Assert.Empty(f.Cache.Fragments(terrain, "ground"));
-                Assert.Empty(f.Cache.Features(terrain));
-                Assert.Empty(f.Cache.Phrases(terrain, "river"));
-            }
+        [Fact]
+        public void ATerrainThatIsNotATerrainTypeIdIsInvalid_AndAnUnknownTerrainTypeIsInvalid()
+        {
+            var f = new Fixture();
+            string token = f.Creator();
+            var plain = Fragment("x"); plain.Terrain = "grass";          // the plain name is no longer a terrain
+            Assert.Contains(f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = plain }).Errors, e => e.Field == "terrain");
+            var unknown = Fragment("x", "demo.swamp");                    // well formed, no such terrain type
+            LibraryEditReply reply = f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = unknown });
+            Assert.Equal(AdminResult.Invalid, reply.Result);
+            Assert.Equal((("terrain", AdminApi.UnknownTerrainMessage)), (reply.Errors[0].Field, reply.Errors[0].Message));
+            Assert.Equal(AdminResult.Invalid, f.Api.CreateFeatureTemplate(new SaveFeatureTemplateRequest { Token = token, Template = Template("x", "nope.grass") }).Result);
+            Assert.Empty(f.Store.FragmentTable.Items);
+            Assert.Empty(f.Audit.Rows);
+            Assert.Equal(10, f.Store.Version);
+        }
+
+        [Fact]
+        public void AReplyCarriesTheTerrainAndTheAreaOfTheTerrain()
+        {
+            var f = new Fixture();
+            string token = f.Creator();
+            LibraryEditReply reply = f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment("f1", "other.grass") });
+            Assert.Equal(("other.grass", "other"), (reply.Fragment.Terrain, reply.Fragment.Area));
+            Assert.Equal(("other.grass", "other"), (f.Api.GetFragment(new LibraryIdRequest { Token = token, Id = "f1" }).Fragment.Terrain, f.Api.GetFragment(new LibraryIdRequest { Token = token, Id = "f1" }).Fragment.Area));
+        }
+
+        [Fact]
+        public void APhraseNeighbourMustExist_AndBeInTheSameAreaAsItsTerrain()
+        {
+            var f = new Fixture();
+            string token = f.Creator();
+            LibraryEditReply otherArea = f.Api.CreateNeighborPhrase(new SaveNeighborPhraseRequest { Token = token, Phrase = Phrase("p", "demo.grass", "other.grass") });
+            Assert.Equal(AdminResult.Invalid, otherArea.Result);
+            Assert.Equal(("neighborTerrain", AdminApi.NeighborOtherAreaMessage), (otherArea.Errors[0].Field, otherArea.Errors[0].Message));
+            LibraryEditReply unknown = f.Api.CreateNeighborPhrase(new SaveNeighborPhraseRequest { Token = token, Phrase = Phrase("p", "demo.grass", "demo.swamp") });
+            Assert.Equal(("neighborTerrain", AdminApi.UnknownTerrainMessage), (unknown.Errors[0].Field, unknown.Errors[0].Message));
+            Assert.Equal(AdminResult.Ok, f.Api.CreateNeighborPhrase(new SaveNeighborPhraseRequest { Token = token, Phrase = Phrase("p", "demo.grass", "demo.river") }).Result);
+            Assert.Single(f.Store.PhraseTable.Items);
+        }
+
+        [Fact]
+        public void UpdateMayMoveAnEntryToAnotherTerrain_AndAMovedPhraseKeepsItsIdAndIsAuditedAsATerrainChange()
+        {
+            var f = new Fixture();
+            string token = f.Creator();
+            f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment("f1", "demo.grass") });
+            f.Audit.Rows.Clear();
+            LibraryEditReply moved = f.Api.UpdateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment("f1", "demo.forest") });
+            Assert.Equal(AdminResult.Ok, moved.Result);
+            Assert.Equal("demo.forest", f.Store.FragmentTable.Items["f1"].Terrain);
+            AuditRecord row = Assert.Single(f.Audit.Rows);
+            Assert.Equal(("terrain", "demo.grass", "demo.forest"), (row.Field, row.Old.AsString, row.New.AsString));
+            Assert.Empty(f.Cache.Fragments("demo.grass", "ground"));
+            Assert.Single(f.Cache.Fragments("demo.forest", "ground"));
+        }
+
+        [Fact]
+        public void AMovedPhraseMustKeepItsNeighbourInTheNewTerrainsArea()
+        {
+            var f = new Fixture();
+            string token = f.Creator();
+            f.Api.CreateNeighborPhrase(new SaveNeighborPhraseRequest { Token = token, Phrase = Phrase("p", "demo.grass", "demo.river") });
+            f.Audit.Rows.Clear();
+
+            LibraryEditReply refused = f.Api.UpdateNeighborPhrase(new SaveNeighborPhraseRequest { Token = token, Phrase = Phrase("p", "other.grass", "demo.river") });
+            Assert.Equal(AdminResult.Invalid, refused.Result);
+            Assert.Equal("neighborTerrain", refused.Errors[0].Field);
+            Assert.Equal("demo.grass", f.Store.PhraseTable.Items["p"].Terrain);
+            Assert.Empty(f.Audit.Rows);
+
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateNeighborPhrase(new SaveNeighborPhraseRequest { Token = token, Phrase = Phrase("p", "demo.forest", "demo.river") }).Result);
+            Assert.Equal("demo.forest", f.Store.PhraseTable.Items["p"].Terrain);
+        }
+
+        [Fact]
+        public void TheListsFilterByTerrainAndByArea_AndCarryTheScopeOfEveryRow()
+        {
+            var f = new Fixture();
+            string token = f.Creator();
+            f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment("a", "demo.grass") });
+            f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment("b", "demo.forest") });
+            f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment("c", "other.grass") });
+            f.Api.CreateFeatureTemplate(new SaveFeatureTemplateRequest { Token = token, Template = Template("t", "other.grass") });
+            f.Api.CreateNeighborPhrase(new SaveNeighborPhraseRequest { Token = token, Phrase = Phrase("p", "demo.grass", "demo.river") });
+
+            Assert.Equal(new[] { "a", "b", "c" }, f.Api.ListFragments(new ListLibraryRequest { Token = token }).Fragments.Select(x => x.Id));
+            Assert.Equal(new[] { "b" }, f.Api.ListFragments(new ListLibraryRequest { Token = token, Terrain = "demo.forest" }).Fragments.Select(x => x.Id));
+            Assert.Equal(new[] { "a", "b" }, f.Api.ListFragments(new ListLibraryRequest { Token = token, Area = "demo" }).Fragments.Select(x => x.Id));
+            Assert.Empty(f.Api.ListFragments(new ListLibraryRequest { Token = token, Area = "demo", Terrain = "other.grass" }).Fragments);
+            Assert.Equal(new[] { "t" }, f.Api.ListFeatureTemplates(new ListLibraryRequest { Token = token, Area = "other" }).Templates.Select(x => x.Id));
+            Assert.Empty(f.Api.ListFeatureTemplates(new ListLibraryRequest { Token = token, Area = "demo" }).Templates);
+            var phrase = Assert.Single(f.Api.ListNeighborPhrases(new ListLibraryRequest { Token = token, Terrain = "demo.grass" }).Phrases);
+            Assert.Equal(("demo.grass", "demo", "demo.river"), (phrase.Terrain, phrase.Area, phrase.NeighborTerrain));
+        }
+
+        [Fact]
+        public void AnUpdateKeepsTheLegacyTermsArrayOfAMigratedDocument()
+        {
+            var f = new Fixture();
+            string token = f.Creator();
+            f.Store.FragmentTable.Items["m"] = new DescriptionFragment { Id = "m", Terrain = "demo.grass", LegacyTerrains = new List<string> { "grass", "forest" }, Slot = "ground", Text = "Old.", Weight = 1 };
+            var edit = Fragment("m", "demo.grass"); edit.Text = "New.";
+            Assert.Equal(AdminResult.Ok, f.Api.UpdateFragment(new SaveFragmentRequest { Token = token, Fragment = edit }).Result);
+            Assert.Equal(new[] { "grass", "forest" }, f.Store.FragmentTable.Items["m"].LegacyTerrains);
         }
 
         // ---------------------------------------------------------------- feature template version
@@ -495,15 +752,15 @@ neighborPhrases:
             LibraryEditReply created = f.Api.CreateFeatureTemplate(new SaveFeatureTemplateRequest { Token = token, Template = Template("t1", "grass") });
             Assert.Equal(1, created.Template.Version);   // the client sent 99
 
-            var weightOnly = Template("t1", "grass", "forest");
+            var weightOnly = Template("t1", "grass");
             weightOnly.Weight = 7; weightOnly.Chance = 0.9; weightOnly.Tags.Add("x"); weightOnly.Version = 50;
             Assert.Equal(1, f.Api.UpdateFeatureTemplate(new SaveFeatureTemplateRequest { Token = token, Template = weightOnly }).Template.Version);
 
-            var textEdit = Template("t1", "grass", "forest");
+            var textEdit = Template("t1", "grass");
             textEdit.Long = "A different rock."; textEdit.Weight = 7; textEdit.Chance = 0.9; textEdit.Tags.Add("x");
             Assert.Equal(2, f.Api.UpdateFeatureTemplate(new SaveFeatureTemplateRequest { Token = token, Template = textEdit }).Template.Version);
 
-            var handlesEdit = Template("t1", "grass", "forest");
+            var handlesEdit = Template("t1", "grass");
             handlesEdit.Long = "A different rock."; handlesEdit.Weight = 7; handlesEdit.Chance = 0.9; handlesEdit.Tags.Add("x"); handlesEdit.Handles.Add("stone");
             Assert.Equal(3, f.Api.UpdateFeatureTemplate(new SaveFeatureTemplateRequest { Token = token, Template = handlesEdit }).Template.Version);
             Assert.Equal(3, f.Store.FeatureTable.Items["t1"].Version);
@@ -540,7 +797,7 @@ neighborPhrases:
 
             Assert.Equal(AdminResult.AlreadyExists, reply.Result);
             Assert.Equal(AdminApi.LibraryAlreadyExistsMessage, reply.Message);
-            Assert.Equal(new[] { "grass" }, f.Store.FragmentTable.Items["f1"].Terrains);
+            Assert.Equal("demo.grass", f.Store.FragmentTable.Items["f1"].Terrain);
             Assert.Equal(audits, f.Audit.Rows.Count);
             Assert.Equal(version, f.Store.Version);
         }
@@ -581,7 +838,7 @@ neighborPhrases:
         {
             var f = new Fixture();
             string token = f.Creator();
-            f.Store.PhraseTable.Items["p1"] = new NeighborPhrase { Id = "p1", Terrains = new List<string> { "grass" } };
+            f.Store.PhraseTable.Items["p1"] = new NeighborPhrase { Id = "p1", Terrain = "demo.grass" };
             f.Store.PhraseTable.RaceOnWrite = true;
 
             LibraryEditReply reply = f.Api.DeleteNeighborPhrase(new LibraryIdRequest { Token = token, Id = "p1" });
@@ -620,7 +877,7 @@ neighborPhrases:
             LibraryEditReply refused = f.Api.DeleteFeatureTemplate(new LibraryIdRequest { Token = token, Id = "x" });
             Assert.Equal((AdminResult.Refused, AdminApi.LibraryUnavailableMessage), (refused.Result, refused.Message));
             Assert.Equal(AdminResult.Refused, f.Api.UpdateNeighborPhrase(new SaveNeighborPhraseRequest { Token = token, Phrase = Phrase() }).Result);
-            Assert.Empty(f.Api.ListFragments(new TokenRequest { Token = token }).Fragments);
+            Assert.Empty(f.Api.ListFragments(new ListLibraryRequest { Token = token }).Fragments);
             Assert.False(f.Api.GetFeatureTemplate(new LibraryIdRequest { Token = token, Id = "x" }).Found);
             Assert.Empty(f.Audit.Rows);
         }
@@ -630,7 +887,7 @@ neighborPhrases:
         {
             var f = new Fixture();
             string token = f.Login("Pat");
-            Assert.Equal(AdminFailure.Forbidden, Throws(() => f.Api.ListFragments(new TokenRequest { Token = token })).Failure);
+            Assert.Equal(AdminFailure.Forbidden, Throws(() => f.Api.ListFragments(new ListLibraryRequest { Token = token })).Failure);
             Assert.Equal(AdminFailure.Forbidden, Throws(() => f.Api.GetFeatureTemplate(new LibraryIdRequest { Token = token, Id = "x" })).Failure);
             Assert.Equal(AdminFailure.Forbidden, Throws(() => f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment() })).Failure);
             Assert.Equal(AdminFailure.Forbidden, Throws(() => f.Api.DeleteNeighborPhrase(new LibraryIdRequest { Token = token, Id = "x" })).Failure);
@@ -643,7 +900,7 @@ neighborPhrases:
         {
             var f = new Fixture();
             Assert.Equal(AdminFailure.Unauthenticated, Throws(() => f.Api.CreateFragment(new SaveFragmentRequest { Token = "nope", Fragment = Fragment() })).Failure);
-            Assert.Equal(AdminFailure.Unauthenticated, Throws(() => f.Api.ListNeighborPhrases(new TokenRequest { Token = "" })).Failure);
+            Assert.Equal(AdminFailure.Unauthenticated, Throws(() => f.Api.ListNeighborPhrases(new ListLibraryRequest { Token = "" })).Failure);
         }
 
         [Fact]
@@ -718,7 +975,7 @@ neighborPhrases:
             string token = f.Creator();
             f.Store.FragmentTable.FailReads = true;
 
-            Assert.Equal(AdminFailure.Unavailable, Throws(() => f.Api.ListFragments(new TokenRequest { Token = token })).Failure);
+            Assert.Equal(AdminFailure.Unavailable, Throws(() => f.Api.ListFragments(new ListLibraryRequest { Token = token })).Failure);
             Assert.Equal(AdminFailure.Unavailable, Throws(() => f.Api.GetFragment(new LibraryIdRequest { Token = token, Id = "x" })).Failure);
             Assert.Equal(AdminResult.Failed, f.Api.CreateFragment(new SaveFragmentRequest { Token = token, Fragment = Fragment() }).Result);
         }

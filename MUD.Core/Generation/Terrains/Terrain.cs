@@ -16,7 +16,14 @@ namespace MUD.Core.Generation.Terrains
 
         public Terrain(string terrainId) { _terrainId = terrainId; }
 
+        // The plain legend template name (the map file's own template data is keyed by it).
         public virtual string TerrainId { get { return _terrainId; } }
+
+        // The terrain type id the library is asked with: "<map prefix>.<legend template name>" (a map's prefix is its area).
+        protected string LibraryTerrainId(GenContext ctx)
+        {
+            return TerrainTypeRules.IdFor(ctx.Prefix, TerrainId);
+        }
         public virtual IReadOnlyList<string> Slots { get { return new[] { "ground" }; } }
         public virtual int MaxNeighborSentences { get { return 2; } }
         public virtual int MaxFeatures { get { return 2; } }
@@ -63,16 +70,14 @@ namespace MUD.Core.Generation.Terrains
 
         protected string PickFragment(GenContext ctx, string slot, string[] requireTags = null, string[] excludeTags = null)
         {
-            var eligible = Filter(ctx.Library.Fragments(TerrainId, slot), requireTags, excludeTags);
+            var eligible = Filter(ctx.Library.Fragments(LibraryTerrainId(ctx), slot), requireTags, excludeTags);
             var pick = WeightedPick(ctx.Rng, eligible, f => f.Weight);
             return pick == null ? null : pick.Text;
         }
 
-        // Defensive: an entity whose Terrains lacks this terrain is never eligible, whatever the library returns.
         protected IReadOnlyList<DescriptionFragment> Filter(IReadOnlyList<DescriptionFragment> all, string[] requireTags, string[] excludeTags)
         {
-            return all.Where(f => InMemoryLibrary.Uses(f.Terrains, TerrainId)
-                    && (requireTags == null || requireTags.All(r => f.Tags.Contains(r)))
+            return all.Where(f => (requireTags == null || requireTags.All(r => f.Tags.Contains(r)))
                     && (excludeTags == null || !excludeTags.Any(e => f.Tags.Contains(e))))
                 .ToList();
         }
@@ -98,8 +103,7 @@ namespace MUD.Core.Generation.Terrains
         protected virtual List<GeneratedFeature> PickFeatures(GenContext ctx)
         {
             var result = new List<GeneratedFeature>();
-            var eligible = ctx.Library.Features(TerrainId)
-                .Where(f => InMemoryLibrary.Uses(f.Terrains, TerrainId)).ToList();
+            var eligible = ctx.Library.Features(LibraryTerrainId(ctx)).ToList();
             var passed = new List<FeatureTemplate>();
             foreach (var f in eligible)
             {

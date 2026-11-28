@@ -31,32 +31,35 @@ namespace MUD.Core.Administration
             public Func<T, string> Id;
             public Func<T, BsonDocument> ToDocument;
             public Func<T, List<LibraryError>> Validate;
+            // The terrain type ids the entity names: the scope, and (phrases only) the neighbour. Checked against the terrain types on every save.
+            public Func<T, string> TerrainOf;
+            public Func<T, string> NeighborOf;
         }
 
         private static readonly LibraryKind<DescriptionFragment> Fragments = new LibraryKind<DescriptionFragment>
         {
-            Entity = FragmentEntity, Collection = s => s.Fragments, Id = e => e.Id, ToDocument = LibraryDocuments.ToDocument, Validate = LibraryValidation.Validate,
+            Entity = FragmentEntity, Collection = s => s.Fragments, Id = e => e.Id, ToDocument = LibraryDocuments.ToDocument, Validate = LibraryValidation.Validate, TerrainOf = e => e.Terrain,
         };
 
         private static readonly LibraryKind<FeatureTemplate> Features = new LibraryKind<FeatureTemplate>
         {
-            Entity = FeatureEntity, Collection = s => s.Features, Id = e => e.Id, ToDocument = LibraryDocuments.ToDocument, Validate = LibraryValidation.Validate,
+            Entity = FeatureEntity, Collection = s => s.Features, Id = e => e.Id, ToDocument = LibraryDocuments.ToDocument, Validate = LibraryValidation.Validate, TerrainOf = e => e.Terrain,
         };
 
         private static readonly LibraryKind<NeighborPhrase> Phrases = new LibraryKind<NeighborPhrase>
         {
-            Entity = PhraseEntity, Collection = s => s.Phrases, Id = e => e.Id, ToDocument = LibraryDocuments.ToDocument, Validate = LibraryValidation.Validate,
+            Entity = PhraseEntity, Collection = s => s.Phrases, Id = e => e.Id, ToDocument = LibraryDocuments.ToDocument, Validate = LibraryValidation.Validate, TerrainOf = e => e.Terrain, NeighborOf = e => e.NeighborTerrain,
         };
 
         // ------------------------------------------------------------------ reads (creator or admin)
 
-        public ListFragmentsReply ListFragments(TokenRequest request)
+        public ListFragmentsReply ListFragments(ListLibraryRequest request)
         {
             Authorize(request.Token, AdminRole.Creator);
             var reply = new ListFragmentsReply();
             if (_library == null) { return reply; }
             reply.LibraryVersion = ReadLibrary(() => _library.GetVersion() ?? 0);
-            reply.Fragments.AddRange(ReadLibrary(() => _library.Fragments.List()).Select(ToRecord));
+            reply.Fragments.AddRange(ReadLibrary(() => _library.Fragments.List()).Where(e => InScope(e.Terrain, request)).Select(ToRecord));
             return reply;
         }
 
@@ -67,13 +70,13 @@ namespace MUD.Core.Administration
             return found == null ? new GetFragmentReply { Found = false } : new GetFragmentReply { Found = true, Fragment = ToRecord(found) };
         }
 
-        public ListFeatureTemplatesReply ListFeatureTemplates(TokenRequest request)
+        public ListFeatureTemplatesReply ListFeatureTemplates(ListLibraryRequest request)
         {
             Authorize(request.Token, AdminRole.Creator);
             var reply = new ListFeatureTemplatesReply();
             if (_library == null) { return reply; }
             reply.LibraryVersion = ReadLibrary(() => _library.GetVersion() ?? 0);
-            reply.Templates.AddRange(ReadLibrary(() => _library.Features.List()).Select(ToRecord));
+            reply.Templates.AddRange(ReadLibrary(() => _library.Features.List()).Where(e => InScope(e.Terrain, request)).Select(ToRecord));
             return reply;
         }
 
@@ -84,13 +87,13 @@ namespace MUD.Core.Administration
             return found == null ? new GetFeatureTemplateReply { Found = false } : new GetFeatureTemplateReply { Found = true, Template = ToRecord(found) };
         }
 
-        public ListNeighborPhrasesReply ListNeighborPhrases(TokenRequest request)
+        public ListNeighborPhrasesReply ListNeighborPhrases(ListLibraryRequest request)
         {
             Authorize(request.Token, AdminRole.Creator);
             var reply = new ListNeighborPhrasesReply();
             if (_library == null) { return reply; }
             reply.LibraryVersion = ReadLibrary(() => _library.GetVersion() ?? 0);
-            reply.Phrases.AddRange(ReadLibrary(() => _library.Phrases.List()).Select(ToRecord));
+            reply.Phrases.AddRange(ReadLibrary(() => _library.Phrases.List()).Where(e => InScope(e.Terrain, request)).Select(ToRecord));
             return reply;
         }
 
@@ -185,10 +188,18 @@ namespace MUD.Core.Administration
             string id = kind.Id(entity);
             ILibraryCollection<T> collection = kind.Collection(_library);
             T stored;
-            try { stored = collection.Get(id); }
+            try
+            {
+                // The terrain type must exist; a phrase's neighbour must exist and be in the same area as its terrain (a map never crosses areas).
+                errors = CheckTerrainScope(kind.TerrainOf(entity), kind.NeighborOf == null ? null : kind.NeighborOf(entity));
+                if (errors.Count > 0) { return LibraryReply(AdminResult.Invalid, null, errors.ToArray()); }
+                stored = collection.Get(id);
+            }
             catch (Exception ex) when (ex is not OutOfMemoryException) { return LibraryFailed("read", kind, id, ex); }
             if (create && stored != null) { return LibraryReply(AdminResult.AlreadyExists, LibraryAlreadyExistsMessage); }
             if (!create && stored == null) { return LibraryReply(AdminResult.NotFound, LibraryNotFoundMessage); }
+            // The retired `terrains` array of a migrated document is kept as it is (the record does not carry it).
+            if (stored is ITerrainScoped storedScope && entity is ITerrainScoped newScope) { newScope.LegacyTerrains = storedScope.LegacyTerrains; }
             if (prepare != null) { prepare(entity, stored); }
 
             BsonDocument after = kind.ToDocument(entity);
@@ -257,6 +268,31 @@ namespace MUD.Core.Administration
             return LibraryReply(AdminResult.Ok, null, null, version);
         }
 
+        public const string UnknownTerrainMessage = "There is no terrain type with that id. Create the terrain type first.";
+        public const string NeighborOtherAreaMessage = "The neighbour terrain must be in the same area as the terrain.";
+
+        private List<LibraryError> CheckTerrainScope(string terrain, string neighbor)
+        {
+            var errors = new List<LibraryError>();
+            if (_library.TerrainTypes.Get(terrain) == null) { errors.Add(new LibraryError("terrain", UnknownTerrainMessage)); }
+            if (neighbor != null)
+            {
+                if (_library.TerrainTypes.Get(neighbor) == null) { errors.Add(new LibraryError("neighborTerrain", UnknownTerrainMessage)); }
+                else if (TerrainTypeRules.AreaOf(neighbor) != TerrainTypeRules.AreaOf(terrain)) { errors.Add(new LibraryError("neighborTerrain", NeighborOtherAreaMessage)); }
+            }
+            return errors;
+        }
+
+        // The optional terrain and area filters of the three list rpcs.
+        private static bool InScope(string entityTerrain, ListLibraryRequest request)
+        {
+            string terrain = (request.Terrain ?? string.Empty).Trim();
+            string area = (request.Area ?? string.Empty).Trim();
+            if (terrain.Length > 0 && entityTerrain != terrain) { return false; }
+            if (area.Length > 0 && TerrainTypeRules.AreaOf(entityTerrain) != area) { return false; }
+            return true;
+        }
+
         private int CurrentVersion()
         {
             try { return _library.GetVersion() ?? 0; }
@@ -290,14 +326,14 @@ namespace MUD.Core.Administration
 
         private static DescriptionFragment FromRecord(FragmentRecord r)
         {
-            return new DescriptionFragment { Id = Trim(r.Id), Terrains = r.Terrains.ToList(), Slot = Trim(r.Slot), Text = r.Text, Weight = r.Weight, Tags = r.Tags.ToList() };
+            return new DescriptionFragment { Id = Trim(r.Id), Terrain = Trim(r.Terrain), Slot = Trim(r.Slot), Text = r.Text, Weight = r.Weight, Tags = r.Tags.ToList() };
         }
 
         private static FeatureTemplate FromRecord(FeatureTemplateRecord r)
         {
             return new FeatureTemplate
             {
-                Id = Trim(r.Id), Terrains = r.Terrains.ToList(), Short = r.Short, Long = r.Long, Handles = r.Handles.ToList(), Adjectives = r.Adjectives.ToList(),
+                Id = Trim(r.Id), Terrain = Trim(r.Terrain), Short = r.Short, Long = r.Long, Handles = r.Handles.ToList(), Adjectives = r.Adjectives.ToList(),
                 RoomLine = string.IsNullOrEmpty(r.RoomLine) ? null : r.RoomLine, Detail = string.IsNullOrEmpty(r.Detail) ? null : r.Detail,
                 Weight = r.Weight, Chance = r.Chance, Version = 1, Tags = r.Tags.ToList(),
             };
@@ -305,15 +341,14 @@ namespace MUD.Core.Administration
 
         private static NeighborPhrase FromRecord(NeighborPhraseRecord r)
         {
-            return new NeighborPhrase { Id = Trim(r.Id), Terrains = r.Terrains.ToList(), NeighborTerrain = Trim(r.NeighborTerrain), Text = r.Text, Weight = r.Weight, Merge = r.Merge };
+            return new NeighborPhrase { Id = Trim(r.Id), Terrain = Trim(r.Terrain), NeighborTerrain = Trim(r.NeighborTerrain), Text = r.Text, Weight = r.Weight, Merge = r.Merge };
         }
 
         private static string Trim(string value) { return value == null ? null : value.Trim(); }
 
         public static FragmentRecord ToRecord(DescriptionFragment f)
         {
-            var r = new FragmentRecord { Id = f.Id ?? string.Empty, Slot = f.Slot ?? string.Empty, Text = f.Text ?? string.Empty, Weight = f.Weight };
-            r.Terrains.AddRange(f.Terrains ?? new List<string>());
+            var r = new FragmentRecord { Id = f.Id ?? string.Empty, Terrain = f.Terrain ?? string.Empty, Area = TerrainTypeRules.AreaOf(f.Terrain), Slot = f.Slot ?? string.Empty, Text = f.Text ?? string.Empty, Weight = f.Weight };
             r.Tags.AddRange(f.Tags ?? new List<string>());
             return r;
         }
@@ -322,10 +357,9 @@ namespace MUD.Core.Administration
         {
             var r = new FeatureTemplateRecord
             {
-                Id = f.Id ?? string.Empty, Short = f.Short ?? string.Empty, Long = f.Long ?? string.Empty, RoomLine = f.RoomLine ?? string.Empty,
-                Detail = f.Detail ?? string.Empty, Weight = f.Weight, Chance = f.Chance, Version = f.Version,
+                Id = f.Id ?? string.Empty, Terrain = f.Terrain ?? string.Empty, Area = TerrainTypeRules.AreaOf(f.Terrain), Short = f.Short ?? string.Empty, Long = f.Long ?? string.Empty,
+                RoomLine = f.RoomLine ?? string.Empty, Detail = f.Detail ?? string.Empty, Weight = f.Weight, Chance = f.Chance, Version = f.Version,
             };
-            r.Terrains.AddRange(f.Terrains ?? new List<string>());
             r.Handles.AddRange(f.Handles ?? new List<string>());
             r.Adjectives.AddRange(f.Adjectives ?? new List<string>());
             r.Tags.AddRange(f.Tags ?? new List<string>());
@@ -334,9 +368,11 @@ namespace MUD.Core.Administration
 
         public static NeighborPhraseRecord ToRecord(NeighborPhrase p)
         {
-            var r = new NeighborPhraseRecord { Id = p.Id ?? string.Empty, NeighborTerrain = p.NeighborTerrain ?? string.Empty, Text = p.Text ?? string.Empty, Weight = p.Weight, Merge = p.Merge };
-            r.Terrains.AddRange(p.Terrains ?? new List<string>());
-            return r;
+            return new NeighborPhraseRecord
+            {
+                Id = p.Id ?? string.Empty, Terrain = p.Terrain ?? string.Empty, Area = TerrainTypeRules.AreaOf(p.Terrain), NeighborTerrain = p.NeighborTerrain ?? string.Empty,
+                Text = p.Text ?? string.Empty, Weight = p.Weight, Merge = p.Merge,
+            };
         }
     }
 }

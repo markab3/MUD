@@ -10,7 +10,7 @@ public enum TerrainListOutcome { Ok, Failed }
 // write. Messages are fixed strings or core's own wording.
 public sealed class TerrainListPresenter
 {
-    public sealed record Row(string Kind, string Id, IReadOnlyList<string> Terrains, int Weight, string Details);
+    public sealed record Row(string Kind, string Id, string Terrain, int Weight, string Details);
 
     private readonly IAdminClient _core;
     private readonly string _token;
@@ -32,13 +32,10 @@ public sealed class TerrainListPresenter
     public string? Error { get; private set; }
     public string? Notice { get; set; }
 
-    public int UnassignedCount => Fragments.Count(f => f.Terrains.Count == 0) + Features.Count(f => f.Terrains.Count == 0) + Phrases.Count(f => f.Terrains.Count == 0);
-
     public string TabLabel => Tab switch
     {
         TerrainLibrary.Feature => "Feature templates",
         TerrainLibrary.Phrase => "Neighbour phrases",
-        TerrainLibrary.Unassigned => "Unassigned (not used by any generator)",
         _ => "Description fragments",
     };
 
@@ -54,7 +51,7 @@ public sealed class TerrainListPresenter
     }
 
     public static string NormaliseTab(string? tab) =>
-        tab == TerrainLibrary.Feature || tab == TerrainLibrary.Phrase || tab == TerrainLibrary.Unassigned ? tab : TerrainLibrary.Fragment;
+        tab == TerrainLibrary.Feature || tab == TerrainLibrary.Phrase ? tab : TerrainLibrary.Fragment;
 
     public async Task<TerrainListOutcome> LoadAsync(string? tab, string? terrain, string? tag, CancellationToken cancellation = default)
     {
@@ -64,10 +61,10 @@ public sealed class TerrainListPresenter
         TagFilter = string.IsNullOrWhiteSpace(tag) ? null : tag.Trim();
         try
         {
-            Fragments = await _core.ListFragmentsAsync(_token, cancellation);
-            Features = await _core.ListFeatureTemplatesAsync(_token, cancellation);
-            Phrases = await _core.ListNeighborPhrasesAsync(_token, cancellation);
-            KnownTerrains = TerrainLibrary.KnownTerrains(Fragments, Features, Phrases);
+            Fragments = await _core.ListFragmentsAsync(_token, null, null, cancellation);
+            Features = await _core.ListFeatureTemplatesAsync(_token, null, null, cancellation);
+            Phrases = await _core.ListNeighborPhrasesAsync(_token, null, null, cancellation);
+            KnownTerrains = (await _core.ListTerrainTypesAsync(_token, null, cancellation)).Select(t => t.Id).OrderBy(t => t, StringComparer.Ordinal).ToList();
             Rows = BuildRows();
             return TerrainListOutcome.Ok;
         }
@@ -115,21 +112,20 @@ public sealed class TerrainListPresenter
     private IReadOnlyList<Row> BuildRows()
     {
         var all = new List<(Row Row, IReadOnlyList<string> Tags)>();
-        if (Tab == TerrainLibrary.Fragment || Tab == TerrainLibrary.Unassigned)
+        if (Tab == TerrainLibrary.Fragment)
         {
-            all.AddRange(Fragments.Select(f => (new Row(TerrainLibrary.Fragment, f.Id, f.Terrains.ToList(), f.Weight, "slot " + f.Slot + ": " + Shorten(f.Text)), (IReadOnlyList<string>)f.Tags.ToList())));
+            all.AddRange(Fragments.Select(f => (new Row(TerrainLibrary.Fragment, f.Id, f.Terrain, f.Weight, "slot " + f.Slot + ": " + Shorten(f.Text)), (IReadOnlyList<string>)f.Tags.ToList())));
         }
-        if (Tab == TerrainLibrary.Feature || Tab == TerrainLibrary.Unassigned)
+        if (Tab == TerrainLibrary.Feature)
         {
-            all.AddRange(Features.Select(f => (new Row(TerrainLibrary.Feature, f.Id, f.Terrains.ToList(), f.Weight, "version " + f.Version + ", chance " + f.Chance + ": " + Shorten(f.Short)), (IReadOnlyList<string>)f.Tags.ToList())));
+            all.AddRange(Features.Select(f => (new Row(TerrainLibrary.Feature, f.Id, f.Terrain, f.Weight, "version " + f.Version + ", chance " + f.Chance + ": " + Shorten(f.Short)), (IReadOnlyList<string>)f.Tags.ToList())));
         }
-        if (Tab == TerrainLibrary.Phrase || Tab == TerrainLibrary.Unassigned)
+        if (Tab == TerrainLibrary.Phrase)
         {
-            all.AddRange(Phrases.Select(f => (new Row(TerrainLibrary.Phrase, f.Id, f.Terrains.ToList(), f.Weight, "next to " + f.NeighborTerrain + ": " + Shorten(TerrainLibrary.PhrasePreview(f.Text))), (IReadOnlyList<string>)Array.Empty<string>())));
+            all.AddRange(Phrases.Select(f => (new Row(TerrainLibrary.Phrase, f.Id, f.Terrain, f.Weight, "next to " + f.NeighborTerrain + ": " + Shorten(TerrainLibrary.PhrasePreview(f.Text))), (IReadOnlyList<string>)Array.Empty<string>())));
         }
         IEnumerable<(Row Row, IReadOnlyList<string> Tags)> q = all;
-        if (Tab == TerrainLibrary.Unassigned) { q = q.Where(x => x.Row.Terrains.Count == 0); }
-        if (TerrainFilter != null) { q = q.Where(x => x.Row.Terrains.Contains(TerrainFilter, StringComparer.Ordinal)); }
+        if (TerrainFilter != null) { q = q.Where(x => string.Equals(x.Row.Terrain, TerrainFilter, StringComparison.Ordinal)); }
         if (TagFilter != null) { q = q.Where(x => x.Tags.Contains(TagFilter, StringComparer.Ordinal)); }
         return q.Select(x => x.Row).OrderBy(r => r.Kind, StringComparer.Ordinal).ThenBy(r => r.Id, StringComparer.Ordinal).ToList();
     }

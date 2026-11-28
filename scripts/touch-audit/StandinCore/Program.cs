@@ -49,7 +49,7 @@ class Stand : Admin.AdminBase
     public override Task<UpdatePlayerReply> UpdatePlayer(UpdatePlayerRequest r, ServerCallContext c) { Check(r.Token); return Task.FromResult(new UpdatePlayerReply { Result = AdminResult.Ok, Player = new PlayerDetail { NameKey = r.NameKey, Name = r.NameKey } }); }
     public override Task<ListModulesReply> ListModules(TokenRequest r, ServerCallContext c)
     { Check(r.Token); var x = new ListModulesReply(); x.Modules.Add(new ModuleInfo { Name = "Desert", Version = "1.0", State = ModuleRunState.Ready, Running = true }); x.Modules.Add(new ModuleInfo { Name = "Temple", Version = "1.0", State = ModuleRunState.Stopped, Required = false }); return Task.FromResult(x); }
-    public override Task<ListFragmentsReply> ListFragments(TokenRequest r, ServerCallContext c) { Check(r.Token); return Task.FromResult(new ListFragmentsReply()); }
-    public override Task<ListFeatureTemplatesReply> ListFeatureTemplates(TokenRequest r, ServerCallContext c) { Check(r.Token); return Task.FromResult(new ListFeatureTemplatesReply()); }
-    public override Task<ListNeighborPhrasesReply> ListNeighborPhrases(TokenRequest r, ServerCallContext c) { Check(r.Token); return Task.FromResult(new ListNeighborPhrasesReply()); }
+    public override Task<ListFragmentsReply> ListFragments(ListLibraryRequest r, ServerCallContext c) { Check(r.Token); return Task.FromResult(new ListFragmentsReply()); }
+    public override Task<ListFeatureTemplatesReply> ListFeatureTemplates(ListLibraryRequest r, ServerCallContext c) { Check(r.Token); return Task.FromResult(new ListFeatureTemplatesReply()); }
+    public override Task<ListNeighborPhrasesReply> ListNeighborPhrases(ListLibraryRequest r, ServerCallContext c) { Check(r.Token); return Task.FromResult(new ListNeighborPhrasesReply()); }
 }

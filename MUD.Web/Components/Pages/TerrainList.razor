@@ -20,7 +20,6 @@ else
         <a class="mud-btn@(p.Tab == TerrainLibrary.Fragment ? " mud-btn-primary" : null)" aria-current="@(p.Tab == TerrainLibrary.Fragment ? "page" : null)" href="@TerrainListPresenter.ListUrl(TerrainLibrary.Fragment, p.TerrainFilter, p.TagFilter)">Fragments (@p.Fragments.Count)</a>
         <a class="mud-btn@(p.Tab == TerrainLibrary.Feature ? " mud-btn-primary" : null)" aria-current="@(p.Tab == TerrainLibrary.Feature ? "page" : null)" href="@TerrainListPresenter.ListUrl(TerrainLibrary.Feature, p.TerrainFilter, p.TagFilter)">Features (@p.Features.Count)</a>
         <a class="mud-btn@(p.Tab == TerrainLibrary.Phrase ? " mud-btn-primary" : null)" aria-current="@(p.Tab == TerrainLibrary.Phrase ? "page" : null)" href="@TerrainListPresenter.ListUrl(TerrainLibrary.Phrase, p.TerrainFilter, p.TagFilter)">Neighbour phrases (@p.Phrases.Count)</a>
-        <a class="mud-btn@(p.Tab == TerrainLibrary.Unassigned ? " mud-btn-primary" : null)" aria-current="@(p.Tab == TerrainLibrary.Unassigned ? "page" : null)" href="@TerrainListPresenter.ListUrl(TerrainLibrary.Unassigned, p.TerrainFilter, p.TagFilter)">Unassigned (@p.UnassignedCount)</a>
     </nav>
     <div class="mud-field mud-tabselect">
         <label for="tl-tab">Show</label>
@@ -28,7 +27,6 @@ else
             <option value="@TerrainLibrary.Fragment" selected="@(p.Tab == TerrainLibrary.Fragment)">Fragments (@p.Fragments.Count)</option>
             <option value="@TerrainLibrary.Feature" selected="@(p.Tab == TerrainLibrary.Feature)">Features (@p.Features.Count)</option>
             <option value="@TerrainLibrary.Phrase" selected="@(p.Tab == TerrainLibrary.Phrase)">Neighbour phrases (@p.Phrases.Count)</option>
-            <option value="@TerrainLibrary.Unassigned" selected="@(p.Tab == TerrainLibrary.Unassigned)">Unassigned (@p.UnassignedCount)</option>
         </select>
     </div>
     <p>Showing: <strong>@p.TabLabel</strong>.</p>
@@ -37,10 +35,6 @@ else
         <a class="mud-btn" href="@WebRoutes.TerrainEdit(TerrainLibrary.Feature)">New feature template</a>
         <a class="mud-btn" href="@WebRoutes.TerrainEdit(TerrainLibrary.Phrase)">New neighbour phrase</a>
     </div>
-    @if (p.Tab == TerrainLibrary.Unassigned)
-    {
-        <p role="note"><strong>[!] @TerrainLibrary.UnusedWarning.</strong> These entities have no terrain, so no generator will ever pick them. Edit one and tick a terrain to enable it.</p>
-    }
     <form class="mud-filter" @onsubmit="ApplyFilter" @onsubmit:preventDefault>
         <div class="mud-field"><label for="tl-terrain">Terrain</label>
             <input id="tl-terrain" value="@_terrainText" @oninput="e => _terrainText = e.Value?.ToString()" maxlength="100" list="terrain-list" autocomplete="off" /></div>
@@ -60,14 +54,14 @@ else
     @* Wide screens: a table. Under 600px: the same rows as stacked cards (mobile.css switches them; no round trip). *@
     <div class="mud-table-wrap">
         <table class="mud-table">
-            <thead><tr><th>Kind</th><th>Id</th><th>Terrains</th><th>Weight</th><th>Details</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Kind</th><th>Id</th><th>Terrain</th><th>Weight</th><th>Details</th><th>Actions</th></tr></thead>
             <tbody>
             @foreach (var r in p.Rows)
             {
                 <tr>
                     <td>@TerrainLibrary.KindLabel(r.Kind)</td>
                     <td>@r.Id</td>
-                    <td>@TerrainsCell(r)</td>
+                    <td>@r.Terrain</td>
                     <td>@r.Weight</td>
                     <td>@r.Details</td>
                     <td>
@@ -92,7 +86,7 @@ else
                 <strong class="mud-card-title">@r.Id</strong>
                 <dl class="mud-facts">
                     <dt>Kind</dt><dd>@TerrainLibrary.KindLabel(r.Kind)</dd>
-                    <dt>Terrains</dt><dd>@TerrainsCell(r)</dd>
+                    <dt>Terrain</dt><dd>@r.Terrain</dd>
                     <dt>Weight</dt><dd>@r.Weight</dd>
                     <dt>Details</dt><dd>@r.Details</dd>
                 </dl>
@@ -138,9 +132,6 @@ else
         _tagText = presenter.TagFilter;
         _confirm = null;
     }
-
-    private static string TerrainsCell(TerrainListPresenter.Row r) =>
-        r.Terrains.Count == 0 ? "[!] " + TerrainLibrary.UnusedWarning : string.Join(", ", r.Terrains);
 
     private void ChooseTab(string? tab) =>
         Navigation.NavigateTo(TerrainListPresenter.ListUrl(tab, _presenter?.TerrainFilter, _presenter?.TagFilter));
