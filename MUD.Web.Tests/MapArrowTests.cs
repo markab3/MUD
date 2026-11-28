@@ -69,24 +69,51 @@ public class MapArrowLayoutTests
     }
 
     [Fact]
-    public void ExitInAdirection_MakesThatArrowBlack_AndOthersStayGray()
+    public void ExitToADrawnLine_HasNoGoArrow_StubExitsKeepTheirs_OtherDirectionsStayGray()
     {
         var map = Build(0, Room("a.o", 0, 0, 0, "a", ("north", "a.n"), ("e", "gone.room")), Room("a.n", 0, 1));
-        var n = Arrow(map, "a.o", "north");
-        Assert.Equal((MapArrowKind.Go, true), (n.Kind, n.Black));
-        Assert.Equal("Go to short a.n (north)", n.Label);
-        var e = Arrow(map, "a.o", "east"); // short name works as well as the full word
+        Assert.Single(map.Lines);
+        Assert.DoesNotContain(map.Arrows, a => a.RoomKey == "a.o" && a.Direction == "north"); // the line's arrowheads are the only arrows
+        Assert.Equal(MapArrowKind.Link, Arrow(map, "a.n", "south").Kind); // no exit back: the gray arrow offers it (the plain line end does too)
+        var e = Arrow(map, "a.o", "east"); // short name works as well as the full word; a missing target is a stub
         Assert.Equal((MapArrowKind.Go, true), (e.Kind, e.Black));
+        Assert.Equal("Go to gone.room (east)", e.Label);
         Assert.Null(e.Href); // the target room does not exist: nothing to follow
         Assert.Equal(MapArrowKind.Add, Arrow(map, "a.o", "south").Kind);
         Assert.False(Arrow(map, "a.o", "south").Black);
     }
 
     [Fact]
-    public void BlackArrow_GoesToTheEditPage_WhenTheTargetIsOnThisLevel()
+    public void TwoWayAndOneWayLines_DrawNoGoArrowOnEitherRoom()
     {
-        var map = Build(0, Room("a.o", 0, 0, 0, "a", ("north", "a.n")), Room("a.n", 0, 1));
-        Assert.Equal("/creator/rooms/a.n", Arrow(map, "a.o", "north").Href);
+        var map = Build(0, Room("a.o", 0, 0, 0, "a", ("east", "a.e")), Room("a.e", 1, 0, 0, "a", ("west", "a.o")), Room("a.n", 0, 1, 0, "a", ("south", "a.o")));
+        Assert.DoesNotContain(map.Arrows, a => a.Kind == MapArrowKind.Go);
+        Assert.Equal(2, map.Lines.Count);
+    }
+
+    [Fact]
+    public void MismatchLine_AlsoDrawsNoGoArrow()
+    {
+        var map = Build(0, Room("a.o", 0, 0, 0, "a", ("north", "a.e")), Room("a.e", 1, 0));
+        Assert.True(map.Lines.Single().Warning);
+        Assert.DoesNotContain(map.Arrows, a => a.RoomKey == "a.o" && a.Direction == "north");
+    }
+
+    [Fact]
+    public void StubTargets_OffGridOtherLevelOtherAreaMissing_KeepTheBlackGoArrow()
+    {
+        var map = Build(0, Room("a.o", 0, 0, 0, "a", ("north", "a.up"), ("east", "b.far"), ("south", "gone.room"), ("west", "a.u")),
+            Room("a.up", 0, 1, 2), Room("b.far", 9, 9, 0, "b"), Room("a.u", null, null, null));
+        Assert.Equal(4, map.Stubs.Count);
+        Assert.Empty(map.Lines);
+        foreach (var d in new[] { "north", "east", "south", "west" }) { Assert.Equal(MapArrowKind.Go, Arrow(map, "a.o", d).Kind); }
+    }
+
+    [Fact]
+    public void BlackArrow_ToAnUnplacedRoom_GoesToItsEditPage()
+    {
+        var map = Build(0, Room("a.o", 0, 0, 0, "a", ("north", "a.u")), Room("a.u", null, null, null));
+        Assert.Equal("/creator/rooms/a.u", Arrow(map, "a.o", "north").Href);
     }
 
     [Fact]
@@ -98,68 +125,207 @@ public class MapArrowLayoutTests
         Assert.Equal("/creator/map?area=b&z=4&center=b.far", Arrow(map, "a.o", "east").Href);
     }
 
+    // Gray arrow next to an existing room: link, not create.
     [Fact]
-    public void BlackArrow_ToAnUnplacedRoom_GoesToItsEditPage()
-    {
-        var map = Build(0, Room("a.o", 0, 0, 0, "a", ("north", "a.u")), Room("a.u", null, null, null));
-        Assert.Equal("/creator/rooms/a.u", Arrow(map, "a.o", "north").Href);
-    }
-
-    // The x rule.
-    [Fact]
-    public void X_AdjacentCoordinateRoom_WithNoExit_IsAWireMarker()
+    public void GrayArrow_NextToAPlacedRoomOfTheSameAreaAndLevel_IsALink_OneDirection()
     {
         var map = Build(0, Room("a.o", 0, 0), Room("a.e", 1, 0), Room("a.ne", 1, 1));
         var x = Arrow(map, "a.o", "east");
-        Assert.Equal((MapArrowKind.Wire, true, "a.e", MapRoomGlyph), (x.Kind, x.Black, x.TargetKey, x.Glyph));
+        Assert.Equal((MapArrowKind.Link, false, "a.e"), (x.Kind, x.Black, x.TargetKey));
         Assert.Null(x.Href);
-        Assert.Equal("Connect east of short a.o to short a.e", x.Label);
+        Assert.Equal("Link east to short a.e", x.Label);
+        Assert.Equal(new MapExitAction(false, "a.o", "east", "a.e", x.Label), x.Action);
         Assert.Equal("a.ne", Arrow(map, "a.o", "northeast").TargetKey);
         Assert.Equal(MapArrowKind.Add, Arrow(map, "a.o", "west").Kind);
-        // Both ends offer it: the one-way story is the user's to complete.
-        Assert.Equal("a.o", Arrow(map, "a.e", "west").TargetKey);
+        Assert.Equal("Add room west of short a.o", Arrow(map, "a.o", "west").Label);
+        Assert.Null(Arrow(map, "a.o", "west").Action);
+        Assert.Equal("a.o", Arrow(map, "a.e", "west").TargetKey); // both ends offer their own direction
     }
 
-    private static string MapRoomGlyph => RoomMapLayout.WireGlyph;
-
-    [Fact]
-    public void X_NotDrawn_WhenTheRoomAlreadyHasAnExitThatWay()
+    [Theory]
+    [InlineData("north", 0, 1)] [InlineData("northeast", 1, 1)] [InlineData("east", 1, 0)] [InlineData("southeast", 1, -1)]
+    [InlineData("south", 0, -1)] [InlineData("southwest", -1, -1)] [InlineData("west", -1, 0)] [InlineData("northwest", -1, 1)]
+    public void LinkAction_UsesTheArrowDirection_AndTheRoomAtThoseCoordinates_InAll8Directions(string dir, int dx, int dy)
     {
-        var map = Build(0, Room("a.o", 0, 0, 0, "a", ("east", "a.e")), Room("a.e", 1, 0));
-        Assert.Equal(MapArrowKind.Go, Arrow(map, "a.o", "east").Kind);
-        Assert.Equal(MapArrowKind.Wire, Arrow(map, "a.e", "west").Kind); // the far end still lacks the way back
+        var map = Build(1, Room("a.o", 5, 5, 1), Room("a.t", 5 + dx, 5 + dy, 1), Room("a.other", 5 + dx, 5 + dy, 2));
+        var act = Arrow(map, "a.o", dir).Action!;
+        Assert.Equal(new MapExitAction(false, "a.o", dir, "a.t", "Link " + dir + " to short a.t"), act);
     }
 
     [Fact]
-    public void X_NotDrawn_ForARoomOfAnotherAreaOrLevelAtTheAdjacentCoordinates()
+    public void GrayArrow_NotALink_ForARoomOfAnotherAreaOrLevelAtTheAdjacentCoordinates_ItStillCreates()
     {
         var map = Build(0, Room("a.o", 0, 0), Room("a.up", 1, 0, 1), Room("b.x", 0, 1, 0, "b"));
-        Assert.Equal(MapArrowKind.Add, Arrow(map, "a.o", "east").Kind);
+        var e = Arrow(map, "a.o", "east");
+        Assert.Equal((MapArrowKind.Add, "/creator?area=a&x=1&y=0&z=0"), (e.Kind, e.Href));
         Assert.Equal(MapArrowKind.Add, Arrow(map, "a.o", "north").Kind);
     }
 
     [Fact]
-    public void X_OneWayLink_FromARoomAtNonAdjacentCoordinates_PointsBackInTheOppositeDirection()
+    public void RoomElsewhereWithAOneWayExitHere_OffersNothingOnThisSide()
     {
-        // b.far (other area) has an east exit into a.o: a.o's west arrow becomes an x to b.far.
+        // b.far is off the grid: its exit into a.o is a stub on b.far's own map; a.o gets no x any more, only the plain gray arrow.
         var map = Build(0, Room("a.o", 0, 0), Room("b.far", 9, 9, 0, "b", ("east", "a.o")));
-        var x = Arrow(map, "a.o", "west");
-        Assert.Equal((MapArrowKind.Wire, "b.far"), (x.Kind, x.TargetKey));
-        Assert.Equal(MapArrowKind.Add, Arrow(map, "a.o", "east").Kind);
+        Assert.Equal(MapArrowKind.Add, Arrow(map, "a.o", "west").Kind);
+        Assert.DoesNotContain(map.Arrows, a => a.Kind == MapArrowKind.Link);
     }
 
     [Fact]
-    public void X_OneWayLink_NotDrawn_WhenTheRoomAlreadyHasThatExit()
+    public void LinkArrow_OnceLinked_BecomesALineEnd_AndTheArrowDisappears()
     {
-        var map = Build(0, Room("a.o", 0, 0, 0, "a", ("west", "b.far")), Room("b.far", 9, 9, 0, "b", ("east", "a.o")));
-        Assert.Equal(MapArrowKind.Go, Arrow(map, "a.o", "west").Kind);
+        var map = Build(0, Room("a.o", 0, 0, 0, "a", ("east", "a.e")), Room("a.e", 1, 0));
+        Assert.DoesNotContain(map.Arrows, a => a.RoomKey == "a.o" && a.Direction == "east");
+        Assert.Equal(MapArrowKind.Link, Arrow(map, "a.e", "west").Kind); // the way back is still missing: gray arrow and plain line end both offer it
+    }
+
+    // Line ends.
+    private static MapExitAction[] EndActions(RoomMap m) => m.Lines.Single().Ends.Select(e => e.Action).ToArray();
+
+    [Fact]
+    public void TwoWayLine_BothEndsRemove_TheExitLeadingToTheRoomAtThatEnd()
+    {
+        var map = Build(0, Room("a.study", 0, 1, 0, "a", ("south", "a.hall")), Room("a.hall", 0, 0, 0, "a", ("north", "a.study")));
+        var line = map.Lines.Single();
+        Assert.True(line.ArrowStart && line.ArrowEnd);
+        // Both ends remove: the zone at each room removes the exit that leads to that room.
+        Assert.Equal(new[]
+        {
+            new MapExitAction(true, "a.study", "south", "a.hall", "Remove exit south from short a.study to short a.hall"),
+            new MapExitAction(true, "a.hall", "north", "a.study", "Remove exit north from short a.hall to short a.study"),
+        }.OrderBy(a => a.TargetKey), EndActions(map).OrderBy(a => a.TargetKey));
     }
 
     [Fact]
-    public void NoX_WhenThereIsNoRoomThatWay()
+    public void TwoWayLine_ReversedExitOrder_GivesTheSameActions_AtTheSameEnds()
     {
-        var map = Build(0, Room("a.o", 0, 0), Room("a.far", 5, 5));
-        Assert.DoesNotContain(map.Arrows, a => a.Kind == MapArrowKind.Wire);
+        var a = Build(0, Room("a.study", 0, 1, 0, "a", ("south", "a.hall")), Room("a.hall", 0, 0, 0, "a", ("north", "a.study")));
+        var b = Build(0, Room("a.hall", 0, 0, 0, "a", ("north", "a.study")), Room("a.study", 0, 1, 0, "a", ("south", "a.hall")));
+        // Whichever room the line is drawn from, the zone at the study removes hall -> study and the zone at the hall removes study -> hall.
+        foreach (var m in new[] { a, b })
+        {
+            var line = m.Lines.Single();
+            var study = m.Rects.Single(r => r.Key == "a.study");
+            var atStudy = line.Ends.Single(e => Math.Abs(e.Zone[0].Y - study.Y) < 1 || Math.Abs(e.Zone[0].Y - (study.Y + study.H)) < 1).Action;
+            Assert.Equal(("a.hall", "north", "a.study", true), (atStudy.OwnerKey, atStudy.Direction, atStudy.TargetKey, atStudy.Remove));
+            var other = line.Ends.Single(e => e.Action != atStudy).Action;
+            Assert.Equal(("a.study", "south", "a.hall", true), (other.OwnerKey, other.Direction, other.TargetKey, other.Remove));
+        }
+    }
+
+    [Fact]
+    public void OneWayLine_ArrowheadEndRemoves_PlainEndAdds_TheOppositeDirection_FromTheOtherRoom()
+    {
+        var map = Build(0, Room("a.study", 0, 1), Room("a.hall", 0, 0, 0, "a", ("north", "a.study")));
+        var line = map.Lines.Single();
+        Assert.False(line.ArrowStart);
+        Assert.True(line.ArrowEnd);
+        // Line drawn from the hall (start) to the study (end, arrowhead): the arrowhead end removes hall -> study, the plain end adds study -> hall.
+        Assert.Equal(new[]
+        {
+            new MapExitAction(false, "a.study", "south", "a.hall", "Add exit south from short a.study to short a.hall"),
+            new MapExitAction(true, "a.hall", "north", "a.study", "Remove exit north from short a.hall to short a.study"),
+        }, EndActions(map));
+    }
+
+    [Fact]
+    public void OneWayLine_OtherOrientation_AddNameIsTheOppositeOfTheExistingDirection()
+    {
+        var map = Build(0, Room("a.study", 0, 1, 0, "a", ("south", "a.hall")), Room("a.hall", 0, 0));
+        Assert.Equal(new[]
+        {
+            new MapExitAction(false, "a.hall", "north", "a.study", "Add exit north from short a.hall to short a.study"),
+            new MapExitAction(true, "a.study", "south", "a.hall", "Remove exit south from short a.study to short a.hall"),
+        }, EndActions(map));
+    }
+
+    [Theory]
+    [InlineData("north", 0, 1, "south")] [InlineData("northeast", 1, 1, "southwest")] [InlineData("east", 1, 0, "west")] [InlineData("southeast", 1, -1, "northwest")]
+    [InlineData("south", 0, -1, "north")] [InlineData("southwest", -1, -1, "northeast")] [InlineData("west", -1, 0, "east")] [InlineData("northwest", -1, 1, "southeast")]
+    public void OneWayLine_AddedExitName_IsTheFullWordOpposite_InAll8Directions(string dir, int dx, int dy, string opposite)
+    {
+        // Short aliases in the data still produce full-word names for the exit that gets added.
+        var short1 = new Dictionary<string, string> { ["north"] = "n", ["east"] = "e", ["south"] = "s", ["west"] = "w", ["northeast"] = "ne", ["northwest"] = "nw", ["southeast"] = "se", ["southwest"] = "sw" };
+        var map = Build(0, Room("a.o", 0, 0, 0, "a", (short1[dir], "a.t")), Room("a.t", dx, dy));
+        var add = map.Lines.Single().Ends.Select(e => e.Action).Single(a => !a.Remove);
+        Assert.Equal(("a.t", opposite, "a.o"), (add.OwnerKey, add.Direction, add.TargetKey));
+        var remove = map.Lines.Single().Ends.Select(e => e.Action).Single(a => a.Remove);
+        Assert.Equal(("a.o", short1[dir], "a.t"), (remove.OwnerKey, remove.Direction, remove.TargetKey)); // removal matches the stored name
+    }
+
+    [Fact]
+    public void MismatchLine_HasNoEndZones()
+    {
+        var map = Build(0, Room("a.o", 0, 0, 0, "a", ("north", "a.e")), Room("a.e", 1, 0));
+        Assert.True(map.Lines.Single().Warning);
+        Assert.Empty(map.Lines.Single().Ends);
+    }
+
+    [Fact]
+    public void EndZones_AreTheTwoHalvesOfTheLine_SplitAtTheMidpoint_AndNeverOverlap()
+    {
+        var map = Build(0, Room("a.o", 0, 0, 0, "a", ("east", "a.e")), Room("a.e", 1, 0));
+        var line = map.Lines.Single();
+        var (z0, z1) = (line.Ends[0].Zone, line.Ends[1].Zone);
+        Assert.Equal(line.Points[0], z0[0]);
+        Assert.Equal(line.Points[1], z1[0]);
+        Assert.Equal(z0[1], z1[1]); // they meet at the midpoint
+        Assert.Equal((line.Points[0].X + line.Points[1].X) / 2, z0[1].X, 6);
+    }
+
+    [Fact]
+    public void RemovingBothEnds_LeavesNoLine_AndGrayArrowsReturnOnBothRooms()
+    {
+        var map = Build(0, Room("a.o", 0, 0), Room("a.e", 1, 0));
+        Assert.Empty(map.Lines);
+        Assert.Equal(MapArrowKind.Link, Arrow(map, "a.o", "east").Kind);
+        Assert.Equal(MapArrowKind.Link, Arrow(map, "a.e", "west").Kind);
+    }
+
+    // Sizes and drawing.
+    [Fact]
+    public void GrayAndBlackArrows_AreAsBigAsTheLineArrowhead()
+    {
+        // The marker is viewBox 10 scaled to markerWidth stroke widths of the line; the arrows are the same size in SVG units.
+        Assert.Equal(RoomMapLayout.ArrowSize, RoomMapLayout.ArrowSize / RoomMapLayout.LineStroke * RoomMapLayout.LineStroke);
+        var xs = System.Text.RegularExpressions.Regex.Matches(RoomMapLayout.ArrowPath, @"-?\d+(\.\d+)?,-?\d+(\.\d+)?")
+            .Select(m => m.Value.Split(',').Select(double.Parse).ToArray()).ToList();
+        Assert.Equal(RoomMapLayout.ArrowSize, xs.Max(p => p[0]) - xs.Min(p => p[0]));
+        Assert.Equal(RoomMapLayout.ArrowSize, xs.Max(p => p[1]) - xs.Min(p => p[1]));
+    }
+
+    [Theory]
+    [InlineData("north", -90)] [InlineData("northeast", -45)] [InlineData("east", 0)] [InlineData("southeast", 45)]
+    [InlineData("south", 90)] [InlineData("southwest", 135)] [InlineData("west", 180)] [InlineData("northwest", -135)]
+    public void CompassArrows_AreRotatedTriangles_OneAnglePerDirection(string dir, double angle)
+    {
+        Assert.Equal(angle, Arrow(Build(0, Room("a.o", 0, 0)), "a.o", dir).Angle);
+    }
+
+    [Fact]
+    public void CompassArrows_StayOutsideTheirOwnBox_AndClearOfNeighbours190Apart()
+    {
+        // Neighbours at the pitch: every arrow's triangle stays inside the gap, off the room squares, in all 8 directions.
+        var rooms = new List<RoomRecord>();
+        for (var x = -1; x <= 1; x++) { for (var y = -1; y <= 1; y++) { rooms.Add(Room("a." + (x + 1) + (y + 1), x, y)); } }
+        var map = Build(0, rooms.ToArray());
+        var half = RoomMapLayout.ArrowSize / 2 * 1.42;
+        foreach (var a in map.Arrows.Where(a => a.Kind == MapArrowKind.Link || a.Kind == MapArrowKind.Add || a.Kind == MapArrowKind.Go))
+        {
+            foreach (var r in map.Rects)
+            {
+                var overlaps = a.X + half > r.X && a.X - half < r.X + r.W && a.Y + half > r.Y && a.Y - half < r.Y + r.H;
+                Assert.False(overlaps, a.RoomKey + " " + a.Direction + " covers " + r.Key);
+            }
+        }
+    }
+
+    [Fact]
+    public void CompassArrows_NeverSitOnTheMiddleOfASide_WhereTheLineAndItsEndZonesRun()
+    {
+        var map = Build(0, Room("a.o", 0, 0));
+        var r = map.Rects.Single();
+        foreach (var d in new[] { "north", "south" }) { Assert.True(Math.Abs(Arrow(map, "a.o", d).X - (r.X + r.W / 2)) >= RoomMapLayout.ArrowSize); }
+        foreach (var d in new[] { "east", "west" }) { Assert.True(Math.Abs(Arrow(map, "a.o", d).Y - (r.Y + r.H / 2)) >= RoomMapLayout.ArrowSize); }
     }
 
     // Up and down.
@@ -392,49 +558,83 @@ public class CreateRoomPrefillTests
     }
 }
 
-public class MapWireTests
+public class MapExitWriteTests
 {
     private static FakeAdminClient Core() => new FakeAdminClient()
         .AddRoom("a.o", "a", 0, 0, 0, ("north", "a.n"))
+        .AddRoom("a.n", "a", 0, 1, 0, ("south", "a.o"))
         .AddRoom("a.e", "a", 1, 0, 0);
 
     private static CreatorMapPresenter Make(FakeAdminClient core) => new(core, "tok");
+    private static MapExitAction Add(string owner = "a.o", string dir = "east", string to = "a.e") => new(false, owner, dir, to, "x");
+    private static MapExitAction Remove(string owner = "a.o", string dir = "north", string to = "a.n") => new(true, owner, dir, to, "x");
 
     [Fact]
-    public async Task Ok_AddsExactlyOneExit_FromTheClickedRoom_ThroughUpdateRoom_AndNeverTheReverse()
+    public async Task Add_AddsExactlyOneExit_FromTheOwner_ThroughUpdateRoom_AndNeverTheReverse()
     {
         var core = Core();
-        Assert.True(await Make(core).WireAsync("a.o", "east", "a.e"));
+        Assert.True(await Make(core).ApplyAsync(Add()));
         var sent = Assert.Single(core.RoomUpdates);
         Assert.Equal("a.o", sent.Key);
         Assert.Equal(new[] { ("north", "a.n"), ("east", "a.e") }, sent.Exits.Select(e => (e.Name, e.To)));
         Assert.Empty(core.RoomCreates);
-        Assert.Empty(core.Rooms["a.e"].Exits); // no reverse exit
-        Assert.Equal(new[] { ("north", "a.n"), ("east", "a.e") }, core.Rooms["a.o"].Exits.Select(e => (e.Name, e.To)));
+        Assert.Empty(core.Rooms["a.e"].Exits); // the room at the other end is not touched
+        Assert.Equal(("south", "a.o"), Assert.Single(core.Rooms["a.n"].Exits.Select(e => (e.Name, e.To))));
+    }
+
+    [Fact]
+    public async Task Remove_RemovesExactlyOneExit_FromTheOwner_AndTouchesNoOtherRoom()
+    {
+        var core = Core();
+        Assert.True(await Make(core).ApplyAsync(Remove()));
+        var sent = Assert.Single(core.RoomUpdates);
+        Assert.Equal("a.o", sent.Key);
+        Assert.Empty(sent.Exits);
+        Assert.Empty(core.Rooms["a.o"].Exits);
+        Assert.Equal(("south", "a.o"), Assert.Single(core.Rooms["a.n"].Exits.Select(e => (e.Name, e.To)))); // keeps its way back
+    }
+
+    [Fact]
+    public async Task Remove_MatchesOnNameAndTarget_SoASecondExitToTheSameRoomStays()
+    {
+        var core = new FakeAdminClient().AddRoom("a.o", "a", 0, 0, 0, ("north", "a.n"), ("door", "a.n"), ("east", "a.e")).AddRoom("a.n", "a", 0, 1, 0).AddRoom("a.e", "a", 1, 0, 0);
+        Assert.True(await Make(core).ApplyAsync(Remove()));
+        Assert.Equal(new[] { ("door", "a.n"), ("east", "a.e") }, core.Rooms["a.o"].Exits.Select(e => (e.Name, e.To)));
+    }
+
+    [Fact]
+    public async Task Remove_AShortStoredName_IsMatchedAsStored()
+    {
+        var core = new FakeAdminClient().AddRoom("a.o", "a", 0, 0, 0, ("n", "a.n")).AddRoom("a.n", "a", 0, 1, 0);
+        Assert.True(await Make(core).ApplyAsync(Remove(dir: "n")));
+        Assert.Empty(core.Rooms["a.o"].Exits);
     }
 
     [Fact]
     public async Task Ok_SendsTheWholeForm_SoCoreDiffsOnlyTheExit()
     {
-        var core = Core();
-        core.Rooms["a.o"].ShortDescription = "Hall";
-        core.Rooms["a.o"].LongDescription = "A hall.";
-        core.Rooms["a.o"].Features.Add(new RoomFeature { Short = "lamp", Long = "A lamp." });
-        Assert.True(await Make(core).WireAsync("a.o", "east", "a.e"));
-        var sent = core.RoomUpdates.Single();
-        Assert.Equal("Hall", sent.ShortDescription);
-        Assert.Equal("A hall.", sent.LongDescription);
-        Assert.Equal("a", sent.Area);
-        Assert.Equal((0, 0, 0), (sent.X, sent.Y, sent.Z));
-        Assert.True(sent.FeaturesPresent);
-        Assert.Equal("lamp", Assert.Single(sent.Features).Short);
+        foreach (var action in new[] { Add(), Remove() })
+        {
+            var core = Core();
+            core.Rooms["a.o"].ShortDescription = "Hall";
+            core.Rooms["a.o"].LongDescription = "A hall.";
+            core.Rooms["a.o"].Features.Add(new RoomFeature { Short = "lamp", Long = "A lamp." });
+            Assert.True(await Make(core).ApplyAsync(action));
+            var sent = core.RoomUpdates.Single();
+            Assert.Equal("Hall", sent.ShortDescription);
+            Assert.Equal("A hall.", sent.LongDescription);
+            Assert.Equal("a", sent.Area);
+            Assert.Equal((0, 0, 0), (sent.X, sent.Y, sent.Z));
+            Assert.True(sent.FeaturesPresent);
+            Assert.Equal("lamp", Assert.Single(sent.Features).Short);
+        }
     }
 
     [Fact]
-    public async Task Ok_WritesTheFullWordDirectionName_EvenForAShortName()
+    public async Task Add_WritesTheFullWordDirectionName_EvenForAShortName()
     {
         var core = Core();
-        await Make(core).WireAsync("a.o", "e", "a.e");
+        await Make(core).ApplyAsync(Add(dir: "e"));
         Assert.Equal("east", core.RoomUpdates.Single().Exits.Last().Name);
     }
 
@@ -443,40 +643,66 @@ public class MapWireTests
     {
         var core = Core();
         core.Rooms["a.o"].ShortDescription = "Changed since the map was drawn";
-        await Make(core).WireAsync("a.o", "east", "a.e");
+        await Make(core).ApplyAsync(Add());
         Assert.Equal("Changed since the map was drawn", core.RoomUpdates.Single().ShortDescription);
-        Assert.Contains("tok", core.RoomTokens);
         Assert.All(core.RoomTokens, t => Assert.Equal("tok", t));
+        Assert.NotEmpty(core.RoomTokens);
     }
 
     [Fact]
-    public async Task Ok_SetsTheNotice()
+    public async Task Ok_SetsTheFixedNotice_ForAddAndRemove()
     {
         var p = Make(Core());
-        Assert.True(await p.WireAsync("a.o", "east", "a.e"));
-        Assert.Equal(Messages.MapWired, p.WireNotice);
+        Assert.True(await p.ApplyAsync(Remove()));
+        Assert.Equal("Removed exit north from a.o to a.n", p.WireNotice);
         Assert.Null(p.WireError);
+        Assert.True(await p.ApplyAsync(Add()));
+        Assert.Equal("Added exit east from a.o to a.e", p.WireNotice);
     }
 
     [Fact]
-    public async Task Changed_TheDirectionIsNoLongerFree_IsRefusedWithoutWriting()
+    public async Task Remove_TheExitChangedMeanwhile_IsRefusedWithoutWriting()
     {
         var core = Core();
-        core.AddRoom("a.o", "a", 0, 0, 0, ("north", "a.n"), ("e", "a.other")); // someone added an east exit meanwhile (short alias)
+        core.Rooms["a.o"].Exits.Clear(); // somebody removed it already
         var p = Make(core);
-        Assert.False(await p.WireAsync("a.o", "east", "a.e"));
-        Assert.Equal(Messages.MapWireChanged, p.WireError);
+        Assert.False(await p.ApplyAsync(Remove()));
+        Assert.Equal(Messages.MapExitChanged, p.WireError);
         Assert.Empty(core.RoomUpdates);
     }
 
     [Fact]
-    public async Task Changed_TheRoomIsGone_IsRefusedWithoutWriting()
+    public async Task Remove_TheExitNowPointsElsewhere_IsRefusedWithoutWriting()
+    {
+        var core = Core();
+        core.Rooms["a.o"].Exits[0].To = "a.e";
+        var p = Make(core);
+        Assert.False(await p.ApplyAsync(Remove()));
+        Assert.Equal(Messages.MapExitChanged, p.WireError);
+        Assert.Empty(core.RoomUpdates);
+    }
+
+    [Fact]
+    public async Task Add_TheDirectionIsNoLongerFree_IsRefusedWithoutOverwriting_EvenUnderAShortAlias()
+    {
+        var core = Core();
+        core.AddRoom("a.o", "a", 0, 0, 0, ("north", "a.n"), ("e", "a.other"));
+        var p = Make(core);
+        Assert.False(await p.ApplyAsync(Add()));
+        Assert.Equal(Messages.MapDirectionTaken, p.WireError);
+        Assert.Empty(core.RoomUpdates);
+        Assert.Equal(new[] { ("north", "a.n"), ("e", "a.other") }, core.Rooms["a.o"].Exits.Select(e => (e.Name, e.To)));
+    }
+
+    [Fact]
+    public async Task TheRoomIsGone_IsRefusedWithoutWriting()
     {
         var core = Core();
         core.Rooms.Remove("a.o");
         var p = Make(core);
-        Assert.False(await p.WireAsync("a.o", "east", "a.e"));
-        Assert.Equal(Messages.MapWireChanged, p.WireError);
+        Assert.False(await p.ApplyAsync(Add()));
+        Assert.Equal(Messages.MapExitChanged, p.WireError);
+        Assert.False(await p.ApplyAsync(Remove()));
         Assert.Empty(core.RoomUpdates);
     }
 
@@ -486,22 +712,25 @@ public class MapWireTests
     [InlineData(AdminResult.NoChange)]
     public async Task CoreAnswers_RefusedNotFoundNoChange_ShowTheChangedMessage(AdminResult result)
     {
-        var core = Core();
-        core.RoomEditResult = result;
-        var p = Make(core);
-        Assert.False(await p.WireAsync("a.o", "east", "a.e"));
-        Assert.Equal(Messages.MapWireChanged, p.WireError);
+        foreach (var action in new[] { Add(), Remove() })
+        {
+            var core = Core();
+            core.RoomEditResult = result;
+            var p = Make(core);
+            Assert.False(await p.ApplyAsync(action));
+            Assert.Equal(Messages.MapExitChanged, p.WireError);
+        }
     }
 
     [Fact]
-    public async Task KeyValidation_CoreInvalid_ShowsAFixedMessage_NotCoresText()
+    public async Task CoreInvalid_ShowsAFixedMessage_NotCoresText()
     {
         var core = Core();
         core.RoomEditResult = AdminResult.Invalid;
         core.RoomEditErrors.Add(new FieldError { Field = "Exits[1].To", Message = "secret detail <b>" });
         var p = Make(core);
-        Assert.False(await p.WireAsync("a.o", "east", "a.e"));
-        Assert.Equal(Messages.MapWireInvalid, p.WireError);
+        Assert.False(await p.ApplyAsync(Add()));
+        Assert.Equal(Messages.MapExitInvalid, p.WireError);
         Assert.DoesNotContain("secret", p.WireError);
     }
 
@@ -511,7 +740,7 @@ public class MapWireTests
         var core = Core();
         core.Unavailable = true;
         var p = Make(core);
-        Assert.False(await p.WireAsync("a.o", "east", "a.e"));
+        Assert.False(await p.ApplyAsync(Remove()));
         Assert.Equal(Messages.Unavailable, p.WireError);
     }
 
@@ -521,7 +750,7 @@ public class MapWireTests
         var core = Core();
         core.RefuseRoomCalls = true;
         var p = Make(core);
-        Assert.False(await p.WireAsync("a.o", "east", "a.e"));
+        Assert.False(await p.ApplyAsync(Remove()));
         Assert.Equal(Messages.RoomForbidden, p.WireError);
         Assert.Empty(core.RoomUpdates);
     }
@@ -532,7 +761,7 @@ public class MapWireTests
         var core = Core();
         core.RoomEditResult = AdminResult.Forbidden;
         var p = Make(core);
-        Assert.False(await p.WireAsync("a.o", "east", "a.e"));
+        Assert.False(await p.ApplyAsync(Add()));
         Assert.Equal(Messages.RoomForbidden, p.WireError);
     }
 
@@ -542,48 +771,71 @@ public class MapWireTests
         var core = Core();
         core.RoomEditResult = AdminResult.AuditFailed;
         var p = Make(core);
-        Assert.False(await p.WireAsync("a.o", "east", "a.e"));
+        Assert.False(await p.ApplyAsync(Add()));
         Assert.Equal(Messages.RoomAuditFailed, p.WireError);
         core.RoomEditResult = AdminResult.AlreadyExists;
-        Assert.False(await p.WireAsync("a.o", "east", "a.e"));
+        Assert.False(await p.ApplyAsync(Add()));
         Assert.Equal(Messages.RoomSaveFailed, p.WireError);
     }
 
     [Fact]
-    public async Task BadInput_NotACompassDirection_OrNoTarget_IsRefusedBeforeCallingCore()
+    public async Task BadInput_NotACompassDirectionToAdd_OrNoTarget_IsRefusedBeforeCallingCore()
     {
         var core = Core();
         var p = Make(core);
-        Assert.False(await p.WireAsync("a.o", "up", "a.e"));
-        Assert.False(await p.WireAsync("a.o", "east", " "));
-        Assert.Equal(Messages.MapWireChanged, p.WireError);
+        Assert.False(await p.ApplyAsync(Add(dir: "up")));
+        Assert.False(await p.ApplyAsync(Add(to: " ")));
+        Assert.Equal(Messages.MapExitChanged, p.WireError);
         Assert.Empty(core.RoomTokens);
     }
 
     [Fact]
-    public async Task AfterAWire_TheXBecomesABlackArrow()
+    public async Task TheStudyAndHallExample_EndsToggleTheLine_ThroughTheRealLayoutActions()
     {
-        var core = Core();
+        var core = new FakeAdminClient().AddRoom("a.study", "a", 0, 1, 0, ("south", "a.hall")).AddRoom("a.hall", "a", 0, 0, 0, ("north", "a.study"));
         var first = Make(core);
         await first.LoadAsync("a", 0);
-        Assert.Equal(MapArrowKind.Wire, first.Map!.Arrows.Single(a => a.RoomKey == "a.o" && a.Direction == "east").Kind);
-        await Make(core).WireAsync("a.o", "east", "a.e");
+        var atStudy = first.Map!.Lines.Single().Ends.Single(e => e.Action.TargetKey == "a.study").Action; // the end at the study
+        Assert.Equal(("a.hall", "north", "a.study", true), (atStudy.OwnerKey, atStudy.Direction, atStudy.TargetKey, atStudy.Remove));
+        Assert.True(await Make(core).ApplyAsync(atStudy));
+        Assert.Empty(core.Rooms["a.hall"].Exits);
+        Assert.Single(core.Rooms["a.study"].Exits);
+
         var second = Make(core);
         await second.LoadAsync("a", 0);
-        var arrow = second.Map!.Arrows.Single(a => a.RoomKey == "a.o" && a.Direction == "east");
-        Assert.Equal((MapArrowKind.Go, true), (arrow.Kind, arrow.Black));
-        // The far end still offers its own x: the way back is a second click.
-        Assert.Equal(MapArrowKind.Wire, second.Map.Arrows.Single(a => a.RoomKey == "a.e" && a.Direction == "west").Kind);
+        var line = second.Map!.Lines.Single();
+        Assert.False(line.ArrowStart); // arrowhead only at the hall end now
+        var plain = line.Ends.Select(e => e.Action).Single(a => !a.Remove);
+        Assert.Equal(("a.hall", "north", "a.study"), (plain.OwnerKey, plain.Direction, plain.TargetKey));
+        Assert.True(await Make(core).ApplyAsync(plain)); // restores hall -> study
+        var third = Make(core);
+        await third.LoadAsync("a", 0);
+        Assert.True(third.Map!.Lines.Single().ArrowStart && third.Map.Lines.Single().ArrowEnd);
+
+        // Both removed: the line is gone and the gray arrows are back on both rooms.
+        foreach (var e in third.Map.Lines.Single().Ends.Select(e => e.Action).ToList()) { Assert.True(await Make(core).ApplyAsync(e)); }
+        var fourth = Make(core);
+        await fourth.LoadAsync("a", 0);
+        Assert.Empty(fourth.Map!.Lines);
+        Assert.Equal(MapArrowKind.Link, fourth.Map.Arrows.Single(a => a.RoomKey == "a.study" && a.Direction == "south").Kind);
+        Assert.Equal(MapArrowKind.Link, fourth.Map.Arrows.Single(a => a.RoomKey == "a.hall" && a.Direction == "north").Kind);
     }
 
     [Fact]
-    public async Task ClickingBothEnds_WiresTheWayBack_OneDirectionPerClick()
+    public async Task LinkArrow_AddsOneExit_ThenTheOtherEndIsAPlainLineEnd()
     {
-        var core = Core();
-        await Make(core).WireAsync("a.o", "east", "a.e");
-        Assert.True(await Make(core).WireAsync("a.e", "west", "a.o"));
-        Assert.Equal(2, core.RoomUpdates.Count);
-        Assert.Equal(("west", "a.o"), Assert.Single(core.Rooms["a.e"].Exits.Select(e => (e.Name, e.To))));
+        var core = new FakeAdminClient().AddRoom("a.o", "a", 0, 0, 0).AddRoom("a.e", "a", 1, 0, 0);
+        var first = Make(core);
+        await first.LoadAsync("a", 0);
+        var link = first.Map!.Arrows.Single(a => a.RoomKey == "a.o" && a.Direction == "east").Action!;
+        Assert.True(await Make(core).ApplyAsync(link));
+        Assert.Equal(("east", "a.e"), Assert.Single(core.Rooms["a.o"].Exits.Select(e => (e.Name, e.To))));
+        Assert.Empty(core.Rooms["a.e"].Exits);
+        var second = Make(core);
+        await second.LoadAsync("a", 0);
+        var line = second.Map!.Lines.Single();
+        Assert.False(line.ArrowStart);
+        Assert.Contains(line.Ends, e => !e.Action.Remove && e.Action.OwnerKey == "a.e" && e.Action.Direction == "west");
     }
 
     [Fact]
@@ -595,11 +847,116 @@ public class MapWireTests
     }
 
     [Fact]
-    public void MapPage_StaysUnderCreatorOrAdmin_AndHandlesWireClicksOnTheServer()
+    public void MapPage_StaysUnderCreatorOrAdmin()
     {
         var page = typeof(MUD.Web.Components.Pages.CreatorMap);
         var auth = page.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), true).Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>().Single();
         Assert.Equal(WebPolicies.CreatorOrAdmin, auth.Policy);
+    }
+
+    private static string Root()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir != null && !File.Exists(Path.Combine(dir, "MUD.sln"))) { dir = Path.GetDirectoryName(dir); }
+        return dir ?? throw new InvalidOperationException("repo root not found");
+    }
+
+    [Fact]
+    public void Page_BlocksASecondClickWhileAWriteRuns_AndPassesBusyToTheMap()
+    {
+        var page = File.ReadAllText(Path.Combine(Root(), "MUD.Web/Components/Pages/CreatorMap.razor"));
+        Assert.Contains("Busy=\"_busy\"", page);
+        Assert.Contains("if (_presenter == null || _busy) { return; }", page);
+        Assert.Contains("finally { _busy = false; }", page);
+        var map = File.ReadAllText(Path.Combine(Root(), "MUD.Web/Components/Shared/RoomMap.razor"));
+        Assert.Contains("Busy ? Task.CompletedTask", map);
+        Assert.Contains("aria-disabled", map);
+    }
+
+    [Fact]
+    public void Help_DescribesTheNewControls_AndNoLongerMentionsTheX()
+    {
+        var page = File.ReadAllText(Path.Combine(Root(), "MUD.Web/Components/Pages/CreatorMap.razor"));
+        Assert.DoesNotContain("&times;", page);
+        Assert.DoesNotContain("black x", page);
+        foreach (var s in new[] { "Click an arrowhead to remove that exit", "click a plain end to add", "cannot be changed here", "edit page", "opens Create room", "switch the map to another level" })
+        {
+            Assert.Contains(s, page);
+        }
+    }
+}
+
+public class MapLineEndRenderTests
+{
+    private sealed class NoJs : Microsoft.JSInterop.IJSRuntime
+    {
+        public ValueTask<T> InvokeAsync<T>(string identifier, object?[]? args) => throw new Microsoft.JSInterop.JSDisconnectedException("test");
+        public ValueTask<T> InvokeAsync<T>(string identifier, CancellationToken cancellationToken, object?[]? args) => throw new Microsoft.JSInterop.JSDisconnectedException("test");
+    }
+
+    private static async Task<string> Render(RoomMap map, bool busy)
+    {
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton(services, new AssetVersions(new Microsoft.Extensions.FileProviders.NullFileProvider()));
+        Microsoft.Extensions.DependencyInjection.ServiceCollectionServiceExtensions.AddSingleton<Microsoft.JSInterop.IJSRuntime>(services, new NoJs());
+        await using var provider = Microsoft.Extensions.DependencyInjection.ServiceCollectionContainerBuilderExtensions.BuildServiceProvider(services);
+        await using var renderer = new Microsoft.AspNetCore.Components.Web.HtmlRenderer(provider, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        return await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var root = await renderer.RenderComponentAsync<MUD.Web.Components.Shared.RoomMap>(Microsoft.AspNetCore.Components.ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                ["Map"] = map, ["Busy"] = busy, ["FillFor"] = (Func<MapRect, string>)(_ => "#eee"),
+            }));
+            return root.ToHtmlString();
+        });
+    }
+
+    private static RoomRecord Room(string key, int x, int y, params (string, string)[] exits) =>
+        new(key, "a", "short " + key, x, y, 0, exits.Select(e => new RoomExitRecord(e.Item1, e.Item2)).ToList());
+
+    [Fact]
+    public async Task EachLineEnd_IsAFocusableButton_WithAnAriaLabel_AndTheArrowsAreSvgPathsNotText()
+    {
+        var map = new RoomMapLayout().Build(new[] { Room("a.study", 0, 1, ("south", "a.hall")), Room("a.hall", 0, 0, ("north", "a.study")), Room("a.far", 5, 5) }, "a", 0);
+        var html = await Render(map, false);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(html, "class=\"mud-lineend\"").Count);
+        Assert.Contains("role=\"button\" tabindex=\"0\"", html);
+        Assert.Contains("aria-label=\"Remove exit south from short a.study to short a.hall\"", html);
+        Assert.Contains("aria-label=\"Remove exit north from short a.hall to short a.study\"", html);
+        Assert.Contains("markerWidth=\"8\" markerHeight=\"8\"", html);
+        var arrowTags = System.Text.RegularExpressions.Regex.Matches(html, "class=\"mud-arrow [^\"]*\"").Count;
+        Assert.Equal(map.Arrows.Count, arrowTags);
+        Assert.Equal(map.Arrows.Count, System.Text.RegularExpressions.Regex.Matches(html, "<path d=\"" + System.Text.RegularExpressions.Regex.Escape(RoomMapLayout.ArrowPath) + "\"").Count);
+    }
+
+    [Fact]
+    public async Task WhileBusy_ZonesAndArrowsAreDisabled()
+    {
+        var map = new RoomMapLayout().Build(new[] { Room("a.o", 0, 0, ("east", "a.e")), Room("a.e", 1, 0) }, "a", 0);
+        var idle = await Render(map, false);
+        var busy = await Render(map, true);
+        Assert.DoesNotContain("mud-busy", idle);
+        Assert.Contains("class=\"mud-lineend mud-busy\"", busy);
+        Assert.Contains("aria-disabled=\"true\"", busy);
+        Assert.DoesNotContain("tabindex=\"0\" aria-label=\"Remove", busy);
+        Assert.Equal(map.Arrows.Count, System.Text.RegularExpressions.Regex.Matches(busy, "class=\"mud-arrow [^\"]*mud-busy[^\"]*\"").Count);
+    }
+
+    [Fact]
+    public async Task MismatchLine_RendersNoZones()
+    {
+        var map = new RoomMapLayout().Build(new[] { Room("a.o", 0, 0, ("north", "a.e")), Room("a.e", 1, 0) }, "a", 0);
+        Assert.DoesNotContain("mud-lineend", await Render(map, false));
+    }
+
+    [Fact]
+    public async Task LinkArrow_IsAButton_AndCreateArrow_IsALink()
+    {
+        var map = new RoomMapLayout().Build(new[] { Room("a.o", 0, 0), Room("a.e", 1, 0) }, "a", 0);
+        var html = await Render(map, false);
+        Assert.Contains("aria-label=\"Link east to short a.e\"", html);
+        Assert.Contains("aria-label=\"Add room north of short a.o\"", html);
+        Assert.Matches("<a class=\"mud-arrow mud-arrow-gray\"[^>]*href=\"/creator\\?area=a&amp;x=0&amp;y=1&amp;z=0\"", html);
     }
 }
 

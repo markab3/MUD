@@ -147,13 +147,18 @@ h1[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
 /* Expansion arrows: black = an exit (or a room to wire) is there, gray = nothing. The glyph is small; the invisible circle is the hit area
    and roommap.js keeps it at 44 CSS px across at any zoom (--map-hit is its radius in SVG units). */
 .mud-arrow { cursor: pointer; outline: none; text-decoration: none; }
-.mud-arrow text { pointer-events: none; font-weight: 700; }
+.mud-arrow path { pointer-events: none; }
 .mud-arrow-hit { fill: transparent; stroke: none; r: var(--map-hit, 22px); pointer-events: all; }
-.mud-arrow-black text { fill: var(--mud-text); }
-.mud-arrow-gray text { fill: var(--mud-muted); }
-.mud-arrow:hover text { fill: var(--mud-cyan-ink); }
+.mud-arrow-black path { fill: var(--mud-text); }
+.mud-arrow-gray path { fill: var(--mud-muted); }
+.mud-arrow:hover path { fill: var(--mud-cyan-ink); }
 .mud-arrow:focus-visible .mud-arrow-hit { stroke: var(--mud-teal-dark); stroke-width: 2px; fill: var(--mud-turquoise); fill-opacity: 0.35; }
-.mud-arrow-wire text { font-size: 20px; }
+/* Line ends: two invisible wide strokes per line (44 CSS px across, set by roommap.js); a busy map ignores them and the arrows while a write is in flight. */
+.mud-lineend { cursor: pointer; outline: none; }
+.mud-lineend-hit { stroke: transparent; fill: none; stroke-width: var(--map-hit-w, 44px); pointer-events: stroke; }
+.mud-lineend:hover .mud-lineend-hit { stroke: var(--mud-turquoise); stroke-opacity: 0.3; }
+.mud-lineend:focus-visible .mud-lineend-hit { stroke: var(--mud-turquoise); stroke-opacity: 0.45; }
+.mud-busy { pointer-events: none; cursor: progress; opacity: 0.5; }
 .mud-ghost rect:first-child { stroke: var(--mud-muted); }
 .mud-ghost text { fill: var(--mud-text-soft); }
 .mud-ghost-link text { fill: var(--mud-cyan-ink); text-decoration: underline; }

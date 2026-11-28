@@ -6,7 +6,20 @@ public record MapRect(string Key, string Short, double X, double Y, double W, do
 // Points are in SVG coordinates. ArrowStart/ArrowEnd mark arrowheads at the first/last point.
 // Warning = coordinates disagree with the exit direction (drawn dashed in a warning colour).
 public record MapLine(string FromKey, string ToKey, IReadOnlyList<(double X, double Y)> Points,
-    bool ArrowStart, bool ArrowEnd, bool Warning);
+    bool ArrowStart, bool ArrowEnd, bool Warning)
+{
+    // The two click zones of the line: first the one at Points[0], then the one at the last point. Empty for a Warning line
+    // (removing or adding there is ambiguous).
+    public IReadOnlyList<MapLineEnd> Ends { get; init; } = Array.Empty<MapLineEnd>();
+}
+
+// One write the map can make. Remove: delete the exit named Direction (matched on name AND target) from OwnerKey.
+// Otherwise add the exit Direction (a full-word compass name) from OwnerKey to TargetKey. Never touches any other room.
+public record MapExitAction(bool Remove, string OwnerKey, string Direction, string TargetKey, string Label);
+
+// Half of a line, from one end to the midpoint. The action is on the exit that leads TO the room at that end: with an arrowhead
+// there the click removes it, without one it adds it (from the other room).
+public record MapLineEnd(MapExitAction Action, IReadOnlyList<(double X, double Y)> Zone);
 
 // Off-grid compass exit: short line leaving the square with the target key as label.
 public record MapStub(string FromKey, string Direction, string Target, bool Missing,
@@ -19,16 +32,21 @@ public record MapMismatch(string FromKey, string Direction, string ToKey);
 
 public record MapUnplaced(string Key, string Short);
 
-// Expansion arrows around a room.
-//   Go    black arrow: the room has an exit that way. Href is the target (edit page on this level, else the map of its level);
-//         null when the target room does not exist.
+// Expansion arrows around a room, drawn as SVG triangles (RoomMapLayout.ArrowPath rotated by Angle degrees) as big as a line's arrowhead.
+//   Go    black arrow: the room has an exit that way which is NOT drawn as a line (a stub: target off the grid, on another level or
+//         area, or missing). A drawn line shows its own arrowheads and gets no Go arrow. Href is the target (edit page on this level,
+//         else the map of its level); null when the target room does not exist.
 //   Add   gray arrow: no exit and no room that way. Href opens Create room prefilled (area, CreateX/Y/Z); no exit is prefilled.
-//   Wire  black x: no exit, but a room is there. Clicking it adds that one exit (Direction -> TargetKey). Href is null.
+//   Link  gray arrow: no exit, but a placed room of the same area and level is there (TargetKey). Clicking adds that one exit
+//         (Direction -> TargetKey) from this room. Href is null.
 //   Level up/down inside the box. Always a map switch (Href), never a write. Black when the room has such an exit.
-public enum MapArrowKind { Go, Add, Wire, Level }
+public enum MapArrowKind { Go, Add, Link, Level }
 
-public record MapArrow(string RoomKey, string Direction, MapArrowKind Kind, bool Black, string Glyph, double X, double Y, string Label,
-    string? Href, string? TargetKey = null, int? CreateX = null, int? CreateY = null, int? CreateZ = null);
+public record MapArrow(string RoomKey, string Direction, MapArrowKind Kind, bool Black, double Angle, double X, double Y, string Label,
+    string? Href, string? TargetKey = null, int? CreateX = null, int? CreateY = null, int? CreateZ = null)
+{
+    public MapExitAction? Action => Kind == MapArrowKind.Link && TargetKey != null ? new MapExitAction(false, RoomKey, Direction, TargetKey, Label) : null;
+}
 
 // Dashed placeholder at the origin's X,Y on a level that has no room there. Display only, never stored.
 public record MapGhost(double X, double Y, double W, double H, int GridX, int GridY, int Z, string Area, string CreateHref);
@@ -52,9 +70,11 @@ public class RoomMapLayout
     public const double StubLength = 45;
     public const string Up = "\u2191";
     public const string Down = "\u2193";
-    public const string WireGlyph = "\u00d7";
-    public const string LevelUpGlyph = "\u21d1";
-    public const string LevelDownGlyph = "\u21d3";
+    // A line's arrowhead (marker #arrow: markerWidth = ArrowSize / LineStroke stroke widths) and the expansion arrows are the same size,
+    // ArrowSize SVG units across. ArrowPath is that triangle centred on the origin, pointing east.
+    public const double ArrowSize = 16;
+    public const double LineStroke = 2;
+    public static readonly string ArrowPath = FormattableString.Invariant($"M{ArrowSize / 2},0 L{-ArrowSize / 2},{-ArrowSize / 2} L{-ArrowSize / 2},{ArrowSize / 2} z");
     public const string GhostText = "No room here";
     public const string GhostLink = "Create room here";
 
@@ -70,12 +90,17 @@ public class RoomMapLayout
         ["northwest"] = (-1, 1), ["nw"] = (-1, 1),
     };
 
-    // The eight directions: the full-word exit name written when an exit is wired, the offset and the arrow glyph.
-    public static readonly IReadOnlyList<(string Name, int Dx, int Dy, string Glyph)> Directions = new[]
+    // The eight directions: the full-word exit name written when an exit is added, and the offset.
+    public static readonly IReadOnlyList<(string Name, int Dx, int Dy)> Directions = new[]
     {
-        ("north", 0, 1, "\u2191"), ("northeast", 1, 1, "\u2197"), ("east", 1, 0, "\u2192"), ("southeast", 1, -1, "\u2198"),
-        ("south", 0, -1, "\u2193"), ("southwest", -1, -1, "\u2199"), ("west", -1, 0, "\u2190"), ("northwest", -1, 1, "\u2196"),
+        ("north", 0, 1), ("northeast", 1, 1), ("east", 1, 0), ("southeast", 1, -1),
+        ("south", 0, -1), ("southwest", -1, -1), ("west", -1, 0), ("northwest", -1, 1),
     };
+
+    public static string NameOf(int dx, int dy) => Directions.First(d => d.Dx == dx && d.Dy == dy).Name;
+
+    // Screen angle in degrees (clockwise from east; screen y points down) of the triangle for a direction.
+    private static double AngleOf(int dx, int dy) => Math.Round(Math.Atan2(-dy, dx) * 180 / Math.PI, 2);
 
     public static bool TryCompass(string name, out (int Dx, int Dy) v) => Compass.TryGetValue(name.Trim(), out v);
 
@@ -125,6 +150,7 @@ public class RoomMapLayout
         var badges = new List<MapBadge>();
         var mismatches = new List<MapMismatch>();
         var consumed = new HashSet<(string Room, int Index)>();
+        var drawn = new HashSet<(string Room, int Index)>(); // exits shown as a line: the line's arrowheads are their only arrows
 
         foreach (var a in level)
         {
@@ -181,7 +207,23 @@ public class RoomMapLayout
                 var end = mismatch && (actualDx != 0 || actualDy != 0)
                     ? Anchor(dest, -actualDx, -actualDy)
                     : Anchor(dest, -dir.Dx, -dir.Dy);
-                lines.Add(new MapLine(a.Key, dest.Key, new[] { start, end }, reverseIndex >= 0, true, mismatch));
+                drawn.Add((a.Key, i));
+                if (reverseIndex >= 0) { drawn.Add((dest.Key, reverseIndex)); }
+                var ends = new List<MapLineEnd>();
+                if (!mismatch)
+                {
+                    var mid = ((start.X + end.X) / 2, (start.Y + end.Y) / 2);
+                    var back = NameOf(-dir.Dx, -dir.Dy);
+                    // Zone at a: the exit that leads to a is dest's reverse exit (remove it) or does not exist (add it, from dest).
+                    ends.Add(new MapLineEnd(reverseIndex >= 0
+                        ? new MapExitAction(true, dest.Key, dest.Exits[reverseIndex].Name, a.Key, "Remove exit " + back + " from " + dest.Short + " to " + a.Short)
+                        : new MapExitAction(false, dest.Key, back, a.Key, "Add exit " + back + " from " + dest.Short + " to " + a.Short),
+                        new[] { start, mid }));
+                    // Zone at dest: the exit a -> dest exists (the line is drawn for it).
+                    ends.Add(new MapLineEnd(new MapExitAction(true, a.Key, exit.Name, dest.Key,
+                        "Remove exit " + NameOf(dir.Dx, dir.Dy) + " from " + a.Short + " to " + dest.Short), new[] { end, mid }));
+                }
+                lines.Add(new MapLine(a.Key, dest.Key, new[] { start, end }, reverseIndex >= 0, true, mismatch) { Ends = ends });
             }
         }
 
@@ -195,58 +237,56 @@ public class RoomMapLayout
             ghost = new MapGhost(Margin + (g.X - minX) * Pitch, Margin + (maxY - g.Y) * Pitch, Size, Size, g.X, g.Y, z, area,
                 WebRoutes.CreatorAt(area, g.X, g.Y, z));
         }
-        var arrows = BuildArrows(all, byKey, level, onGrid, area, z, Left, Top);
+        var arrows = BuildArrows(byKey, level, onGrid, area, z, drawn, Left, Top);
         return new RoomMap(rects, lines, stubs, badges, mismatches, unplaced, width, height) { Arrows = arrows, Ghost = ghost };
     }
 
-    // Eight compass arrows around every room plus up and down inside its box. A compass glyph sits in the gap just outside its side (or
-    // corner), moved sideways along the edge so the line or stub that leaves the middle of the side stays visible.
-    private static List<MapArrow> BuildArrows(IReadOnlyList<RoomRecord> all, Dictionary<string, RoomRecord> byKey, List<RoomRecord> level,
-        Dictionary<string, RoomRecord> onGrid, string area, int z, Func<RoomRecord, double> left, Func<RoomRecord, double> top)
+    // Eight compass arrows around every room plus up and down inside its box. A compass arrow sits in the gap just outside its side (or
+    // corner), moved sideways along the edge so the line or stub that leaves the middle of the side stays visible. A direction whose
+    // exit is drawn as a line gets no arrow at all (the line's arrowheads and end zones are the controls).
+    private static List<MapArrow> BuildArrows(Dictionary<string, RoomRecord> byKey, List<RoomRecord> level,
+        Dictionary<string, RoomRecord> onGrid, string area, int z, HashSet<(string Room, int Index)> drawn,
+        Func<RoomRecord, double> left, Func<RoomRecord, double> top)
     {
-        // Rule (b): rooms with a compass exit to a room. Key (target, dx, dy) = the direction the TARGET would use to point back.
-        var incoming = new Dictionary<(string, int, int), RoomRecord>();
-        foreach (var b in all.OrderBy(r => r.Key, StringComparer.Ordinal))
-        {
-            foreach (var e in b.Exits)
-            {
-                if (TryCompass(e.Name, out var v) && e.To != b.Key) { incoming.TryAdd((e.To, -v.Dx, -v.Dy), b); }
-            }
-        }
-        // Rule (a): placed rooms of the same area and level at the adjacent coordinates.
+        // Placed rooms of the same area and level, by coordinates.
         var atCoordinate = level.ToDictionary(r => (r.X!.Value, r.Y!.Value));
         var arrows = new List<MapArrow>();
         foreach (var a in level)
         {
             var cx = left(a) + Size / 2;
             var cy = top(a) + Size / 2;
-            foreach (var (name, dx, dy, glyph) in Directions)
+            foreach (var (name, dx, dy) in Directions)
             {
                 var diagonal = dx != 0 && dy != 0;
-                var reach = Size / 2 + (diagonal ? 11 : 13);
-                var shift = diagonal ? 0 : 24;
+                var reach = Size / 2 + (diagonal ? 13 : 14);
+                var shift = diagonal ? 0 : 26;
                 // Sideways = along the edge, away from the middle where the line or stub leaves.
                 var px = cx + dx * reach + (dy != 0 && !diagonal ? shift : 0);
                 var py = cy - dy * reach + (dx != 0 && !diagonal ? shift : 0);
-                var exit = a.Exits.FirstOrDefault(e => TryCompass(e.Name, out var v) && v.Dx == dx && v.Dy == dy);
-                if (exit != null)
+                var angle = AngleOf(dx, dy);
+                var index = -1;
+                for (var i = 0; i < a.Exits.Count; i++)
                 {
+                    if (TryCompass(a.Exits[i].Name, out var v) && v.Dx == dx && v.Dy == dy) { index = i; break; }
+                }
+                if (index >= 0)
+                {
+                    if (drawn.Contains((a.Key, index))) { continue; }
+                    var exit = a.Exits[index];
                     byKey.TryGetValue(exit.To, out var target);
-                    arrows.Add(new MapArrow(a.Key, name, MapArrowKind.Go, true, glyph, px, py,
+                    arrows.Add(new MapArrow(a.Key, name, MapArrowKind.Go, true, angle, px, py,
                         "Go to " + (target?.Short ?? exit.To) + " (" + name + ")", GoHref(target, onGrid), exit.To));
                     continue;
                 }
-                RoomRecord? linked = atCoordinate.TryGetValue((a.X!.Value + dx, a.Y!.Value + dy), out var adjacent) && adjacent.Key != a.Key ? adjacent : null;
-                if (linked == null && incoming.TryGetValue((a.Key, dx, dy), out var pointsHere)) { linked = pointsHere; }
-                if (linked != null)
+                if (atCoordinate.TryGetValue((a.X!.Value + dx, a.Y!.Value + dy), out var adjacent) && adjacent.Key != a.Key)
                 {
-                    arrows.Add(new MapArrow(a.Key, name, MapArrowKind.Wire, true, WireGlyph, px, py,
-                        "Connect " + name + " of " + a.Short + " to " + linked.Short, null, linked.Key));
+                    arrows.Add(new MapArrow(a.Key, name, MapArrowKind.Link, false, angle, px, py,
+                        "Link " + name + " to " + adjacent.Short, null, adjacent.Key));
                     continue;
                 }
                 var nx = a.X!.Value + dx;
                 var ny = a.Y!.Value + dy;
-                arrows.Add(new MapArrow(a.Key, name, MapArrowKind.Add, false, glyph, px, py,
+                arrows.Add(new MapArrow(a.Key, name, MapArrowKind.Add, false, angle, px, py,
                     "Add room " + name + " of " + a.Short, WebRoutes.CreatorAt(AreaOf(a), nx, ny, z), null, nx, ny, z));
             }
             arrows.Add(LevelArrow(a, byKey, true, left(a) + 14, top(a) + 14, area, z));
@@ -268,7 +308,7 @@ public class RoomMapLayout
         var label = exit != null
             ? "Go " + name + " to level " + destZ + " from " + a.Short
             : "Show level " + destZ + " (" + name + ") from " + a.Short;
-        return new MapArrow(a.Key, name, MapArrowKind.Level, exit != null, up ? LevelUpGlyph : LevelDownGlyph, x, y, label,
+        return new MapArrow(a.Key, name, MapArrowKind.Level, exit != null, up ? -90 : 90, x, y, label,
             WebRoutes.MapFor(destArea, destZ, a.X, a.Y), exit?.To);
     }
 
